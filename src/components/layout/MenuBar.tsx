@@ -118,8 +118,8 @@ export const MenuBar: React.FC = () => {
       id: 'cell',
       label: 'セル (C)',
       items: [
-        { label: '次のセルへ', shortcut: 'PageDown', action: nextCell },
-        { label: '前のセルへ', shortcut: 'PageUp', action: prevCell },
+        { label: '次のセルへ', shortcut: 'PageDown / ↓', action: nextCell },
+        { label: '前のセルへ', shortcut: 'PageUp / ↑', action: prevCell },
         { type: 'divider' },
         { label: 'ゴミ取り (ノイズ除去)', shortcut: '', action: () => setActiveModal('preferences') },
         { label: '線画の二値化', shortcut: '', action: () => setActiveModal('preferences') },
@@ -164,12 +164,21 @@ export const MenuBar: React.FC = () => {
   ];
 
   return (
-    <div ref={menuRef} className="h-8 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
-      <div className="font-extrabold text-blue-600 dark:text-blue-400 mr-6 tracking-wider flex items-center gap-1.5 cursor-pointer">
-        <span>🐦</span>
-        <span>KINGFISHER</span>
+    <div ref={menuRef} className="h-8 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-3 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
+      {/* アイコン（角丸付き） ＆ 上付き++付きタイトルロゴ */}
+      <div className="mr-5 flex items-center gap-2 cursor-pointer select-none">
+        <img
+          src="/icon.jpg"
+          alt="Kingfisher Icon"
+          className="w-5 h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700"
+        />
+        <div className="font-extrabold text-blue-600 dark:text-blue-400 tracking-wider flex items-baseline leading-none text-sm">
+          <sup className="text-[10px] font-black text-cyan-500 dark:text-cyan-400 mr-0.5 tracking-tighter self-start font-mono">++</sup>
+          <span className="font-black text-slate-900 dark:text-slate-100">KINGFISHER..</span>
+        </div>
       </div>
 
+      {/* メニューアイテム */}
       <div className="flex gap-1">
         {menuData.map((menu) => {
           const isOpen = openMenu === menu.id;
@@ -178,7 +187,7 @@ export const MenuBar: React.FC = () => {
               <button
                 onClick={() => setOpenMenu(isOpen ? null : menu.id)}
                 onMouseEnter={() => openMenu && setOpenMenu(menu.id)}
-                className={`px-3 py-1 rounded transition-colors ${
+                className={`px-2.5 py-1 rounded transition-colors text-[11px] ${
                   isOpen
                     ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -226,14 +235,14 @@ export const MenuBar: React.FC = () => {
         <button
           onClick={toggleDarkMode}
           title={isDarkMode ? 'Light Mode に切り替え' : 'Dark Mode に切り替え'}
-          className="p-1.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500 transition-colors flex items-center gap-1.5 text-[11px] font-medium border border-slate-300 dark:border-slate-700"
+          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500 transition-colors flex items-center gap-1 text-[10px] font-medium border border-slate-300 dark:border-slate-700"
         >
-          {isDarkMode ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600" />}
+          {isDarkMode ? <Sun className="w-3 h-3 text-amber-400" /> : <Moon className="w-3 h-3 text-slate-600" />}
           <span>{isDarkMode ? 'Dark' : 'Light'}</span>
         </button>
 
         <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-          Ver 2.0 (Alpha Matting Studio)
+          Ver 2.0 (Studio)
         </span>
       </div>
     </div>
