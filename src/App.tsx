@@ -1,166 +1,127 @@
 import React, { useEffect } from 'react';
+import { usePaintStore } from './store/usePaintStore';
 import { MenuBar } from './components/layout/MenuBar';
 import { ToolPalette } from './components/panels/ToolPalette';
 import { ToolOptions } from './components/panels/ToolOptions';
 import { CellWindow } from './components/panels/CellWindow';
+import { ColorChart } from './components/panels/ColorChart';
 import { LightTable } from './components/panels/LightTable';
 import { FileBrowser } from './components/panels/FileBrowser';
-import { ColorChart } from './components/panels/ColorChart';
 import { LayerPanel } from './components/panels/LayerPanel';
 import { HistoryPanel } from './components/panels/HistoryPanel';
 import { AboutModal } from './components/modals/AboutModal';
-import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { PreferencesModal } from './components/modals/PreferencesModal';
+import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
-import { usePaintStore } from './store/usePaintStore';
-import { encodeTGA } from './engine/tga';
 
 export const App: React.FC = () => {
   const {
     isDarkMode,
+    panelVisibility,
     nextCell,
     prevCell,
-    currentImage,
-    fileList,
-    currentFileIndex,
-    folderHandle,
-    toolOptions,
-    setGapCloseLevel,
-    setEnableIncludeTrace,
     undo,
     redo,
-    panelVisibility,
-    togglePanelVisibility,
-    setActiveModal,
+    setActiveTool,
+    setActivePaletteTab,
   } = usePaintStore();
 
   useEffect(() => {
-    const root = document.documentElement;
     if (isDarkMode) {
-      root.classList.add('dark');
+      document.documentElement.classList.add('dark');
     } else {
-      root.classList.remove('dark');
+      document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
 
-  // キーボードショートカット & ハンドラー
+  // グローバルショートカット (PageDown/Up, Undo/Redo, 1/2/3キーでのパレットタブ切替)
   useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      // F5 - F9: Panel visibility toggles
-      if (e.key === 'F5') { e.preventDefault(); togglePanelVisibility('toolPalette'); }
-      else if (e.key === 'F6') { e.preventDefault(); togglePanelVisibility('toolOptions'); }
-      else if (e.key === 'F7') { e.preventDefault(); togglePanelVisibility('colorChart'); }
-      else if (e.key === 'F8') { e.preventDefault(); togglePanelVisibility('lightTable'); }
-      else if (e.key === 'F9') { e.preventDefault(); togglePanelVisibility('fileBrowser'); }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // テキスト入力中は短縮キーをスルー
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+        return;
+      }
 
-      // Ctrl + K (Preferences)
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (e.key === 'PageDown') {
         e.preventDefault();
-        setActiveModal('preferences');
-      }
-      // Ctrl + H (Replace Color)
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h') {
+        nextCell();
+      } else if (e.key === 'PageUp') {
         e.preventDefault();
-        setActiveModal('replaceColor');
-      }
-      // Ctrl + Z (Undo) / Ctrl + Y or Ctrl + Shift + Z (Redo)
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        prevCell();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
         else undo();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
-      }
-      // Ctrl + S (Save TGA)
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        if (currentImage && folderHandle && fileList[currentFileIndex]) {
-          try {
-            const fileName = fileList[currentFileIndex];
-            const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
-            const writable = await fileHandle.createWritable();
-            const buffer = encodeTGA(currentImage);
-            await writable.write(buffer);
-            await writable.close();
-            console.log(`Saved ${fileName} successfully.`);
-          } catch (err) {
-            console.error('Failed to save file directly to disk:', err);
-          }
-        }
-      }
-      // PageDown / Down Arrow
-      else if (e.key === 'PageDown' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        nextCell();
-      }
-      // PageUp / Up Arrow
-      else if (e.key === 'PageUp' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        prevCell();
-      }
-      // T key: Toggle Include Trace
-      else if (e.key.toLowerCase() === 't' && !e.ctrlKey && !e.altKey) {
-        setEnableIncludeTrace(!toolOptions.enableIncludeTrace);
-      }
-      // [ / ] keys: Gap close adjustment
-      else if (e.key === '[') {
-        setGapCloseLevel(Math.max(0, toolOptions.gapCloseLevel - 1));
-      } else if (e.key === ']') {
-        setGapCloseLevel(Math.min(10, toolOptions.gapCloseLevel + 1));
+      } else if (e.key === '1') {
+        setActivePaletteTab('normal');
+      } else if (e.key === '2') {
+        setActivePaletteTab('shadow');
+      } else if (e.key === '3') {
+        setActivePaletteTab('highlight');
+      } else if (e.key.toLowerCase() === 'f') {
+        setActiveTool('fill');
+      } else if (e.key.toLowerCase() === 'g') {
+        setActiveTool('gradient');
+      } else if (e.key.toLowerCase() === 'b') {
+        setActiveTool('brush');
+      } else if (e.key.toLowerCase() === 'p') {
+        setActiveTool('pencil');
+      } else if (e.key.toLowerCase() === 'e') {
+        setActiveTool('eraser');
+      } else if (e.key.toLowerCase() === 'n') {
+        setActiveTool('noiseEraser');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    nextCell,
-    prevCell,
-    currentImage,
-    fileList,
-    currentFileIndex,
-    folderHandle,
-    toolOptions,
-    setGapCloseLevel,
-    setEnableIncludeTrace,
-    undo,
-    redo,
-    togglePanelVisibility,
-    setActiveModal,
-  ]);
+  }, [nextCell, prevCell, undo, redo, setActiveTool, setActivePaletteTab]);
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-150">
-      {/* Top Menu Bar */}
+    <div className="h-screen w-screen flex flex-col bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans select-none transition-colors duration-150">
+      {/* 1. Top Menu Bar */}
       <MenuBar />
 
-      {/* Main Workspace Layout */}
-      <div className="flex-1 flex p-1 gap-1 h-[calc(100vh-32px)]">
+      {/* 2. Main Workspace Layout */}
+      <div className="flex-1 flex p-1.5 gap-1.5 overflow-hidden">
         {/* Left: Tool Palette */}
         {panelVisibility.toolPalette && <ToolPalette />}
 
-        {/* Center: Tool Options + Cell Window + Light Table */}
-        <div className="flex-1 flex flex-col gap-1 overflow-hidden">
+        {/* Center Main Column */}
+        <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
+          {/* Top: Tool Options Bar */}
           {panelVisibility.toolOptions && <ToolOptions />}
+
+          {/* Canvas Window Area */}
           <CellWindow />
+
+          {/* Bottom: Light Table & Animation Bar */}
           {panelVisibility.lightTable && <LightTable />}
         </div>
 
-        {/* Right: File Browser + Layer Panel + History Panel + Color Chart */}
-        {(panelVisibility.fileBrowser || panelVisibility.colorChart || panelVisibility.layerPanel || panelVisibility.historyPanel) && (
-          <div className="w-64 flex flex-col gap-1 overflow-hidden">
-            {panelVisibility.fileBrowser && <FileBrowser />}
-            {panelVisibility.layerPanel && <LayerPanel />}
-            {panelVisibility.historyPanel && <HistoryPanel />}
-            {panelVisibility.colorChart && <ColorChart />}
-          </div>
-        )}
+        {/* Right Docking Panels Column */}
+        <div className="w-80 flex flex-col gap-1.5 overflow-hidden">
+          {/* File Browser */}
+          {panelVisibility.fileBrowser && <FileBrowser />}
+
+          {/* Color Chart */}
+          {panelVisibility.colorChart && <ColorChart />}
+
+          {/* Layer Panel */}
+          {panelVisibility.layerPanel && <LayerPanel />}
+
+          {/* History Panel */}
+          {panelVisibility.historyPanel && <HistoryPanel />}
+        </div>
       </div>
 
       {/* Modals */}
       <AboutModal />
-      <ShortcutsModal />
       <PreferencesModal />
+      <ShortcutsModal />
       <ReplaceColorModal />
     </div>
   );

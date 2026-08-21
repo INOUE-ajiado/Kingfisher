@@ -72,10 +72,20 @@ export const ColorChart: React.FC = () => {
     }
   };
 
+  // セル上での右クリック（現在選択色を上書き登録）
+  const handleCellContextMenu = (e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    const item = currentPalette[index];
+    if (item) {
+      item.color = { ...currentColor };
+      usePaintStore.setState((state) => ({ ...state }));
+    }
+  };
+
   return (
     <div className="flex-[1.5] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none p-2 min-h-[220px]">
       <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between">
-        <span>Color Chart (Char: Hero)</span>
+        <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト">Color Chart (1/2/3 Tab)</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowAddForm(!showAddForm)}
@@ -132,27 +142,28 @@ export const ColorChart: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
+      {/* Tabs (1, 2, 3 キーショートカット連携) */}
       <div className="flex gap-1 mb-3">
-        {(['normal', 'shadow', 'highlight'] as const).map((tab) => {
+        {(['normal', 'shadow', 'highlight'] as const).map((tab, i) => {
           const isActive = activePaletteTab === tab;
           return (
             <button
               key={tab}
               onClick={() => setActivePaletteTab(tab)}
+              title={`キー [${i + 1}] で切り替え`}
               className={`text-[11px] px-2.5 py-0.5 rounded-full capitalize transition-colors ${
                 isActive
                   ? 'bg-teal-600 text-white font-medium'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
               }`}
             >
-              {tab}
+              [{i + 1}] {tab}
             </button>
           );
         })}
       </div>
 
-      {/* Color Grid */}
+      {/* Color Grid (右クリックで現在色をセル保存) */}
       <div className="grid grid-cols-6 gap-1.5 overflow-y-auto max-h-[120px] p-0.5">
         {currentPalette.map((item, index) => {
           const isSelected = selectedColorIndex === index;
@@ -160,7 +171,8 @@ export const ColorChart: React.FC = () => {
             <div
               key={item.id}
               onClick={() => setSelectedColorIndex(index)}
-              title={item.name}
+              onContextMenu={(e) => handleCellContextMenu(e, index)}
+              title={`${item.name} (右クリックで現在色を上書き登録)`}
               style={{ backgroundColor: item.color.hex }}
               className={`aspect-square rounded border border-slate-200 dark:border-slate-700 cursor-pointer relative transition-transform ${
                 isSelected ? 'ring-2 ring-orange-500 scale-110 z-10 shadow-sm' : 'hover:scale-105'
