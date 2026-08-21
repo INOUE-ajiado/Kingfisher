@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><script>(function(){function s(l,a){try{const sa=a.map(x=>{if(typeof x==='undefined')return'undefined';if(x===null)return'null';if(typeof x==='object'){try{return JSON.stringify(x,null,2)}catch(e){return x.toString()}}return x.toString()});window.parent.postMessage({source:'iframe-console',level:l,messages:sa},'*')}catch(e){}}const o={l:console.log,w:console.warn,e:console.error,i:console.info};console.log=function(...a){s('log',a);o.l.apply(console,a)};console.warn=function(...a){s('warn',a);o.w.apply(console,a)};console.error=function(...a){s('error',a);o.e.apply(console,a)};console.info=function(...a){s('info',a);o.i.apply(console,a)};window.onerror=function(m){s('error',[m])}})()</script>
+    <script>
+      (function() {
+        document.addEventListener('click', function(e) {
+          const a = e.target.closest('a');
+          if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('http') && !a.getAttribute('href').startsWith('#')) {
+            e.preventDefault();
+            window.parent.postMessage({
+              source: 'iframe-navigation',
+              url: a.getAttribute('href')
+            }, '*');
+          }
+        });
+      })();
+    </script>
+  
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingfisher - UI Mockup / Wireframe</title>
+<style>
+    /* Concept Colors & Base Styles */
+    :root {
+        --c-blue-vibrant: #2563EB; /* Active tool, primary actions */
+        --c-blue-jade: #38B48B;    /* Secondary accents */
+        --c-blue-peacock: #009E9F; /* Hover states */
+        --c-orange-vibrant: #F97316; /* Save, Next cell */
+        --c-orange-ochre: #D97706;   /* Warnings */
+        
+        --bg-main: #F8FAFC;        /* Light canvas background */
+        --bg-panel: #FFFFFF;       /* Panel background */
+        --border-color: #E2E8F0;   /* Panel borders */
+        --text-main: #334155;
+        --text-muted: #94A3B8;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        background-color: var(--bg-main);
+        color: var(--text-main);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden; /* Prevent body scroll, layout handles it */
+    }
+
+    /* Top Menu Bar */
+    .menu-bar {
+        height: 32px;
+        background-color: var(--bg-panel);
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        font-size: 12px;
+        color: var(--text-main);
+        z-index: 10;
+    }
+    
+    .menu-item {
+        margin-right: 20px;
+        cursor: pointer;
+    }
+    
+    .menu-item:hover {
+        color: var(--c-blue-vibrant);
+    }
+    
+    .logo-text {
+        font-weight: 800;
+        color: var(--c-blue-vibrant);
+        margin-right: 30px;
+        letter-spacing: 1px;
+    }
+
+    /* Main Layout Area (GoldenLayout style docking) */
+    .workspace {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        padding: 4px;
+        gap: 4px;
+        height: calc(100vh - 32px);
+    }
+
+    /* Generic Panel Style */
+    .panel {
+        background-color: var(--bg-panel);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .panel-header {
+        height: 28px;
+        background-color: #F1F5F9;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        padding: 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-main);
+        border-top-left-radius: 4px;
+        border-top-right-radius: 4px;
+        user-select: none;
+    }
+
+    .panel-content {
+        flex: 1;
+        overflow: auto;
+        padding: 8px;
+    }
+
+    /* --- Specific Panels --- */
+
+    /* 1. Tool Palette (Left) */
+    .tool-palette {
+        width: 48px;
+        min-width: 48px;
+    }
+    
+    .tool-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+    
+    .tool-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        background-color: transparent;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        color: var(--text-main);
+        font-size: 14px;
+    }
+    
+    .tool-btn:hover {
+        background-color: #F1F5F9;
+    }
+    
+    .tool-btn.active {
+        background-color: #EFF6FF;
+        border-color: var(--c-blue-vibrant);
+        color: var(--c-blue-vibrant);
+    }
+
+    /* Center Area (Options + Canvas + Timeline) */
+    .center-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    /* 2. Tool Options (Top Center) */
+    .tool-options {
+        height: 40px;
+        min-height: 40px;
+        flex-direction: row;
+        align-items: center;
+    }
+    
+    .tool-options .panel-content {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 0 16px;
+        font-size: 12px;
+    }
+    
+    .option-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    input[type="range"] {
+        width: 80px;
+        accent-color: var(--c-blue-vibrant);
+    }
+    
+    .trace-color-boxes {
+        display: flex;
+        gap: 4px;
+    }
+    
+    .trace-box {
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        cursor: pointer;
+    }
+    .trace-box.active {
+        border: 2px solid var(--text-main);
+    }
+
+    /* 3. Cell Window / Canvas (Middle Center) */
+    .cell-window {
+        flex: 1;
+        background-color: #CBD5E1; /* Darker background to make white canvas pop */
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .canvas-tabs {
+        display: flex;
+        background-color: var(--bg-panel);
+        border-bottom: 1px solid var(--border-color);
+        height: 28px;
+    }
+    
+    .canvas-tab {
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        font-size: 11px;
+        border-right: 1px solid var(--border-color);
+        cursor: pointer;
+        background-color: #F8FAFC;
+        color: var(--text-muted);
+    }
+    
+    .canvas-tab.active {
+        background-color: var(--bg-panel);
+        border-bottom: 2px solid var(--c-blue-vibrant);
+        color: var(--c-blue-vibrant);
+        font-weight: 600;
+    }
+    
+    .canvas-area {
+        position: absolute;
+        top: 28px; left: 0; right: 0; bottom: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    /* Mock TGA Image */
+    .mock-canvas {
+        width: 60%;
+        height: 80%;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: #E2E8F0;
+        font-size: 24px;
+        border: 1px solid #94A3B8;
+        position: relative;
+    }
+    
+    /* Mock lineart drawing */
+    .mock-lineart {
+        position: absolute;
+        width: 200px;
+        height: 200px;
+        border: 2px solid black;
+        border-radius: 50% 50% 50% 10%;
+        border-right-color: red; /* Mock trace line */
+        border-bottom-color: blue; /* Mock trace line */
+    }
+
+    /* 4. Light Table (Bottom Center) */
+    .light-table {
+        height: 60px;
+        min-height: 60px;
+    }
+    
+    .light-table .panel-content {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        font-size: 11px;
+    }
+    
+    .onion-frame {
+        width: 40px;
+        height: 30px;
+        border: 1px solid var(--border-color);
+        background-color: #F8FAFC;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: var(--text-muted);
+    }
+    .onion-frame.current {
+        border-color: var(--c-blue-vibrant);
+        background-color: #EFF6FF;
+        color: var(--c-blue-vibrant);
+        font-weight: bold;
+    }
+
+    /* Right Area (Browser + Color) */
+    .right-area {
+        width: 260px;
+        min-width: 260px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    /* 5. File Browser (Top Right) */
+    .file-browser {
+        flex: 1;
+    }
+    
+    .file-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        font-size: 12px;
+    }
+    
+    .file-item {
+        padding: 4px 8px;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        border-radius: 2px;
+    }
+    
+    .file-item:hover {
+        background-color: #F1F5F9;
+    }
+    
+    .file-item.active {
+        background-color: var(--c-blue-vibrant);
+        color: white;
+    }
+    
+    .file-status {
+        font-size: 10px;
+        color: var(--c-blue-jade);
+    }
+    .file-item.active .file-status { color: #A7F3D0; }
+
+    /* 6. Color Chart (Bottom Right) */
+    .color-chart {
+        flex: 1.5;
+    }
+    
+    .color-tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+    }
+    
+    .color-tab {
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background-color: #F1F5F9;
+        cursor: pointer;
+    }
+    
+    .color-tab.active {
+        background-color: var(--c-blue-peacock);
+        color: white;
+    }
+    
+    .color-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 4px;
+    }
+    
+    .color-cell {
+        aspect-ratio: 1;
+        border: 1px solid var(--border-color);
+        border-radius: 2px;
+        cursor: pointer;
+        position: relative;
+    }
+    
+    .color-cell.selected {
+        border: 2px solid var(--c-orange-vibrant);
+        transform: scale(1.1);
+        z-index: 2;
+    }
+    
+    .current-color-preview {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .preview-box {
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background-color: #FFD700; /* Current selected color */
+    }
+
+    /* Action Buttons (Floating or in Tool Options) */
+    .action-btn {
+        background-color: var(--c-orange-vibrant);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: bold;
+        cursor: pointer;
+        margin-left: auto;
+    }
+    .action-btn:hover {
+        background-color: #EA580C;
+    }
+
+</style>
+<style data-filename="style.css">/* style.css */
+</style></head>
+<body>
+
+    <!-- Menu Bar -->
+    <div class="menu-bar">
+        <div class="logo-text">KINGFISHER</div>
+        <div class="menu-item">File</div>
+        <div class="menu-item">Edit</div>
+        <div class="menu-item">View</div>
+        <div class="menu-item">Tool</div>
+        <div class="menu-item">Help</div>
+    </div>
+
+    <!-- Main Workspace -->
+    <div class="workspace">
+        
+        <!-- Left: Tool Palette -->
+        <div class="panel tool-palette">
+            <div class="panel-header">Tool</div>
+            <div class="panel-content tool-grid">
+                <button class="tool-btn" title="Pointer">↖</button>
+                <button class="tool-btn active" title="Bucket Fill (F)">🪣</button>
+                <button class="tool-btn" title="Closed Area Fill">⭕</button>
+                <button class="tool-btn" title="Brush (B)">🖌</button>
+                <button class="tool-btn" title="Eraser (E)">🧽</button>
+                <button class="tool-btn" title="Eyedropper (Alt)">💉</button>
+                <button class="tool-btn" title="Lasso (L)">➿</button>
+                <button class="tool-btn" title="Pan (Space)">✋</button>
+                <button class="tool-btn" title="Zoom (Z)">🔍</button>
+            </div>
+        </div>
+
+        <!-- Center: Options, Canvas, LightTable -->
+        <div class="center-area">
+            
+            <!-- Tool Options -->
+            <div class="panel tool-options">
+                <div class="panel-content">
+                    <div class="option-group">
+                        <label>Gap Close:</label>
+                        <input type="range" min="0" max="10" value="3">
+                        <span>3 px</span>
+                    </div>
+                    <div style="width: 1px; height: 16px; background-color: var(--border-color); margin: 0 8px;"></div>
+                    <div class="option-group">
+                        <input type="checkbox" id="trace" checked>
+                        <label for="trace">Include Trace Lines</label>
+                        <div class="trace-color-boxes">
+                            <div class="trace-box active" style="background-color: red;" title="Red Trace"></div>
+                            <div class="trace-box active" style="background-color: blue;" title="Blue Trace"></div>
+                            <div class="trace-box" style="background-color: lime;" title="Green Trace"></div>
+                        </div>
+                    </div>
+                    
+                    <button class="action-btn">Next Cell (PgDn) ⏭</button>
+                </div>
+            </div>
+
+            <!-- Cell Window (Canvas) -->
+            <div class="panel cell-window">
+                <div class="canvas-tabs">
+                    <div class="canvas-tab">0001.tga</div>
+                    <div class="canvas-tab active">0002.tga *</div>
+                    <div class="canvas-tab">0003.tga</div>
+                </div>
+                <div class="canvas-area">
+                    <div class="mock-canvas">
+                        <div class="mock-lineart"></div>
+                        <!-- Canvas content placeholder -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Light Table -->
+            <div class="panel light-table">
+                <div class="panel-content">
+                    <span>Light Table:</span>
+                    <input type="checkbox" checked>
+                    <div class="onion-frame">0001</div>
+                    <div class="onion-frame current">0002</div>
+                    <div class="onion-frame">0003</div>
+                    <div style="margin-left: 12px;">Opacity:</div>
+                    <input type="range" min="0" max="100" value="30" style="width: 60px;">
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right: File Browser & Color Chart -->
+        <div class="right-area">
+            
+            <!-- File Browser -->
+            <div class="panel file-browser">
+                <div class="panel-header">Cell List (Folder: /A_part)</div>
+                <div class="panel-content">
+                    <ul class="file-list">
+                        <li class="file-item"><span>0001.tga</span> <span class="file-status">Done</span></li>
+                        <li class="file-item active"><span>0002.tga</span> <span class="file-status">Edit</span></li>
+                        <li class="file-item"><span>0003.tga</span></li>
+                        <li class="file-item"><span>0004.tga</span></li>
+                        <li class="file-item"><span>0005.tga</span></li>
+                        <li class="file-item"><span>0006.tga</span></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Color Chart -->
+            <div class="panel color-chart">
+                <div class="panel-header">Color Chart (Char: Hero)</div>
+                <div class="panel-content">
+                    <div class="color-tabs">
+                        <div class="color-tab active">Normal</div>
+                        <div class="color-tab">Shadow</div>
+                        <div class="color-tab">Highlight</div>
+                    </div>
+                    
+                    <div class="color-grid">
+                        <div class="color-cell selected" style="background-color: #FFD700;" title="Hair"></div>
+                        <div class="color-cell" style="background-color: #FFA500;"></div>
+                        <div class="color-cell" style="background-color: #FFE4B5;" title="Skin"></div>
+                        <div class="color-cell" style="background-color: #CD853F;"></div>
+                        <div class="color-cell" style="background-color: #FFFFFF;"></div>
+                        <div class="color-cell" style="background-color: #F5F5F5;"></div>
+                        <div class="color-cell" style="background-color: #4169E1;" title="Jacket"></div>
+                        <div class="color-cell" style="background-color: #000080;"></div>
+                        <div class="color-cell" style="background-color: #32CD32;"></div>
+                        <div class="color-cell" style="background-color: #228B22;"></div>
+                        <div class="color-cell" style="background-color: #000000;" title="Lineart"></div>
+                        <div class="color-cell" style="background-color: #808080;"></div>
+                    </div>
+
+                    <div class="current-color-preview">
+                        <div class="preview-box"></div>
+                        <div style="font-size: 12px;">
+                            <div><strong>Hair (Normal)</strong></div>
+                            <div style="color: var(--text-muted);">R:255 G:215 B:0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+<script data-filename="main.js">(function(){try{/* main.js */
+}catch(e){console.error(e)}})()</script></body>
+</html>

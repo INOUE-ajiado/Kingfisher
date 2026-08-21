@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --c-blue-vibrant: #2563EB;
+  --c-blue-jade: #38B48B;
+  --c-blue-peacock: #009E9F;
+  --c-orange-vibrant: #F97316;
+  --c-orange-ochre: #D97706;
+  
+  --bg-main: #F8FAFC;
+  --bg-panel: #FFFFFF;
+  --border-color: #E2E8F0;
+  --text-main: #334155;
+  --text-muted: #94A3B8;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+}

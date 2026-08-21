@@ -1,0 +1,316 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Kingfisher - Tool UI Mockup</title>
+<style>
+    /* Classic Windows 98 / 2000 Style */
+    :root {
+        --win-bg: #D4D0C8;
+        --win-border-light: #FFFFFF;
+        --win-border-dark: #808080;
+        --win-border-darker: #404040;
+        --win-title-bg: #0A246A;
+        --win-title-text: #FFFFFF;
+        --win-text: #000000;
+        --desktop-bg: #3A6EA5;
+    }
+
+    body {
+        margin: 0;
+        padding: 20px;
+        font-family: 'Tahoma', 'MS UI Gothic', sans-serif;
+        font-size: 11px;
+        background-color: var(--desktop-bg);
+        color: var(--win-text);
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+    }
+
+    /* Floating Window Base */
+    .win-window {
+        background-color: var(--win-bg);
+        border-top: 1px solid var(--win-border-light);
+        border-left: 1px solid var(--win-border-light);
+        border-right: 1px solid var(--win-border-darker);
+        border-bottom: 1px solid var(--win-border-darker);
+        box-shadow: inset -1px -1px #808080, inset 1px 1px #dfdfdf, 2px 2px 4px rgba(0,0,0,0.3);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .win-titlebar {
+        background: linear-gradient(to right, #0A246A, #A6CAF0);
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 2px;
+        margin: 2px 2px 0 2px;
+    }
+
+    .win-title {
+        color: var(--win-title-text);
+        font-weight: bold;
+        padding-left: 2px;
+        font-size: 11px;
+        letter-spacing: 1px;
+    }
+
+    .win-controls {
+        display: flex;
+        gap: 2px;
+    }
+    
+    .win-btn {
+        width: 14px;
+        height: 12px;
+        background-color: var(--win-bg);
+        border-top: 1px solid var(--win-border-light);
+        border-left: 1px solid var(--win-border-light);
+        border-right: 1px solid var(--win-border-dark);
+        border-bottom: 1px solid var(--win-border-dark);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 9px;
+        font-weight: bold;
+        cursor: default;
+    }
+
+    .win-content {
+        padding: 4px;
+    }
+
+    /* 1. Tools Palette */
+    .tools-win { width: 56px; }
+    .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+    
+    .tool-icon {
+        width: 22px; height: 22px;
+        border-top: 1px solid var(--win-border-light);
+        border-left: 1px solid var(--win-border-light);
+        border-right: 1px solid var(--win-border-dark);
+        border-bottom: 1px solid var(--win-border-dark);
+        display: flex; justify-content: center; align-items: center;
+        background-color: var(--win-bg);
+        font-size: 14px;
+        cursor: pointer;
+    }
+    
+    .tool-icon.active {
+        border-top: 1px solid var(--win-border-darker);
+        border-left: 1px solid var(--win-border-darker);
+        border-right: 1px solid var(--win-border-light);
+        border-bottom: 1px solid var(--win-border-light);
+        background-color: #E4E4E4;
+        background-image: radial-gradient(#000 1px, transparent 0);
+        background-size: 2px 2px;
+    }
+    
+    .color-picker {
+        margin-top: 8px;
+        display: flex;
+        justify-content: center;
+        position: relative;
+        height: 32px;
+    }
+    .c-box {
+        width: 16px; height: 16px;
+        border: 1px solid var(--win-border-darker);
+        position: absolute;
+    }
+    .c-bg { background-color: #FFFFFF; top: 10px; left: 18px; z-index: 1; }
+    .c-fg { background-color: #FFD700; top: 2px; left: 10px; z-index: 2; }
+
+
+    /* 2. Tool Options Palette (Paintman Detail) */
+    .options-win { width: 260px; }
+    
+    fieldset {
+        border-top: 1px solid var(--win-border-dark);
+        border-left: 1px solid var(--win-border-dark);
+        border-right: 1px solid var(--win-border-light);
+        border-bottom: 1px solid var(--win-border-light);
+        margin: 4px; padding: 6px 8px 8px 8px;
+    }
+    legend { padding: 0 4px; color: var(--win-text); }
+    
+    .opt-row { 
+        display: flex; 
+        align-items: center; 
+        margin-bottom: 8px; 
+        gap: 4px;
+    }
+    .opt-row:last-child { margin-bottom: 0; }
+    
+    .opt-input {
+        width: 30px;
+        border-top: 1px solid var(--win-border-darker);
+        border-left: 1px solid var(--win-border-darker);
+        border-right: 1px solid var(--win-border-light);
+        border-bottom: 1px solid var(--win-border-light);
+        padding: 2px;
+        text-align: right;
+        font-family: 'Tahoma';
+        font-size: 11px;
+    }
+
+    .color-check-group {
+        display: flex;
+        gap: 12px;
+        padding-left: 20px;
+        margin-top: 4px;
+    }
+    .c-check {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+    }
+    .c-swatch {
+        width: 12px; height: 12px;
+        border: 1px solid var(--win-border-darker);
+    }
+
+    .dropdown {
+        border-top: 1px solid var(--win-border-darker);
+        border-left: 1px solid var(--win-border-darker);
+        border-right: 1px solid var(--win-border-light);
+        border-bottom: 1px solid var(--win-border-light);
+        background: #FFF;
+        padding: 2px;
+        font-family: 'Tahoma';
+        font-size: 11px;
+        width: 120px;
+    }
+    
+    /* Sunken box for info */
+    .info-box {
+        border-top: 1px solid var(--win-border-dark);
+        border-left: 1px solid var(--win-border-dark);
+        border-right: 1px solid var(--win-border-light);
+        border-bottom: 1px solid var(--win-border-light);
+        background-color: #FFFFFF;
+        padding: 4px;
+        margin-bottom: 4px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+</style>
+</head>
+<body>
+
+    <!-- 1. Tool Palette -->
+    <div class="win-window tools-win">
+        <div class="win-titlebar">
+            <div class="win-title">ﾂｰﾙ</div>
+            <div class="win-controls"><div class="win-btn">X</div></div>
+        </div>
+        <div class="win-content">
+            <div class="tool-grid">
+                <div class="tool-icon" title="選択 (M)">⬚</div>
+                <div class="tool-icon" title="投げ縄選択 (L)">➿</div>
+                <div class="tool-icon" title="マジックワンド (W)">🪄</div>
+                <div class="tool-icon" title="鉛筆 (P)">✏️</div>
+                <div class="tool-icon" title="ブラシ (B)">🖌</div>
+                <div class="tool-icon active" title="塗りつぶし (F)">🪣</div>
+                <div class="tool-icon" title="閉領域フィル (U)">⭕</div>
+                <div class="tool-icon" title="消しゴム (E)">🧽</div>
+                <div class="tool-icon" title="スポイト (I)">💉</div>
+                <div class="tool-icon" title="手のひら (H)">✋</div>
+                <div class="tool-icon" title="ズーム (Z)">🔍</div>
+                <div class="tool-icon" title="定規">📏</div>
+            </div>
+            
+            <div class="color-picker" title="描画色/背景色">
+                <div class="c-box c-bg"></div>
+                <div class="c-box c-fg"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Tool Options Palette -->
+    <div class="win-window options-win">
+        <div class="win-titlebar">
+            <div class="win-title">ツールオプション</div>
+            <div class="win-controls"><div class="win-btn">X</div></div>
+        </div>
+        <div class="win-content">
+            
+            <div class="info-box">
+                <span style="font-size:14px;">🪣</span> <strong>塗りつぶし (バケツ)</strong>
+            </div>
+
+            <fieldset>
+                <legend>塗り設定</legend>
+                <div class="opt-row">
+                    <input type="checkbox" id="contiguous" checked>
+                    <label for="contiguous">隣接ピクセルのみ</label>
+                </div>
+                <div class="opt-row">
+                    <input type="checkbox" id="anti">
+                    <label for="anti">アンチエイリアス</label>
+                </div>
+                <div class="opt-row">
+                    <label style="margin-left: 20px;">許容誤差:</label>
+                    <input type="text" class="opt-input" value="0" style="margin-left:auto;">
+                </div>
+                <div class="opt-row">
+                    <label style="margin-left: 20px;">不透明度:</label>
+                    <input type="text" class="opt-input" value="100" style="margin-left:auto;"> %
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>アニメ彩色特化</legend>
+                <div class="opt-row">
+                    <input type="checkbox" id="gap" checked>
+                    <label for="gap">隙間を閉じる</label>
+                    <input type="text" class="opt-input" value="3" style="margin-left:auto;"> px
+                </div>
+                
+                <div class="opt-row">
+                    <input type="checkbox" id="expand">
+                    <label for="expand">領域の拡張/縮小</label>
+                    <input type="text" class="opt-input" value="0" style="margin-left:auto;"> px
+                </div>
+
+                <div class="opt-row" style="margin-top: 8px;">
+                    <input type="checkbox" id="trace" checked>
+                    <label for="trace">色トレス線を含む</label>
+                </div>
+                <div class="color-check-group">
+                    <div class="c-check">
+                        <input type="checkbox" checked>
+                        <div class="c-swatch" style="background-color: #FF0000;"></div>
+                    </div>
+                    <div class="c-check">
+                        <input type="checkbox" checked>
+                        <div class="c-swatch" style="background-color: #0000FF;"></div>
+                    </div>
+                    <div class="c-check">
+                        <input type="checkbox">
+                        <div class="c-swatch" style="background-color: #00FF00;"></div>
+                    </div>
+                </div>
+            </fieldset>
+            
+            <fieldset>
+                <legend>参照先</legend>
+                <div class="opt-row">
+                    <select class="dropdown">
+                        <option>編集レイヤーのみ</option>
+                        <option>すべてのレイヤー</option>
+                        <option>参照レイヤー</option>
+                    </select>
+                </div>
+            </fieldset>
+
+        </div>
+    </div>
+
+</body>
+</html>
