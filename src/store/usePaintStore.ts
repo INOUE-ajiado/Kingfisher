@@ -674,7 +674,7 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   },
 
   isPlaying: false,
-  fps: 12,
+  fps: 4,
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setFps: (fps) => set({ fps }),
 

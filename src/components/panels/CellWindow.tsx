@@ -137,14 +137,18 @@ export const CellWindow: React.FC = () => {
     return () => { isSubscribed = false; };
   }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB]);
 
-  // アニメーション再生
+  // アニメーション再生（連動再生 Sync Playback 対応）
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
-      const { currentFileIndex, unifiedFileList, setCurrentFileIndex } = usePaintStore.getState();
-      const nextIdx = (currentFileIndex + 1) % unifiedFileList.length;
-      setCurrentFileIndex(nextIdx);
+      const { currentFileIndex, splitFileIndex, unifiedFileList, setCurrentFileIndex, setSplitFileIndex, syncMode } = usePaintStore.getState();
+      const nextCurrentIdx = (currentFileIndex + 1) % unifiedFileList.length;
+      setCurrentFileIndex(nextCurrentIdx);
+      if (syncMode) {
+        const nextSplitIdx = (splitFileIndex + 1) % unifiedFileList.length;
+        setSplitFileIndex(nextSplitIdx);
+      }
     }, (1000 / usePaintStore.getState().fps) * toolOptions.frameHold);
 
     return () => clearInterval(interval);
