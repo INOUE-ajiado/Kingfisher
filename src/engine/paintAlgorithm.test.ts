@@ -17,6 +17,12 @@ function testFloodFill() {
     gapCloseLevel: 0,
     enableIncludeTrace: false,
     traceColors: { red: false, blue: false, green: false },
+    tolerance: 0,
+    brushSize: 5,
+    expandContract: 0,
+    contiguous: true,
+    sampleSize: '1x1',
+    referenceLayer: 'current',
   };
 
   floodFill(pixelData, width, height, 4, 4, { r: 255, g: 255, b: 0, a: 255 }, options);
