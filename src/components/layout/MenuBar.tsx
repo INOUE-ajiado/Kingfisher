@@ -11,9 +11,12 @@ export const MenuBar: React.FC = () => {
     isDarkMode,
     toggleDarkMode,
     currentImage,
-    folderHandle,
-    fileList,
+    folderHandleA,
+    folderHandleB,
+    unifiedFileList,
     currentFileIndex,
+    splitFileIndex,
+    activeViewIndex,
     nextCell,
     prevCell,
     undo,
@@ -48,22 +51,26 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // 上書き保存（Win A 誤上書き防止保護ロジック）
   const handleSave = async () => {
-    if (currentImage && folderHandle && fileList[currentFileIndex]) {
+    const targetFolderHandle = activeViewIndex === 1 && folderHandleB ? folderHandleB : folderHandleA;
+    const targetFileIndex = activeViewIndex === 1 ? splitFileIndex : currentFileIndex;
+    const targetFileName = unifiedFileList[targetFileIndex];
+
+    if (currentImage && targetFolderHandle && targetFileName) {
       try {
-        const fileName = fileList[currentFileIndex];
-        const fileHandle = await folderHandle.getFileHandle(fileName, { create: true });
+        const fileHandle = await targetFolderHandle.getFileHandle(targetFileName, { create: true });
         const writable = await fileHandle.createWritable();
         const buffer = encodeTGA(currentImage);
         await writable.write(buffer);
         await writable.close();
-        alert(`ファイル [${fileName}] を上書き保存しました。`);
+        alert(`アクティブウィンドウ (${activeViewIndex === 1 ? 'Win B / Retake' : 'Win A / Orig'}) のファイル [${targetFileName}] を上書き保存しました。`);
       } catch (err) {
         console.error('Failed to save file:', err);
         alert('保存に失敗しました。');
       }
     } else {
-      alert('保存可能なファイルが開かれていません。');
+      alert('保存可能なフォルダ・ファイルが開かれていません。');
     }
   };
 
@@ -225,7 +232,7 @@ export const MenuBar: React.FC = () => {
         </button>
 
         <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-          Ver 2.0 (Split Studio)
+          Ver 2.0 (Dual Sync Studio)
         </span>
       </div>
     </div>

@@ -59,6 +59,17 @@ export interface PaintStore {
   setSplitFileIndex: (index: number) => void;
   setSplitCanvasTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void;
 
+  // --- 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理) ---
+  folderHandleA: any | null;
+  folderHandleB: any | null;
+  folderNameA: string;
+  folderNameB: string;
+  fileListA: string[];
+  fileListB: string[];
+  unifiedFileList: string[];
+  setFolderHandleA: (handle: any, name: string, files: string[]) => void;
+  setFolderHandleB: (handle: any, name: string, files: string[]) => void;
+
   // --- ツール関連 ---
   activeTool: ToolType;
   setActiveTool: (tool: ToolType) => void;
@@ -235,6 +246,43 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   setActiveViewIndex: (idx) => set({ activeViewIndex: idx }),
   setSplitFileIndex: (index) => set({ splitFileIndex: index }),
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
+
+  // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理)
+  folderHandleA: null,
+  folderHandleB: null,
+  folderNameA: 'Cut001_Original',
+  folderNameB: 'Cut001_Retake',
+  fileListA: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
+  fileListB: ['0001.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
+  unifiedFileList: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
+
+  setFolderHandleA: (handle, name, files) =>
+    set((state) => {
+      const union = Array.from(new Set([...files, ...state.fileListB])).sort();
+      return {
+        folderHandleA: handle,
+        folderNameA: name,
+        fileListA: files,
+        unifiedFileList: union,
+        fileList: union,
+        currentFileIndex: 0,
+        splitFileIndex: 0,
+      };
+    }),
+
+  setFolderHandleB: (handle, name, files) =>
+    set((state) => {
+      const union = Array.from(new Set([...state.fileListA, ...files])).sort();
+      return {
+        folderHandleB: handle,
+        folderNameB: name,
+        fileListB: files,
+        unifiedFileList: union,
+        fileList: union,
+        currentFileIndex: 0,
+        splitFileIndex: 0,
+      };
+    }),
 
   activeTool: 'fill',
   setActiveTool: (tool) => set({ activeTool: tool }),
@@ -541,12 +589,11 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
     set({ folderHandle: handle, folderName: name, fileList: files, currentFileIndex: 0, splitFileIndex: 0, historyStack: [], historyIndex: -1 }),
   setCurrentFileIndex: (index) => set({ currentFileIndex: index, historyStack: [], historyIndex: -1 }),
 
-  // ナビゲーション (連動 syncMode 対応)
   nextCell: () =>
     set((state) => {
-      const nextCurrent = Math.min(state.fileList.length - 1, state.currentFileIndex + 1);
+      const nextCurrent = Math.min(state.unifiedFileList.length - 1, state.currentFileIndex + 1);
       const nextSplit = state.syncMode
-        ? Math.min(state.fileList.length - 1, state.splitFileIndex + 1)
+        ? Math.min(state.unifiedFileList.length - 1, state.splitFileIndex + 1)
         : state.splitFileIndex;
       return {
         currentFileIndex: nextCurrent,

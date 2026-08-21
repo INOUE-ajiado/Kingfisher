@@ -3,7 +3,7 @@ import { usePaintStore } from '../../store/usePaintStore';
 import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
 import { generateSampleTGA } from '../../engine/sampleGenerator';
 import { decodeTGA } from '../../engine/tga';
-import { Columns2, Link, Link2Off } from 'lucide-react';
+import { Columns2, Link, Link2Off, AlertTriangle } from 'lucide-react';
 
 export const CellWindow: React.FC = () => {
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -11,6 +11,9 @@ export const CellWindow: React.FC = () => {
 
   const {
     fileList,
+    fileListA,
+    fileListB,
+    unifiedFileList,
     currentFileIndex,
     splitFileIndex,
     setSplitFileIndex,
@@ -37,7 +40,8 @@ export const CellWindow: React.FC = () => {
     lightTable,
     renderTrigger,
     triggerRender,
-    folderHandle,
+    folderHandleA,
+    folderHandleB,
     saveUndoState,
     isPlaying,
     showGrid,
@@ -54,48 +58,53 @@ export const CellWindow: React.FC = () => {
 
   const [splitImage, setSplitImage] = useState<any>(null);
 
-  // メイン画像の読み込み
+  // メイン画像の読み込み (Dir A / Unified)
   useEffect(() => {
     let isSubscribed = true;
 
     async function loadImage() {
-      const currentFileName = fileList[currentFileIndex];
+      const currentFileName = unifiedFileList[currentFileIndex];
+      const hasFileInA = fileListA.includes(currentFileName);
 
-      if (folderHandle && currentFileName) {
+      if (folderHandleA && currentFileName && hasFileInA) {
         try {
-          const fileHandle = await folderHandle.getFileHandle(currentFileName);
+          const fileHandle = await folderHandleA.getFileHandle(currentFileName);
           const file = await fileHandle.getFile();
           const arrayBuffer = await file.arrayBuffer();
           const decoded = decodeTGA(arrayBuffer);
           if (isSubscribed) setCurrentImage(decoded);
         } catch (e) {
-          console.warn('Failed to load local TGA file via handle, fallback to sample generator', e);
           if (isSubscribed) setCurrentImage(generateSampleTGA(currentFileIndex + 1));
         }
-      } else {
+      } else if (hasFileInA || !folderHandleA) {
         if (isSubscribed) {
           setCurrentImage(generateSampleTGA(currentFileIndex + 1));
           const prev = currentFileIndex > 0 ? generateSampleTGA(currentFileIndex) : null;
-          const next = currentFileIndex < fileList.length - 1 ? generateSampleTGA(currentFileIndex + 2) : null;
+          const next = currentFileIndex < unifiedFileList.length - 1 ? generateSampleTGA(currentFileIndex + 2) : null;
           setPrevNextImages(prev, next);
         }
+      } else {
+        // 欠落ファイル (NO DATA)
+        if (isSubscribed) setCurrentImage(null);
       }
     }
 
     loadImage();
     return () => { isSubscribed = false; };
-  }, [currentFileIndex, fileList, folderHandle, setCurrentImage, setPrevNextImages]);
+  }, [currentFileIndex, unifiedFileList, fileListA, folderHandleA, setCurrentImage, setPrevNextImages]);
 
-  // 分割右側ビュー画像の読み込み
+  // 分割右側ビュー画像の読み込み (Dir B / Unified)
   useEffect(() => {
     if (!isSplitView) return;
     let isSubscribed = true;
 
     async function loadSplitImage() {
-      const splitFileName = fileList[splitFileIndex];
-      if (folderHandle && splitFileName) {
+      const splitFileName = unifiedFileList[splitFileIndex];
+      const hasFileInB = fileListB.includes(splitFileName);
+
+      if (folderHandleB && splitFileName && hasFileInB) {
         try {
-          const fileHandle = await folderHandle.getFileHandle(splitFileName);
+          const fileHandle = await folderHandleB.getFileHandle(splitFileName);
           const file = await fileHandle.getFile();
           const arrayBuffer = await file.arrayBuffer();
           const decoded = decodeTGA(arrayBuffer);
@@ -103,35 +112,56 @@ export const CellWindow: React.FC = () => {
         } catch (e) {
           if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
         }
-      } else {
+      } else if (hasFileInB || !folderHandleB) {
         if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
+      } else {
+        // Dir B にファイルが存在しない場合 (NO DATA)
+        if (isSubscribed) setSplitImage(null);
       }
     }
 
     loadSplitImage();
     return () => { isSubscribed = false; };
-  }, [isSplitView, splitFileIndex, fileList, folderHandle]);
+  }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB]);
 
   // アニメーション再生
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
-      const { currentFileIndex, fileList, setCurrentFileIndex } = usePaintStore.getState();
-      const nextIdx = (currentFileIndex + 1) % fileList.length;
+      const { currentFileIndex, unifiedFileList, setCurrentFileIndex } = usePaintStore.getState();
+      const nextIdx = (currentFileIndex + 1) % unifiedFileList.length;
       setCurrentFileIndex(nextIdx);
     }, (1000 / usePaintStore.getState().fps) * toolOptions.frameHold);
 
     return () => clearInterval(interval);
   }, [isPlaying, toolOptions.frameHold]);
 
-  // キャンバス描画関数
+  // キャンバス描画
   const renderCanvasInstance = useCallback(
     (canvas: HTMLCanvasElement | null, targetImg: any, isLeft: boolean) => {
-      if (!canvas || !targetImg) return;
+      if (!canvas) return;
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
+
+      if (!targetImg) {
+        // NO DATA 欠落ファイル表示
+        canvas.width = 640;
+        canvas.height = 480;
+        ctx.fillStyle = '#0F172A';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+        ctx.font = 'bold 36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('NO DATA', canvas.width / 2, canvas.height / 2 - 10);
+
+        ctx.font = '14px sans-serif';
+        ctx.fillStyle = '#94A3B8';
+        ctx.fillText('File Not Found in this Directory', canvas.width / 2, canvas.height / 2 + 25);
+        return;
+      }
 
       canvas.width = targetImg.width;
       canvas.height = targetImg.height;
@@ -467,7 +497,7 @@ export const CellWindow: React.FC = () => {
 
       {/* セルキャンバス領域 (1画面または2画面) */}
       <div className="flex-1 flex overflow-hidden p-0.5 gap-0.5">
-        {/* 左ビュー / メインビュー */}
+        {/* 左ビュー (Dir A) */}
         <div
           onClick={() => setActiveViewIndex(0)}
           className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
@@ -475,10 +505,15 @@ export const CellWindow: React.FC = () => {
           }`}
         >
           {/* 左タブ */}
-          <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px]">
-            <span className="font-semibold text-blue-600 dark:text-blue-400">
-              View 1: {fileList[currentFileIndex] || '0001.tga'} *
+          <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
+            <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">
+              Win A (Orig): {unifiedFileList[currentFileIndex] || '0001.tga'} *
             </span>
+            {!currentImage && (
+              <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3" /> NO DATA
+              </span>
+            )}
           </div>
 
           {showRuler && currentImage && (
@@ -512,7 +547,7 @@ export const CellWindow: React.FC = () => {
           </div>
         </div>
 
-        {/* 右ビュー (Split View 有効時) */}
+        {/* 右ビュー (Dir B / Split View 有効時) */}
         {isSplitView && (
           <div
             onClick={() => setActiveViewIndex(1)}
@@ -522,18 +557,14 @@ export const CellWindow: React.FC = () => {
           >
             {/* 右タブ */}
             <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
-              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                View 2: {fileList[splitFileIndex] || '0001.tga'}
+              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
+                Win B (Retake): {unifiedFileList[splitFileIndex] || '0001.tga'}
               </span>
-              <select
-                value={splitFileIndex}
-                onChange={(e) => setSplitFileIndex(Number(e.target.value))}
-                className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-[10px] px-1"
-              >
-                {fileList.map((f, idx) => (
-                  <option key={f} value={idx}>{f}</option>
-                ))}
-              </select>
+              {!splitImage && (
+                <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> NO DATA
+                </span>
+              )}
             </div>
 
             {showRuler && splitImage && (
