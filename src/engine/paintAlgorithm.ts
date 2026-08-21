@@ -13,6 +13,8 @@ export interface ToolOptions {
   referenceLayer: 'current' | 'all' | 'reference';
 }
 
+export type FillOptions = ToolOptions;
+
 export interface RGBAColor {
   r: number;
   g: number;
@@ -227,7 +229,7 @@ export function closedAreaFill(
   height: number,
   polygon: { x: number; y: number }[],
   fillColor: RGBAColor,
-  options: ToolOptions
+  _options: ToolOptions
 ): void {
   if (polygon.length < 3) return;
 
