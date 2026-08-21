@@ -23,9 +23,9 @@ export const AboutModal: React.FC = () => {
             alt="Kingfisher Icon"
             className="w-16 h-16 rounded-xl object-cover shadow-md border-2 border-blue-500/20 mb-3"
           />
-          <div className="text-xl font-black text-blue-600 dark:text-blue-400 flex items-baseline justify-center">
-            <sup className="text-xs font-black text-cyan-500 mr-0.5 font-mono">++</sup>
-            <span className="text-slate-900 dark:text-slate-100">KINGFISHER..</span>
+          <div className="text-xl font-black text-blue-600 dark:text-blue-400 flex items-center justify-center leading-none">
+            <span className="text-xs font-black text-blue-600 dark:text-blue-400 mr-[1px] -translate-y-1 font-mono">++</span>
+            <span className="font-black text-blue-600 dark:text-blue-400">KINGFISHER..</span>
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
             Ver 2.0 (Studio Ultimate)

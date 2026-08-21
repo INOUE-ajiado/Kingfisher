@@ -165,16 +165,16 @@ export const MenuBar: React.FC = () => {
 
   return (
     <div ref={menuRef} className="h-8 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-3 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
-      {/* アイコン（角丸付き） ＆ 上付き++付きタイトルロゴ */}
-      <div className="mr-5 flex items-center gap-2 cursor-pointer select-none">
+      {/* アイコン ＆ KINGFISHER の肩の位置に統一カラーでぴったり揃えた++上付きタイトル */}
+      <div className="mr-5 flex items-center gap-1.5 cursor-pointer select-none">
         <img
           src="/icon.jpg"
           alt="Kingfisher Icon"
-          className="w-5 h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700"
+          className="w-5 h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700 flex-shrink-0"
         />
-        <div className="font-extrabold text-blue-600 dark:text-blue-400 tracking-wider flex items-baseline leading-none text-sm">
-          <sup className="text-[10px] font-black text-cyan-500 dark:text-cyan-400 mr-0.5 tracking-tighter self-start font-mono">++</sup>
-          <span className="font-black text-slate-900 dark:text-slate-100">KINGFISHER..</span>
+        <div className="font-extrabold text-blue-600 dark:text-blue-400 tracking-wider flex items-center text-sm leading-none">
+          <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 mr-[1px] -translate-y-1 select-none font-mono">++</span>
+          <span className="font-black text-blue-600 dark:text-blue-400">KINGFISHER..</span>
         </div>
       </div>
 
