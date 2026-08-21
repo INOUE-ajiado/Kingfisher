@@ -1,7 +1,17 @@
-/**
- * Kingfisher Paint Engine Algorithms
- * Flood Fill, Gradient Fill, Gap Closing, Include Trace-line Fill, Retain Trace Line, Closed Area Fill, Brush, Pencil, Binarization, Noise Removal, and Single Click Noise Eraser.
- */
+// PaintMan 互換の超高速・高精度ペイントアルゴリズムエンジン
+
+export interface ToolOptions {
+  gapCloseLevel: number;
+  enableIncludeTrace: boolean;
+  retainTraceLine?: boolean;
+  traceColors: { red: boolean; blue: boolean; green: boolean };
+  tolerance: number;
+  brushSize: number;
+  expandContract: number;
+  contiguous: boolean;
+  sampleSize: '1x1' | '3x3' | '5x5';
+  referenceLayer: 'current' | 'all' | 'reference';
+}
 
 export interface RGBAColor {
   r: number;
@@ -10,27 +20,22 @@ export interface RGBAColor {
   a: number;
 }
 
-export interface FillOptions {
-  gapCloseLevel: number;        // 0 to 20 pixels
-  enableIncludeTrace: boolean;  // Include trace line in fill
-  retainTraceLine?: boolean;    // トレス線を消さずに残す
-  traceColors: { red: boolean; blue: boolean; green: boolean };
-  expandContract?: number;      // -10 to 10 pixels
-  contiguous?: boolean;         // 隣接ピクセルのみ
-}
-
-function isTraceColor(r: number, g: number, b: number, traceColors: { red: boolean; blue: boolean; green: boolean }): boolean {
-  if (traceColors.red && r > 200 && g < 80 && b < 80) return true;
-  if (traceColors.blue && b > 200 && r < 80 && g < 80) return true;
-  if (traceColors.green && g > 200 && r < 80 && b < 80) return true;
+// 特定のピクセルが「色トレス線」かどうかを判定するヘルパー
+function isTraceLine(r: number, g: number, b: number, traceColors: { red: boolean; blue: boolean; green: boolean }): boolean {
+  if (traceColors.red && r > 180 && g < 100 && b < 100) return true;
+  if (traceColors.blue && b > 180 && r < 100 && g < 100) return true;
+  if (traceColors.green && g > 180 && r < 100 && b < 100) return true;
   return false;
 }
 
-function isBoundaryPixel(
+// ピクセルが塗りつぶし境界（壁）であるかを判定
+function isBoundary(
   data: Uint8ClampedArray,
   idx: number,
-  enableIncludeTrace: boolean,
-  traceColors: { red: boolean; blue: boolean; green: boolean }
+  targetR: number,
+  targetG: number,
+  targetB: number,
+  options: ToolOptions
 ): boolean {
   const r = data[idx];
   const g = data[idx + 1];
@@ -38,419 +43,306 @@ function isBoundaryPixel(
   const a = data[idx + 3];
 
   if (a === 0) return false;
-  if (r < 50 && g < 50 && b < 50) return true;
-  if (enableIncludeTrace && isTraceColor(r, g, b, traceColors)) return true;
 
-  return false;
+  if (options.enableIncludeTrace && isTraceLine(r, g, b, options.traceColors)) {
+    return true; // 色トレス線は壁として扱う
+  }
+
+  const diff = Math.abs(r - targetR) + Math.abs(g - targetG) + Math.abs(b - targetB);
+  return diff > options.tolerance * 3;
 }
 
+// 1. バケツ塗り (Flood Fill)
 export function floodFill(
-  pixelData: Uint8ClampedArray,
+  data: Uint8ClampedArray,
   width: number,
   height: number,
   startX: number,
   startY: number,
   fillColor: RGBAColor,
-  options: FillOptions
+  options: ToolOptions
 ): void {
   if (startX < 0 || startX >= width || startY < 0 || startY >= height) return;
 
-  const startPos = (startY * width + startX) * 4;
-  const startR = pixelData[startPos];
-  const startG = pixelData[startPos + 1];
-  const startB = pixelData[startPos + 2];
-  const startA = pixelData[startPos + 3];
+  const startIdx = (startY * width + startX) * 4;
+  const targetR = data[startIdx];
+  const targetG = data[startIdx + 1];
+  const targetB = data[startIdx + 2];
+  const targetA = data[startIdx + 3];
 
-  if (options.contiguous === false) {
-    for (let i = 0; i < pixelData.length; i += 4) {
-      if (
-        pixelData[i] === startR &&
-        pixelData[i + 1] === startG &&
-        pixelData[i + 2] === startB &&
-        pixelData[i + 3] === startA
-      ) {
-        pixelData[i] = fillColor.r;
-        pixelData[i + 1] = fillColor.g;
-        pixelData[i + 2] = fillColor.b;
-        pixelData[i + 3] = fillColor.a;
-      }
-    }
+  if (
+    targetR === fillColor.r &&
+    targetG === fillColor.g &&
+    targetB === fillColor.b &&
+    targetA === fillColor.a
+  ) {
     return;
   }
 
-  const gapLevel = options.gapCloseLevel;
-  const boundaryMask = new Uint8Array(width * height);
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      if (isBoundaryPixel(pixelData, idx, options.enableIncludeTrace, options.traceColors)) {
-        boundaryMask[y * width + x] = 1;
-      }
-    }
-  }
-
-  const dilatedMask = new Uint8Array(width * height);
-  dilatedMask.set(boundaryMask);
-
-  if (gapLevel > 0) {
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        if (boundaryMask[y * width + x] === 1) {
-          for (let dy = -gapLevel; dy <= gapLevel; dy++) {
-            for (let dx = -gapLevel; dx <= gapLevel; dx++) {
-              if (dx * dx + dy * dy <= gapLevel * gapLevel) {
-                const nx = x + dx;
-                const ny = y + dy;
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                  dilatedMask[ny * width + nx] = 1;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  const queue: number[] = [startX, startY];
   const visited = new Uint8Array(width * height);
-  const filledPixels: number[] = [];
-
+  const queue: number[] = [startX, startY];
   visited[startY * width + startX] = 1;
 
+  const filledIndices: number[] = [];
+
   while (queue.length > 0) {
-    const cy = queue.pop()!;
-    const cx = queue.pop()!;
-    const cPos = cy * width + cx;
-    const cIdx = cPos * 4;
+    const y = queue.pop()!;
+    const x = queue.pop()!;
+    const idx = (y * width + x) * 4;
 
-    const r = pixelData[cIdx];
-    const g = pixelData[cIdx + 1];
-    const b = pixelData[cIdx + 2];
+    if (isBoundary(data, idx, targetR, targetG, targetB, options)) continue;
 
-    if (options.enableIncludeTrace && isTraceColor(r, g, b, options.traceColors)) {
-      if (!options.retainTraceLine) {
-        pixelData[cIdx] = fillColor.r;
-        pixelData[cIdx + 1] = fillColor.g;
-        pixelData[cIdx + 2] = fillColor.b;
-        pixelData[cIdx + 3] = fillColor.a;
-        filledPixels.push(cPos);
-      }
+    // トレス線を残すフラグが有効な場合、トレス線自体は塗らない
+    if (options.retainTraceLine && isTraceLine(data[idx], data[idx + 1], data[idx + 2], options.traceColors)) {
       continue;
     }
 
-    pixelData[cIdx] = fillColor.r;
-    pixelData[cIdx + 1] = fillColor.g;
-    pixelData[cIdx + 2] = fillColor.b;
-    pixelData[cIdx + 3] = fillColor.a;
-    filledPixels.push(cPos);
+    filledIndices.push(idx);
 
     const neighbors = [
-      [cx + 1, cy],
-      [cx - 1, cy],
-      [cx, cy + 1],
-      [cx, cy - 1],
+      [x + 1, y],
+      [x - 1, y],
+      [x, y + 1],
+      [x, y - 1],
     ];
 
-    for (let i = 0; i < neighbors.length; i++) {
-      const [nx, ny] = neighbors[i];
+    for (const [nx, ny] of neighbors) {
       if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
         const nPos = ny * width + nx;
-        if (visited[nPos] === 0) {
+        if (!visited[nPos]) {
           visited[nPos] = 1;
-
-          if (dilatedMask[nPos] === 1) {
-            const nIdx = nPos * 4;
-            const nr = pixelData[nIdx];
-            const ng = pixelData[nIdx + 1];
-            const nb = pixelData[nIdx + 2];
-            if (options.enableIncludeTrace && isTraceColor(nr, ng, nb, options.traceColors)) {
-              queue.push(nx, ny);
-            }
-          } else {
-            queue.push(nx, ny);
-          }
+          queue.push(nx, ny);
         }
       }
     }
   }
 
-  const expand = options.expandContract || 0;
-  if (expand > 0) {
-    for (const pPos of filledPixels) {
-      const px = pPos % width;
-      const py = Math.floor(pPos / width);
-      for (let dy = -expand; dy <= expand; dy++) {
-        for (let dx = -expand; dx <= expand; dx++) {
-          if (dx * dx + dy * dy <= expand * expand) {
-            const nx = px + dx;
-            const ny = py + dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              const nIdx = (ny * width + nx) * 4;
-              pixelData[nIdx] = fillColor.r;
-              pixelData[nIdx + 1] = fillColor.g;
-              pixelData[nIdx + 2] = fillColor.b;
-              pixelData[nIdx + 3] = fillColor.a;
-            }
-          }
-        }
-      }
-    }
+  for (const idx of filledIndices) {
+    data[idx] = fillColor.r;
+    data[idx + 1] = fillColor.g;
+    data[idx + 2] = fillColor.b;
+    data[idx + 3] = fillColor.a;
+  }
+
+  if (options.expandContract !== 0) {
+    applyExpandContract(data, width, height, filledIndices, fillColor, options.expandContract);
   }
 }
 
-/**
- * Gradient Fill: Fills an area with a linear gradient between ColorA and ColorB.
- */
+// 2. グラデーション塗り (Gradient Fill)
 export function gradientFill(
-  pixelData: Uint8ClampedArray,
+  data: Uint8ClampedArray,
   width: number,
   height: number,
   startX: number,
   startY: number,
   colorA: RGBAColor,
   colorB: RGBAColor,
-  options: FillOptions
+  options: ToolOptions
 ): void {
-  // First calculate flood fill region
-  const regionPixels: number[] = [];
-  const queue: number[] = [startX, startY];
+  const startIdx = (startY * width + startX) * 4;
+  const targetR = data[startIdx];
+  const targetG = data[startIdx + 1];
+  const targetB = data[startIdx + 2];
+
   const visited = new Uint8Array(width * height);
+  const queue: number[] = [startX, startY];
   visited[startY * width + startX] = 1;
 
-  let minY = height, maxY = 0;
+  const filledIndices: { x: number; y: number; idx: number }[] = [];
 
   while (queue.length > 0) {
-    const cy = queue.pop()!;
-    const cx = queue.pop()!;
-    const cPos = cy * width + cx;
+    const y = queue.pop()!;
+    const x = queue.pop()!;
+    const idx = (y * width + x) * 4;
 
-    if (cy < minY) minY = cy;
-    if (cy > maxY) maxY = cy;
-    regionPixels.push(cPos);
+    if (isBoundary(data, idx, targetR, targetG, targetB, options)) continue;
 
-    const neighbors = [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]];
-    for (const [nx, ny] of neighbors) {
-      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-        const nPos = ny * width + nx;
-        const nIdx = nPos * 4;
-        if (visited[nPos] === 0 && !isBoundaryPixel(pixelData, nIdx, options.enableIncludeTrace, options.traceColors)) {
-          visited[nPos] = 1;
-          queue.push(nx, ny);
-        }
-      }
-    }
-  }
-
-  const rangeY = Math.max(1, maxY - minY);
-
-  // Apply Gradient
-  for (const pos of regionPixels) {
-    const py = Math.floor(pos / width);
-    const t = (py - minY) / rangeY;
-
-    const r = Math.round(colorA.r + (colorB.r - colorA.r) * t);
-    const g = Math.round(colorA.g + (colorB.g - colorA.g) * t);
-    const b = Math.round(colorA.b + (colorB.b - colorA.b) * t);
-
-    const idx = pos * 4;
-    pixelData[idx] = r;
-    pixelData[idx + 1] = g;
-    pixelData[idx + 2] = b;
-    pixelData[idx + 3] = 255;
-  }
-}
-
-export function closedAreaFill(
-  pixelData: Uint8ClampedArray,
-  width: number,
-  height: number,
-  polygon: { x: number; y: number }[],
-  fillColor: RGBAColor,
-  options: FillOptions
-): void {
-  if (polygon.length < 3) return;
-
-  let minX = width, maxX = 0, minY = height, maxY = 0;
-  for (const p of polygon) {
-    if (p.x < minX) minX = Math.floor(p.x);
-    if (p.x > maxX) maxX = Math.ceil(p.x);
-    if (p.y < minY) minY = Math.floor(p.y);
-    if (p.y > maxY) maxY = Math.ceil(p.y);
-  }
-
-  minX = Math.max(0, minX);
-  maxX = Math.min(width - 1, maxX);
-  minY = Math.max(0, minY);
-  maxY = Math.min(height - 1, maxY);
-
-  function pointInPolygon(px: number, py: number): boolean {
-    let inside = false;
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i].x, yi = polygon[i].y;
-      const xj = polygon[j].x, yj = polygon[j].y;
-      const intersect = ((yi > py) !== (yj > py)) &&
-        (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
-      if (intersect) inside = !inside;
-    }
-    return inside;
-  }
-
-  for (let y = minY; y <= maxY; y++) {
-    for (let x = minX; x <= maxX; x++) {
-      if (pointInPolygon(x, y)) {
-        const idx = (y * width + x) * 4;
-        const a = pixelData[idx + 3];
-        const r = pixelData[idx];
-        const g = pixelData[idx + 1];
-        const b = pixelData[idx + 2];
-
-        if (a === 0 || (options.enableIncludeTrace && isTraceColor(r, g, b, options.traceColors))) {
-          pixelData[idx] = fillColor.r;
-          pixelData[idx + 1] = fillColor.g;
-          pixelData[idx + 2] = fillColor.b;
-          pixelData[idx + 3] = fillColor.a;
-        }
-      }
-    }
-  }
-}
-
-export function drawBrushLine(
-  pixelData: Uint8ClampedArray,
-  width: number,
-  height: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  radius: number,
-  color: RGBAColor,
-  isEraser: boolean = false
-): void {
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  const steps = Math.max(1, Math.ceil(dist));
-
-  for (let s = 0; s <= steps; s++) {
-    const t = s / steps;
-    const cx = Math.round(x1 + (x2 - x1) * t);
-    const cy = Math.round(y1 + (y2 - y1) * t);
-
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        if (dx * dx + dy * dy <= radius * radius) {
-          const px = cx + dx;
-          const py = cy + dy;
-          if (px >= 0 && px < width && py >= 0 && py < height) {
-            const idx = (py * width + px) * 4;
-            if (isEraser) {
-              pixelData[idx] = 255;
-              pixelData[idx + 1] = 255;
-              pixelData[idx + 2] = 255;
-              pixelData[idx + 3] = 0;
-            } else {
-              pixelData[idx] = color.r;
-              pixelData[idx + 1] = color.g;
-              pixelData[idx + 2] = color.b;
-              pixelData[idx + 3] = color.a;
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
-export function removeSingleNoiseAt(
-  pixelData: Uint8ClampedArray,
-  width: number,
-  height: number,
-  startX: number,
-  startY: number,
-  maxSize: number = 20
-): boolean {
-  if (startX < 0 || startX >= width || startY < 0 || startY >= height) return false;
-
-  const startPos = startY * width + startX;
-  const startIdx = startPos * 4;
-
-  if (pixelData[startIdx + 3] === 0) return false;
-
-  const component: number[] = [startPos];
-  const queue: number[] = [startX, startY];
-  const visited = new Uint8Array(width * height);
-  visited[startPos] = 1;
-
-  while (queue.length > 0) {
-    const cy = queue.pop()!;
-    const cx = queue.pop()!;
+    filledIndices.push({ x, y, idx });
 
     const neighbors = [
-      [cx + 1, cy], [cx - 1, cy],
-      [cx, cy + 1], [cx, cy - 1]
+      [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1],
     ];
 
     for (const [nx, ny] of neighbors) {
       if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
         const nPos = ny * width + nx;
-        const nIdx = nPos * 4;
-        if (visited[nPos] === 0 && pixelData[nIdx + 3] !== 0) {
+        if (!visited[nPos]) {
           visited[nPos] = 1;
-          component.push(nPos);
           queue.push(nx, ny);
-
-          if (component.length > maxSize) {
-            return false;
-          }
         }
       }
     }
   }
 
-  if (component.length <= maxSize) {
-    for (const pPos of component) {
-      const pIdx = pPos * 4;
-      pixelData[pIdx] = 255;
-      pixelData[pIdx + 1] = 255;
-      pixelData[pIdx + 2] = 255;
-      pixelData[pIdx + 3] = 0;
-    }
-    return true;
-  }
-
-  return false;
-}
-
-export function binarizeImage(
-  pixelData: Uint8ClampedArray,
-  threshold: number = 180
-): void {
-  for (let i = 0; i < pixelData.length; i += 4) {
-    const r = pixelData[i];
-    const g = pixelData[i + 1];
-    const b = pixelData[i + 2];
-    const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-    if (luminance < threshold) {
-      pixelData[i] = 0;
-      pixelData[i + 1] = 0;
-      pixelData[i + 2] = 0;
-      pixelData[i + 3] = 255;
-    } else {
-      pixelData[i] = 255;
-      pixelData[i + 1] = 255;
-      pixelData[i + 2] = 255;
-      pixelData[i + 3] = 0;
-    }
+  for (const item of filledIndices) {
+    const factor = item.y / height; // 上から下へのグラデーション
+    data[item.idx] = Math.round(colorA.r * (1 - factor) + colorB.r * factor);
+    data[item.idx + 1] = Math.round(colorA.g * (1 - factor) + colorB.g * factor);
+    data[item.idx + 2] = Math.round(colorA.b * (1 - factor) + colorB.b * factor);
+    data[item.idx + 3] = 255;
   }
 }
 
-export function removeNoise(
-  pixelData: Uint8ClampedArray,
+// 3. 領域拡張 / 縮小
+function applyExpandContract(
+  data: Uint8ClampedArray,
   width: number,
   height: number,
-  maxNoiseSize: number = 3
+  filledIndices: number[],
+  fillColor: RGBAColor,
+  amount: number
+): void {
+  if (amount > 0) {
+    const borderIndices = new Set<number>();
+    for (const idx of filledIndices) {
+      const pixelIdx = idx / 4;
+      const x = pixelIdx % width;
+      const y = Math.floor(pixelIdx / width);
+
+      for (let dy = -amount; dy <= amount; dy++) {
+        for (let dx = -amount; dx <= amount; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const nIdx = (ny * width + nx) * 4;
+            borderIndices.add(nIdx);
+          }
+        }
+      }
+    }
+    for (const idx of borderIndices) {
+      data[idx] = fillColor.r;
+      data[idx + 1] = fillColor.g;
+      data[idx + 2] = fillColor.b;
+      data[idx + 3] = fillColor.a;
+    }
+  }
+}
+
+// 4. 閉領域フィル (Lasso / Closed Area Fill)
+export function closedAreaFill(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  polygon: { x: number; y: number }[],
+  fillColor: RGBAColor,
+  options: ToolOptions
+): void {
+  if (polygon.length < 3) return;
+
+  let minX = width, maxX = 0, minY = height, maxY = 0;
+  for (const p of polygon) {
+    minX = Math.max(0, Math.min(minX, Math.floor(p.x)));
+    maxX = Math.min(width - 1, Math.max(maxX, Math.ceil(p.x)));
+    minY = Math.max(0, Math.min(minY, Math.floor(p.y)));
+    maxY = Math.min(height - 1, Math.max(maxY, Math.ceil(p.y)));
+  }
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (pointInPolygon(x, y, polygon)) {
+        const idx = (y * width + x) * 4;
+        data[idx] = fillColor.r;
+        data[idx + 1] = fillColor.g;
+        data[idx + 2] = fillColor.b;
+        data[idx + 3] = fillColor.a;
+      }
+    }
+  }
+}
+
+function pointInPolygon(x: number, y: number, polygon: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// 5. ブラシ / 消しゴム描画
+export function drawBrushLine(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  x0: number, y0: number, x1: number, y1: number,
+  radius: number,
+  color: RGBAColor,
+  isEraser: boolean = false
+): void {
+  const dx = Math.abs(x1 - x0);
+  const dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1;
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy;
+
+  let x = x0;
+  let y = y0;
+
+  while (true) {
+    drawCircle(data, width, height, x, y, radius, color, isEraser);
+    if (x === x1 && y === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+}
+
+function drawCircle(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  cx: number, cy: number,
+  radius: number,
+  color: RGBAColor,
+  isEraser: boolean
+): void {
+  const r2 = radius * radius;
+  const minX = Math.max(0, Math.floor(cx - radius));
+  const maxX = Math.min(width - 1, Math.ceil(cx + radius));
+  const minY = Math.max(0, Math.floor(cy - radius));
+  const maxY = Math.min(height - 1, Math.ceil(cy + radius));
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const dist2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+      if (dist2 <= r2) {
+        const idx = (y * width + x) * 4;
+        if (isEraser) {
+          data[idx + 3] = 0;
+        } else {
+          data[idx] = color.r;
+          data[idx + 1] = color.g;
+          data[idx + 2] = color.b;
+          data[idx + 3] = color.a;
+        }
+      }
+    }
+  }
+}
+
+// 6. 二値化処理
+export function binarizeImage(data: Uint8ClampedArray, threshold: number = 128): void {
+  for (let i = 0; i < data.length; i += 4) {
+    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    const val = avg < threshold ? 0 : 255;
+    data[i] = val;
+    data[i + 1] = val;
+    data[i + 2] = val;
+    data[i + 3] = val === 0 ? 255 : 0;
+  }
+}
+
+// 7. 自動ゴミ取り
+export function removeNoise(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  maxSize: number = 5
 ): void {
   const visited = new Uint8Array(width * height);
 
@@ -459,43 +351,121 @@ export function removeNoise(
       const pos = y * width + x;
       const idx = pos * 4;
 
-      if (visited[pos] === 0 && pixelData[idx + 3] !== 0) {
-        const component: number[] = [pos];
+      if (data[idx + 3] > 0 && !visited[pos]) {
+        const cluster: number[] = [];
         const queue: number[] = [x, y];
         visited[pos] = 1;
 
         while (queue.length > 0) {
           const cy = queue.pop()!;
           const cx = queue.pop()!;
+          const cIdx = (cy * width + cx) * 4;
+          cluster.push(cIdx);
 
           const neighbors = [
-            [cx + 1, cy], [cx - 1, cy],
-            [cx, cy + 1], [cx, cy - 1]
+            [cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]
           ];
-
           for (const [nx, ny] of neighbors) {
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
               const nPos = ny * width + nx;
               const nIdx = nPos * 4;
-              if (visited[nPos] === 0 && pixelData[nIdx + 3] !== 0) {
+              if (data[nIdx + 3] > 0 && !visited[nPos]) {
                 visited[nPos] = 1;
-                component.push(nPos);
                 queue.push(nx, ny);
               }
             }
           }
         }
 
-        if (component.length <= maxNoiseSize) {
-          for (const pPos of component) {
-            const pIdx = pPos * 4;
-            pixelData[pIdx] = 255;
-            pixelData[pIdx + 1] = 255;
-            pixelData[pIdx + 2] = 255;
-            pixelData[pIdx + 3] = 0;
+        if (cluster.length <= maxSize) {
+          for (const cIdx of cluster) {
+            data[cIdx + 3] = 0;
           }
         }
       }
     }
+  }
+}
+
+// 8. 手動ワンクリックゴミ取り
+export function removeSingleNoiseAt(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  startX: number,
+  startY: number,
+  maxClusterSize: number = 50
+): boolean {
+  if (startX < 0 || startX >= width || startY < 0 || startY >= height) return false;
+
+  const startIdx = (startY * width + startX) * 4;
+  if (data[startIdx + 3] === 0) return false;
+
+  const visited = new Uint8Array(width * height);
+  const cluster: number[] = [];
+  const queue: number[] = [startX, startY];
+  visited[startY * width + startX] = 1;
+
+  while (queue.length > 0) {
+    const y = queue.pop()!;
+    const x = queue.pop()!;
+    const idx = (y * width + x) * 4;
+    cluster.push(idx);
+
+    if (cluster.length > maxClusterSize) return false;
+
+    const neighbors = [
+      [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]
+    ];
+    for (const [nx, ny] of neighbors) {
+      if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+        const nPos = ny * width + nx;
+        const nIdx = nPos * 4;
+        if (data[nIdx + 3] > 0 && !visited[nPos]) {
+          visited[nPos] = 1;
+          queue.push(nx, ny);
+        }
+      }
+    }
+  }
+
+  for (const idx of cluster) {
+    data[idx + 3] = 0;
+  }
+  return true;
+}
+
+// 9. マッティング理論に基づく線画透過・アルファ抽出 (Unmultiply Alpha Matting)
+export function convertWhiteToAlphaMatting(data: Uint8ClampedArray): void {
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i] / 255.0;
+    const g = data[i + 1] / 255.0;
+    const b = data[i + 2] / 255.0;
+
+    // アニメ業界の純白判定ルール: RGB(255, 255, 255) は完全透明
+    if (r === 1.0 && g === 1.0 && b === 1.0) {
+      data[i + 3] = 0;
+      continue;
+    }
+
+    // 最小チャンネルからのAlpha推定: alpha = 1.0 - min(R, G, B)
+    const minC = Math.min(r, Math.min(g, b));
+    const alpha = 1.0 - minC;
+
+    if (alpha <= 0.0) {
+      data[i + 3] = 0;
+      continue;
+    }
+
+    // Unmultiply 逆算: 白背景成分の除去
+    const whiteBg = 1.0 - alpha;
+    const origR = Math.max(0, Math.min(1.0, (r - whiteBg) / alpha));
+    const origG = Math.max(0, Math.min(1.0, (g - whiteBg) / alpha));
+    const origB = Math.max(0, Math.min(1.0, (b - whiteBg) / alpha));
+
+    data[i] = Math.round(origR * 255.0);
+    data[i + 1] = Math.round(origG * 255.0);
+    data[i + 2] = Math.round(origB * 255.0);
+    data[i + 3] = Math.round(alpha * 255.0);
   }
 }

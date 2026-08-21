@@ -39,6 +39,7 @@ export const MenuBar: React.FC = () => {
     panelVisibility,
     setActiveModal,
     separateLineartLayersGlobal,
+    convertWhiteToAlphaGlobal,
   } = usePaintStore();
 
   useEffect(() => {
@@ -51,7 +52,6 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 上書き保存（Win A 誤上書き防止保護ロジック）
   const handleSave = async () => {
     const targetFolderHandle = activeViewIndex === 1 && folderHandleB ? folderHandleB : folderHandleA;
     const targetFileIndex = activeViewIndex === 1 ? splitFileIndex : currentFileIndex;
@@ -95,6 +95,7 @@ export const MenuBar: React.FC = () => {
         { type: 'divider' },
         { label: '全セル一括色置換', shortcut: 'Ctrl+H', action: () => setActiveModal('replaceColor') },
         { label: '黒線・トレス線全自動レイヤー分離', shortcut: '', action: separateLineartLayersGlobal },
+        { label: '線画の透過・アルファ抽出 (Unmultiply)', shortcut: '', action: convertWhiteToAlphaGlobal },
       ],
     },
     {
@@ -187,7 +188,7 @@ export const MenuBar: React.FC = () => {
               </button>
 
               {isOpen && (
-                <div className="absolute top-full left-0 mt-0.5 w-60 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-lg py-1 z-40 text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute top-full left-0 mt-0.5 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-lg py-1 z-40 text-xs animate-in fade-in zoom-in-95 duration-100">
                   {menu.items.map((item: any, idx: number) => {
                     if (item.type === 'divider') {
                       return <div key={idx} className="my-1 border-t border-slate-200 dark:border-slate-700" />;
@@ -232,7 +233,7 @@ export const MenuBar: React.FC = () => {
         </button>
 
         <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-          Ver 2.0 (Dual Sync Studio)
+          Ver 2.0 (Alpha Matting Studio)
         </span>
       </div>
     </div>

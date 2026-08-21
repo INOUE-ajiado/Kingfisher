@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { TGAImage } from '../engine/tga';
+import { convertWhiteToAlphaMatting } from '../engine/paintAlgorithm';
 
 export type ToolType = 
   | 'pointer' 
@@ -147,6 +148,7 @@ export interface PaintStore {
   replaceColorGlobal: (targetHex: string, newHex: string) => void;
   smoothLineartGlobal: () => void;
   separateLineartLayersGlobal: () => void;
+  convertWhiteToAlphaGlobal: () => void;
 
   // --- マルチレイヤー ---
   layers: LayerItem[];
@@ -555,6 +557,15 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
     addLayer('Trace_Red (赤トレス線)');
     addLayer('Trace_Blue (青トレス線)');
     alert('黒線・赤トレス線・青トレス線を独立レイヤーへ分離生成しました。');
+  },
+
+  convertWhiteToAlphaGlobal: () => {
+    const { currentImage, triggerRender, saveUndoState } = get();
+    if (!currentImage) return;
+
+    saveUndoState('線画の透過・アルファ抽出 (Unmultiply Matting)');
+    convertWhiteToAlphaMatting(currentImage.data);
+    triggerRender();
   },
 
   layers: [

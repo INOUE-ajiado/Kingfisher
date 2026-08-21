@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { X, Sliders, Sparkles, Wand2 } from 'lucide-react';
+import { X, Sliders, Sparkles, Wand2, EyeOff } from 'lucide-react';
 import { binarizeImage, removeNoise } from '../../engine/paintAlgorithm';
 
 export const PreferencesModal: React.FC = () => {
@@ -11,6 +11,7 @@ export const PreferencesModal: React.FC = () => {
     triggerRender,
     saveUndoState,
     smoothLineartGlobal,
+    convertWhiteToAlphaGlobal,
   } = usePaintStore();
 
   const [threshold, setThreshold] = useState(180);
@@ -42,7 +43,7 @@ export const PreferencesModal: React.FC = () => {
         <div className="flex justify-between items-center pb-2 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-2 font-semibold text-sm text-slate-800 dark:text-slate-200">
             <Sliders className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>環境設定 & 画像補正</span>
+            <span>環境設定 & 高度画像補正</span>
           </div>
           <button
             onClick={() => setActiveModal(null)}
@@ -52,7 +53,27 @@ export const PreferencesModal: React.FC = () => {
           </button>
         </div>
 
-        <div className="py-4 space-y-4 text-xs">
+        <div className="py-4 space-y-3 text-xs">
+          {/* 線画透過・アルファ抽出 (Unmultiply Matting) */}
+          <div className="space-y-1.5 p-2 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
+            <div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <EyeOff className="w-3.5 h-3.5 text-purple-500" />
+              <span>線画の透過・アルファ抽出 (Unmultiply Matting)</span>
+            </div>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500">
+              白背景からアンチエイリアスの白フリンジを除去し、純粋な線画アルファチャンネルを生成します。
+            </p>
+            <button
+              onClick={() => {
+                convertWhiteToAlphaGlobal();
+                alert('マッティング理論に基づく白背景の線画透過・アルファ抽出を適用しました。');
+              }}
+              className="w-full mt-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 rounded text-[11px] transition-colors"
+            >
+              線画透過・アルファ抽出を実行
+            </button>
+          </div>
+
           {/* 線画二値化 */}
           <div className="space-y-2 p-2 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700">
             <div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
@@ -115,9 +136,6 @@ export const PreferencesModal: React.FC = () => {
               <Wand2 className="w-3.5 h-3.5 text-emerald-500" />
               <span>主線平滑化 (Line Smoothing)</span>
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500">
-              線画のジャギー（ギザギザ）を滑らかに補正します。
-            </p>
             <button
               onClick={() => {
                 smoothLineartGlobal();
