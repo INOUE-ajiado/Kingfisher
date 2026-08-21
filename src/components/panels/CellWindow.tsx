@@ -10,13 +10,11 @@ export const CellWindow: React.FC = () => {
   const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const {
-    fileList,
     fileListA,
     fileListB,
     unifiedFileList,
     currentFileIndex,
     splitFileIndex,
-    setSplitFileIndex,
     isSplitView,
     toggleIsSplitView,
     syncMode,

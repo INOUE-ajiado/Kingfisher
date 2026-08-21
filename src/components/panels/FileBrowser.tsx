@@ -1,6 +1,6 @@
 import React from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { FolderOpen, Link, Link2Off, CheckCircle2, AlertCircle, Edit3 } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertCircle } from 'lucide-react';
 import { decodeTGA } from '../../engine/tga';
 
 export const FileBrowser: React.FC = () => {
