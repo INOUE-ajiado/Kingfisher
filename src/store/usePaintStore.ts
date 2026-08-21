@@ -244,7 +244,14 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   splitFileIndex: 0,
   splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
   toggleIsSplitView: () => set((state) => ({ isSplitView: !state.isSplitView })),
-  toggleSyncMode: () => set((state) => ({ syncMode: !state.syncMode })),
+  toggleSyncMode: () =>
+    set((state) => {
+      const nextSyncMode = !state.syncMode;
+      if (nextSyncMode) {
+        return { syncMode: true, splitFileIndex: state.currentFileIndex };
+      }
+      return { syncMode: false };
+    }),
   setActiveViewIndex: (idx) => set({ activeViewIndex: idx }),
   setSplitFileIndex: (index) => set({ splitFileIndex: index }),
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
