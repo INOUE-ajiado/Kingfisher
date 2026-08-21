@@ -42,10 +42,10 @@ export const App: React.FC = () => {
         return;
       }
 
-      if (e.key === 'PageDown') {
+      if (e.key === 'PageDown' || e.key === 'ArrowDown') {
         e.preventDefault();
         nextCell();
-      } else if (e.key === 'PageUp') {
+      } else if (e.key === 'PageUp' || e.key === 'ArrowUp') {
         e.preventDefault();
         prevCell();
       } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {

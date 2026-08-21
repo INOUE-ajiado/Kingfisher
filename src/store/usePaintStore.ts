@@ -609,29 +609,45 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
 
   nextCell: () =>
     set((state) => {
-      const nextCurrent = Math.min(state.unifiedFileList.length - 1, state.currentFileIndex + 1);
-      const nextSplit = state.syncMode
-        ? Math.min(state.unifiedFileList.length - 1, state.splitFileIndex + 1)
-        : state.splitFileIndex;
-      return {
-        currentFileIndex: nextCurrent,
-        splitFileIndex: nextSplit,
-        historyStack: [],
-        historyIndex: -1,
-      };
+      if (state.syncMode) {
+        const nextCurrent = Math.min(state.unifiedFileList.length - 1, state.currentFileIndex + 1);
+        const nextSplit = Math.min(state.unifiedFileList.length - 1, state.splitFileIndex + 1);
+        return {
+          currentFileIndex: nextCurrent,
+          splitFileIndex: nextSplit,
+          historyStack: [],
+          historyIndex: -1,
+        };
+      } else {
+        if (state.activeViewIndex === 0) {
+          const nextCurrent = Math.min(state.unifiedFileList.length - 1, state.currentFileIndex + 1);
+          return { currentFileIndex: nextCurrent, historyStack: [], historyIndex: -1 };
+        } else {
+          const nextSplit = Math.min(state.unifiedFileList.length - 1, state.splitFileIndex + 1);
+          return { splitFileIndex: nextSplit, historyStack: [], historyIndex: -1 };
+        }
+      }
     }),
   prevCell: () =>
     set((state) => {
-      const prevCurrent = Math.max(0, state.currentFileIndex - 1);
-      const prevSplit = state.syncMode
-        ? Math.max(0, state.splitFileIndex - 1)
-        : state.splitFileIndex;
-      return {
-        currentFileIndex: prevCurrent,
-        splitFileIndex: prevSplit,
-        historyStack: [],
-        historyIndex: -1,
-      };
+      if (state.syncMode) {
+        const prevCurrent = Math.max(0, state.currentFileIndex - 1);
+        const prevSplit = Math.max(0, state.splitFileIndex - 1);
+        return {
+          currentFileIndex: prevCurrent,
+          splitFileIndex: prevSplit,
+          historyStack: [],
+          historyIndex: -1,
+        };
+      } else {
+        if (state.activeViewIndex === 0) {
+          const prevCurrent = Math.max(0, state.currentFileIndex - 1);
+          return { currentFileIndex: prevCurrent, historyStack: [], historyIndex: -1 };
+        } else {
+          const prevSplit = Math.max(0, state.splitFileIndex - 1);
+          return { splitFileIndex: prevSplit, historyStack: [], historyIndex: -1 };
+        }
+      }
     }),
 
   currentImage: null,
