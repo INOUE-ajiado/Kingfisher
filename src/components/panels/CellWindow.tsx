@@ -5,6 +5,23 @@ import { generateSampleTGA } from '../../engine/sampleGenerator';
 import { decodeTGA } from '../../engine/tga';
 import { Columns2, Link, Link2Off, AlertTriangle } from 'lucide-react';
 
+// 透明チェッカーボード（市松模様）パターンを生成するヘルパー
+function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
+  const patternCanvas = document.createElement('canvas');
+  patternCanvas.width = size * 2;
+  patternCanvas.height = size * 2;
+  const pCtx = patternCanvas.getContext('2d');
+  if (!pCtx) return null;
+
+  pCtx.fillStyle = '#FFFFFF';
+  pCtx.fillRect(0, 0, size * 2, size * 2);
+  pCtx.fillStyle = '#CBD5E1'; // ライトグレー (Tailwind slate-300)
+  pCtx.fillRect(0, 0, size, size);
+  pCtx.fillRect(size, size, size, size);
+
+  return ctx.createPattern(patternCanvas, 'repeat');
+}
+
 export const CellWindow: React.FC = () => {
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -82,7 +99,6 @@ export const CellWindow: React.FC = () => {
           setPrevNextImages(prev, next);
         }
       } else {
-        // 欠落ファイル (NO DATA)
         if (isSubscribed) setCurrentImage(null);
       }
     }
@@ -113,7 +129,6 @@ export const CellWindow: React.FC = () => {
       } else if (hasFileInB || !folderHandleB) {
         if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
       } else {
-        // Dir B にファイルが存在しない場合 (NO DATA)
         if (isSubscribed) setSplitImage(null);
       }
     }
@@ -164,9 +179,22 @@ export const CellWindow: React.FC = () => {
       canvas.width = targetImg.width;
       canvas.height = targetImg.height;
 
-      ctx.fillStyle = showUnpaintedFlash ? '#FF007F' : '#FFFFFF';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // 線画だけを表示する場合、背景のベタ白は塗らず、透明市松模様（チェッカーボード）にする！
+      if (showUnpaintedFlash) {
+        ctx.fillStyle = '#FF007F'; // 未塗り漏れ点滅表示時
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      } else {
+        // 透過表現用チェッカーボード（透明背景市松模様）
+        const pattern = createCheckerPattern(ctx, 10);
+        if (pattern) {
+          ctx.fillStyle = pattern;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+      }
 
+      // 1. Draw Light Table (前フレーム: 赤 Tint / 後フレーム: 青 Tint)
       if (isLeft && lightTable.enabled && !isPlaying) {
         const alphaVal = lightTable.opacity / 100;
         if (prevImage) {
@@ -223,6 +251,7 @@ export const CellWindow: React.FC = () => {
         }
       }
 
+      // 2. Draw Target Image (線画・ペイントデータ)
       const imgData = ctx.createImageData(targetImg.width, targetImg.height);
       imgData.data.set(targetImg.data);
       const tempCanvas = document.createElement('canvas');
@@ -234,6 +263,7 @@ export const CellWindow: React.FC = () => {
         ctx.drawImage(tempCanvas, 0, 0);
       }
 
+      // 3. Grid Overlay
       if (showGrid) {
         ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
         ctx.lineWidth = 1;
@@ -252,6 +282,7 @@ export const CellWindow: React.FC = () => {
         }
       }
 
+      // 4. Lasso Preview
       if (isLeft && lassoPoints.length > 1) {
         ctx.strokeStyle = '#2563EB';
         ctx.lineWidth = 2;
@@ -458,7 +489,6 @@ export const CellWindow: React.FC = () => {
       {/* 画面分割・連動コントロール ヘッダーバー */}
       <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs">
         <div className="flex items-center gap-2">
-          {/* 1画面 / 2画面分割切り替えボタン */}
           <button
             onClick={toggleIsSplitView}
             className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
@@ -471,7 +501,6 @@ export const CellWindow: React.FC = () => {
             <span>{isSplitView ? '2画面分割中' : '1画面表示'}</span>
           </button>
 
-          {/* 左右連動 (Sync Mode) 切り替えボタン */}
           {isSplitView && (
             <button
               onClick={toggleSyncMode}
@@ -487,7 +516,6 @@ export const CellWindow: React.FC = () => {
           )}
         </div>
 
-        {/* ズーム倍率表示 */}
         <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
           Zoom: {Math.round(canvasTransform.scale * 100)}%
         </div>
@@ -502,7 +530,6 @@ export const CellWindow: React.FC = () => {
             activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
           }`}
         >
-          {/* 左タブ */}
           <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
             <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">
               Win A (Orig): {unifiedFileList[currentFileIndex] || '0001.tga'} *
@@ -553,7 +580,6 @@ export const CellWindow: React.FC = () => {
               activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
             }`}
           >
-            {/* 右タブ */}
             <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
               <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
                 Win B (Retake): {unifiedFileList[splitFileIndex] || '0001.tga'}
