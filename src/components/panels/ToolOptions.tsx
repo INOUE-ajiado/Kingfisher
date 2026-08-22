@@ -1,6 +1,6 @@
 import React from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { SkipForward } from 'lucide-react';
+import { SkipForward, Anchor, Eye } from 'lucide-react';
 
 export const ToolOptions: React.FC = () => {
   const {
@@ -15,10 +15,108 @@ export const ToolOptions: React.FC = () => {
     setContiguous,
     setReferenceLayer,
     nextCell,
+    pegStabilizer,
+    togglePegStabilizerEnabled,
+    runPegStabilizerAutoDetect,
+    setPegManualOffset,
+    togglePegGuide,
   } = usePaintStore();
 
   return (
     <div className="h-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex items-center px-3 text-xs shadow-sm select-none gap-3 overflow-x-auto">
+      {/* タップ穴スタビライザー (Peg Hole Stabilizer) */}
+      <div className="flex items-center gap-1.5 flex-shrink-0 bg-slate-50 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+        <button
+          onClick={runPegStabilizerAutoDetect}
+          title="タップ穴自動検出＆傾き自動補正を実行 (Peg Stabilizer)"
+          className="flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 hover:underline text-[11px]"
+        >
+          <Anchor className="w-3.5 h-3.5" />
+          <span>タップ補正</span>
+        </button>
+
+        <input
+          type="checkbox"
+          id="pegEnable"
+          checked={pegStabilizer.enabled}
+          onChange={togglePegStabilizerEnabled}
+          className="rounded accent-blue-600 cursor-pointer"
+        />
+
+        <span
+          className={`text-[9px] font-bold px-1 rounded ${
+            pegStabilizer.status === 'success'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+              : pegStabilizer.status === 'failed'
+              ? 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300'
+              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+          }`}
+        >
+          {pegStabilizer.status === 'success'
+            ? '検出成功'
+            : pegStabilizer.status === 'failed'
+            ? '検出失敗'
+            : '待機'}
+        </span>
+
+        {/* 手動微調整 X / Y / Rot */}
+        <div className="flex items-center gap-1 text-[10px]">
+          <span className="text-slate-500">X:</span>
+          <input
+            type="number"
+            value={pegStabilizer.manualX}
+            onChange={(e) =>
+              setPegManualOffset(
+                Number(e.target.value),
+                pegStabilizer.manualY,
+                pegStabilizer.manualRotation
+              )
+            }
+            className="w-8 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center"
+          />
+          <span className="text-slate-500">Y:</span>
+          <input
+            type="number"
+            value={pegStabilizer.manualY}
+            onChange={(e) =>
+              setPegManualOffset(
+                pegStabilizer.manualX,
+                Number(e.target.value),
+                pegStabilizer.manualRotation
+              )
+            }
+            className="w-8 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center"
+          />
+          <span className="text-slate-500">Rot:</span>
+          <input
+            type="number"
+            step="0.1"
+            value={pegStabilizer.manualRotation}
+            onChange={(e) =>
+              setPegManualOffset(
+                pegStabilizer.manualX,
+                pegStabilizer.manualY,
+                Number(e.target.value)
+              )
+            }
+            className="w-10 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center"
+          />
+        </div>
+
+        {/* ガイド表示 */}
+        <button
+          onClick={togglePegGuide}
+          title="理想タップ穴ガイドライン描画"
+          className={`p-0.5 rounded transition-colors ${
+            pegStabilizer.showGuide ? 'text-blue-600 font-bold' : 'text-slate-400'
+          }`}
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 flex-shrink-0" />
+
       {/* 隙間閉じ */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <label className="text-slate-700 dark:text-slate-300 font-medium">隙間閉じ:</label>

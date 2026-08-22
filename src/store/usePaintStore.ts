@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { TGAImage } from '../engine/tga';
 import { convertWhiteToAlphaMatting } from '../engine/paintAlgorithm';
+import { detectPegHolesAndCalculateTransform } from '../engine/pegStabilizer';
 
 export type ToolType = 
   | 'pointer' 
@@ -43,10 +44,29 @@ export interface HistoryItem {
   data: Uint8ClampedArray;
 }
 
+export interface PegStabilizerState {
+  enabled: boolean;
+  status: 'success' | 'failed' | 'idle';
+  offsetX: number;
+  offsetY: number;
+  rotation: number;
+  manualX: number;
+  manualY: number;
+  manualRotation: number;
+  showGuide: boolean;
+}
+
 export interface PaintStore {
   // --- テーマ ---
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+
+  // --- タップ穴自動検出 ＆ 傾き補正 (Peg Hole Stabilizer) ---
+  pegStabilizer: PegStabilizerState;
+  togglePegStabilizerEnabled: () => void;
+  setPegManualOffset: (x: number, y: number, rot: number) => void;
+  togglePegGuide: () => void;
+  runPegStabilizerAutoDetect: () => void;
 
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
   isSplitView: boolean;
@@ -236,6 +256,58 @@ const defaultColors: PaletteItem[] = [
 export const usePaintStore = create<PaintStore>((set, get) => ({
   isDarkMode: true,
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
+
+  // タップ穴自動検出 ＆ 傾き補正 (Peg Hole Stabilizer)
+  pegStabilizer: {
+    enabled: false,
+    status: 'idle',
+    offsetX: 0,
+    offsetY: 0,
+    rotation: 0,
+    manualX: 0,
+    manualY: 0,
+    manualRotation: 0,
+    showGuide: false,
+  },
+  togglePegStabilizerEnabled: () =>
+    set((state) => ({
+      pegStabilizer: { ...state.pegStabilizer, enabled: !state.pegStabilizer.enabled },
+    })),
+  setPegManualOffset: (x, y, rot) =>
+    set((state) => ({
+      pegStabilizer: {
+        ...state.pegStabilizer,
+        manualX: x,
+        manualY: y,
+        manualRotation: rot,
+      },
+    })),
+  togglePegGuide: () =>
+    set((state) => ({
+      pegStabilizer: { ...state.pegStabilizer, showGuide: !state.pegStabilizer.showGuide },
+    })),
+  runPegStabilizerAutoDetect: () => {
+    const { currentImage, triggerRender } = get();
+    if (!currentImage) return;
+
+    const res = detectPegHolesAndCalculateTransform(
+      currentImage.data,
+      currentImage.width,
+      currentImage.height
+    );
+
+    set((state) => ({
+      pegStabilizer: {
+        ...state.pegStabilizer,
+        enabled: true,
+        status: res.status,
+        offsetX: res.offsetX,
+        offsetY: res.offsetY,
+        rotation: res.rotation,
+      },
+    }));
+    triggerRender();
+  },
 
   // 2画面分割 (Split View) & 連動 (Sync Mode)
   isSplitView: false,

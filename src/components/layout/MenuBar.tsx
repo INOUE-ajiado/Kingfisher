@@ -40,6 +40,7 @@ export const MenuBar: React.FC = () => {
     setActiveModal,
     separateLineartLayersGlobal,
     convertWhiteToAlphaGlobal,
+    runPegStabilizerAutoDetect,
   } = usePaintStore();
 
   useEffect(() => {
@@ -93,6 +94,7 @@ export const MenuBar: React.FC = () => {
         { label: '元に戻す', shortcut: 'Ctrl+Z', action: undo },
         { label: 'やり直し', shortcut: 'Ctrl+Y', action: redo },
         { type: 'divider' },
+        { label: 'タップ穴自動検出＆傾き補正 (Peg Stabilizer)', shortcut: '', action: runPegStabilizerAutoDetect },
         { label: '全セル一括色置換', shortcut: 'Ctrl+H', action: () => setActiveModal('replaceColor') },
         { label: '黒線・トレス線全自動レイヤー分離', shortcut: '', action: separateLineartLayersGlobal },
         { label: '線画の透過・アルファ抽出 (Unmultiply)', shortcut: '', action: convertWhiteToAlphaGlobal },

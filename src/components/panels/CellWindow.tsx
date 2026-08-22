@@ -5,7 +5,6 @@ import { generateSampleTGA } from '../../engine/sampleGenerator';
 import { decodeTGA } from '../../engine/tga';
 import { Columns2, Link, Link2Off, AlertTriangle } from 'lucide-react';
 
-// 透明チェッカーボード（市松模様）パターンを生成するヘルパー
 function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
   const patternCanvas = document.createElement('canvas');
   patternCanvas.width = size * 2;
@@ -15,7 +14,7 @@ function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): 
 
   pCtx.fillStyle = '#FFFFFF';
   pCtx.fillRect(0, 0, size * 2, size * 2);
-  pCtx.fillStyle = '#CBD5E1'; // ライトグレー (Tailwind slate-300)
+  pCtx.fillStyle = '#CBD5E1';
   pCtx.fillRect(0, 0, size, size);
   pCtx.fillRect(size, size, size, size);
 
@@ -62,6 +61,7 @@ export const CellWindow: React.FC = () => {
     showGrid,
     showRuler,
     showUnpaintedFlash,
+    pegStabilizer,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
@@ -137,18 +137,14 @@ export const CellWindow: React.FC = () => {
     return () => { isSubscribed = false; };
   }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB]);
 
-  // アニメーション再生（連動再生 Sync Playback 対応）
+  // アニメーション再生
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
-      const { currentFileIndex, splitFileIndex, unifiedFileList, setCurrentFileIndex, setSplitFileIndex, syncMode } = usePaintStore.getState();
-      const nextCurrentIdx = (currentFileIndex + 1) % unifiedFileList.length;
-      setCurrentFileIndex(nextCurrentIdx);
-      if (syncMode) {
-        const nextSplitIdx = (splitFileIndex + 1) % unifiedFileList.length;
-        setSplitFileIndex(nextSplitIdx);
-      }
+      const { currentFileIndex, unifiedFileList, setCurrentFileIndex } = usePaintStore.getState();
+      const nextIdx = (currentFileIndex + 1) % unifiedFileList.length;
+      setCurrentFileIndex(nextIdx);
     }, (1000 / usePaintStore.getState().fps) * toolOptions.frameHold);
 
     return () => clearInterval(interval);
@@ -183,12 +179,11 @@ export const CellWindow: React.FC = () => {
       canvas.width = targetImg.width;
       canvas.height = targetImg.height;
 
-      // 線画だけを表示する場合、背景のベタ白は塗らず、透明市松模様（チェッカーボード）にする！
+      // 透過表現用チェッカーボード
       if (showUnpaintedFlash) {
-        ctx.fillStyle = '#FF007F'; // 未塗り漏れ点滅表示時
+        ctx.fillStyle = '#FF007F';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
       } else {
-        // 透過表現用チェッカーボード（透明背景市松模様）
         const pattern = createCheckerPattern(ctx, 10);
         if (pattern) {
           ctx.fillStyle = pattern;
@@ -255,16 +250,30 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      // 2. Draw Target Image (線画・ペイントデータ)
+      // 2. Draw Target Image (スタビライザー アフィン変換適用)
       const imgData = ctx.createImageData(targetImg.width, targetImg.height);
       imgData.data.set(targetImg.data);
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = targetImg.width;
       tempCanvas.height = targetImg.height;
       const tempCtx = tempCanvas.getContext('2d');
+
       if (tempCtx) {
         tempCtx.putImageData(imgData, 0, 0);
+
+        ctx.save();
+        if (pegStabilizer.enabled) {
+          const totalX = pegStabilizer.offsetX + pegStabilizer.manualX;
+          const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
+          const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
+
+          ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
+          ctx.rotate(totalRot);
+          ctx.translate(-canvas.width / 2, -canvas.height / 2);
+        }
+
         ctx.drawImage(tempCanvas, 0, 0);
+        ctx.restore();
       }
 
       // 3. Grid Overlay
@@ -286,7 +295,29 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      // 4. Lasso Preview
+      // 4. 理想タップ穴ガイドオーバーレイ (Peg Guide)
+      if (pegStabilizer.showGuide) {
+        ctx.strokeStyle = '#EF4444'; // 赤アウトライン
+        ctx.lineWidth = 2;
+        const cx = canvas.width / 2;
+        const cy = 50;
+
+        // 中央長円
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 14, 8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // 左右正円
+        ctx.beginPath();
+        ctx.arc(cx - 140, cy, 8, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(cx + 140, cy, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 5. Lasso Preview
       if (isLeft && lassoPoints.length > 1) {
         ctx.strokeStyle = '#2563EB';
         ctx.lineWidth = 2;
@@ -300,7 +331,7 @@ export const CellWindow: React.FC = () => {
         ctx.setLineDash([]);
       }
     },
-    [prevImage, nextImage, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints]
+    [prevImage, nextImage, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, pegStabilizer]
   );
 
   useEffect(() => {
