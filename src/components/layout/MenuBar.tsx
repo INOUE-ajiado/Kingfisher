@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { encodeTGA, decodeTGA } from '../../engine/tga';
 import { Moon, Sun } from 'lucide-react';
+import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -309,17 +310,18 @@ export const MenuBar: React.FC = () => {
 
   return (
     <div ref={menuRef} className="h-8 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-3 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
-      {/* アイコン ＆ KINGFISHER の肩の位置に統一カラーでぴったり揃えた++上付きタイトル */}
-      <div className="mr-5 flex items-center gap-1.5 cursor-pointer select-none">
+      {/* アイコン ＆ KINGFISHER Speed & Dynamic タイトルロゴ */}
+      <div
+        onClick={() => setActiveModal('about')}
+        title="Kingfisher について (About)"
+        className="mr-5 flex items-center gap-1.5 cursor-pointer select-none hover:opacity-90 transition-opacity"
+      >
         <img
           src="/icon.jpg"
           alt="Kingfisher Icon"
           className="w-5 h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700 flex-shrink-0"
         />
-        <div className="font-extrabold text-blue-600 dark:text-blue-400 tracking-wider flex items-center text-sm leading-none">
-          <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 mr-[1px] -translate-y-1 select-none font-mono">++</span>
-          <span className="font-black text-blue-600 dark:text-blue-400">KINGFISHER..</span>
-        </div>
+        <LogoTitle size="sm" />
       </div>
 
       {/* メニューアイテム */}

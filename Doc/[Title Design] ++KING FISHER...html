@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><script>(function(){function s(l,a){try{const sa=a.map(x=>{if(typeof x==='undefined')return'undefined';if(x===null)return'null';if(typeof x==='object'){try{return JSON.stringify(x,null,2)}catch(e){return x.toString()}}return x.toString()});window.parent.postMessage({source:'iframe-console',level:l,messages:sa},'*')}catch(e){}}const o={l:console.log,w:console.warn,e:console.error,i:console.info};console.log=function(...a){s('log',a);o.l.apply(console,a)};console.warn=function(...a){s('warn',a);o.w.apply(console,a)};console.error=function(...a){s('error',a);o.e.apply(console,a)};console.info=function(...a){s('info',a);o.i.apply(console,a)};window.onerror=function(m){s('error',[m])}})()</script>
+    <script>
+      (function() {
+        document.addEventListener('click', function(e) {
+          const a = e.target.closest('a');
+          if (a && a.getAttribute('href') && !a.getAttribute('href').startsWith('http') && !a.getAttribute('href').startsWith('#')) {
+            e.preventDefault();
+            window.parent.postMessage({
+              source: 'iframe-navigation',
+              url: a.getAttribute('href')
+            }, '*');
+          }
+        });
+      })();
+    </script>
+  
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingfisher Logo Text - Speed & Dynamic</title>
+<!-- 美しいタイポグラフィのためにGoogle Fonts（Montserrat）を読み込み -->
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,800;0,900;1,900&display=swap" rel="stylesheet">
+<style>
+  /* 画面全体のレイアウト */
+  body {
+    font-family: sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    background-color: #e5e7eb;
+  }
+
+  /* --- ベーススタイル --- */
+  .logo-container {
+    font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+    text-align: center;
+    background: #ffffff;
+    padding: 32px 32px;
+    border-radius: 16px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    min-width: 280px;
+  }
+
+  .main-title {
+    font-size: 32px;
+    line-height: 1; 
+    display: flex;
+    align-items: baseline; /* テキストの底辺を揃える */
+    justify-content: center;
+  }
+
+  /* 「++」の厳密な位置調整と太字化 */
+  .main-title sup {
+    font-size: 0.65em;
+    line-height: 1;
+    display: inline-block;
+    vertical-align: text-top; 
+    position: relative;
+    top: 0.18em; /* Kの角とツライチになるように押し込む */
+    font-weight: 900;
+    margin-right: 2px;
+  }
+
+  .sub-title {
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 11px;
+    color: #6b7280;
+    letter-spacing: 0.05em;
+    margin-top: 8px;
+  }
+
+  /* =========================================
+     スピード・ダイナミック 専用スタイル
+  ========================================= */
+  .theme-speed .main-title {
+    font-weight: 900;
+    font-style: italic;
+    background: linear-gradient(90deg, #2563EB, #009E9F);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding-right: 4px;
+  }
+  
+  /* 黒い縁取りを防ぎ、オレンジ色で太く上書き */
+  .theme-speed .accent-color sup {
+    -webkit-text-fill-color: #F97316; 
+    -webkit-text-stroke: 2px #F97316;
+  }
+</style>
+<style data-filename="style.css">/* style.css */
+</style></head>
+<body>
+
+  <div class="logo-container theme-speed">
+    <div class="main-title">
+      <span class="accent-color"><sup>++</sup></span><span class="text-part1">KING</span><span class="text-part2">FISHER</span><span class="dots">..</span>
+    </div>
+    <div class="sub-title">Ver 2.0 (Studio Ultimate)</div>
+  </div>
+
+<script data-filename="main.js">(function(){try{/* main.js */
+}catch(e){console.error(e)}})()</script></body>
+</html>

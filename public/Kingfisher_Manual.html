@@ -4,7 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kingfisher - アプリケーション総合仕様書・取扱説明書</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,700;0,800;0,900;1,900&display=swap" rel="stylesheet">
   <style>
+    /* ++KINGFISHER.. ロゴタイトル Speed & Dynamic */
+    .logo-title {
+      font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+      font-weight: 900;
+      font-style: italic;
+      background: linear-gradient(90deg, #2563EB, #009E9F);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: inline-flex;
+      align-items: baseline;
+      line-height: 1;
+    }
+    .logo-title sup {
+      font-size: 0.65em;
+      line-height: 1;
+      display: inline-block;
+      vertical-align: text-top;
+      position: relative;
+      top: 0.18em;
+      font-weight: 900;
+      margin-right: 2px;
+      -webkit-text-fill-color: #F97316;
+      -webkit-text-stroke: 2px #F97316;
+    }
     :root {
       --bg-color: #0F172A;
       --panel-bg: #1E293B;
@@ -222,7 +249,9 @@
 
   <!-- サイドバー目次 -->
   <sidebar>
-    <h2>Kingfisher++ 仕様書</h2>
+    <h2 style="margin-bottom:15px; border:none; padding:0;">
+      <span class="logo-title" style="font-size: 1.3rem;"><sup>++</sup>KINGFISHER..</span>
+    </h2>
     <ul>
       <li><a href="#overview">1. アプリケーション概要</a></li>
       <li><a href="#ui-layout">2. 画面レイアウト構成</a></li>
@@ -239,8 +268,11 @@
   <!-- メインコンテンツ -->
   <main>
     <header>
-      <h1>Kingfisher++ Studio 仕様書 ＆ 操作マニュアル</h1>
-      <p>WebGPU駆動 アニメーション仕上げ・彩色・検図・デジタルペイント総合スタジオ Ver 2.0</p>
+      <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:6px;">
+        <span class="logo-title" style="font-size: 2.5rem;"><sup>++</sup>KINGFISHER..</span>
+        <span style="font-family:'Courier New', Consolas, monospace; font-size:13px; color:#94A3B8;">Ver 2.0 (Studio Ultimate)</span>
+      </div>
+      <p>WebGPU駆動 アニメーション仕上げ・彩色・検図・デジタルペイント総合スタジオ</p>
     </header>
 
     <!-- 1. アプリケーション概要 -->
