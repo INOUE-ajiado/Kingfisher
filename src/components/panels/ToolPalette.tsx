@@ -154,7 +154,7 @@ export const ToolPalette: React.FC = () => {
       </div>
 
       {/* クラシック 前景色 / 背景色 重ね合わせカラーピッカー */}
-      <div className="p-1 border-t border-slate-200 dark:border-slate-800 flex flex-col items-center mt-auto">
+      <div className="p-1 border-t border-slate-200 dark:border-slate-800 flex flex-col items-center">
         <div className="relative w-7 h-7 cursor-pointer" title="クリックで前景色と背景色を入れ替え">
           {/* 背景色 (BG) */}
           <div
