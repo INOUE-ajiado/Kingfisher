@@ -412,7 +412,19 @@ export const CellWindow: React.FC = () => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      if (!targetImg) return;
+      if (!targetImg) {
+        canvas.width = 640;
+        canvas.height = 480;
+        const pattern = createCheckerPattern(ctx, 10);
+        if (pattern) {
+          ctx.fillStyle = pattern;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        return;
+      }
 
       canvas.width = targetImg.width;
       canvas.height = targetImg.height;
@@ -937,40 +949,42 @@ export const CellWindow: React.FC = () => {
             )}
 
             <div
-              className="flex-1 bg-slate-200 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
+              className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
               onWheel={(e) => handleWheel(e, true)}
             >
-              {currentImage ? (
-                <div
-                  style={{
-                    transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale})`,
-                    transformOrigin: 'center center',
-                    transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-                  }}
-                  className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
-                >
-                  <canvas
-                    ref={leftCanvasRef}
-                    onMouseDown={(e) => handleMouseDown(e, true)}
-                    onMouseMove={(e) => handleMouseMove(e, true)}
-                    onMouseUp={() => handleMouseUp(true)}
-                    className="block"
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center p-6 text-center bg-white/90 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-xl backdrop-blur max-w-sm m-4 select-none animate-in fade-in duration-150">
-                  <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-3 text-blue-600 dark:text-blue-400">
-                    <FolderOpen className="w-6 h-6" />
+              <div
+                style={{
+                  transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale})`,
+                  transformOrigin: 'center center',
+                  transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                }}
+                className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
+              >
+                <canvas
+                  ref={leftCanvasRef}
+                  onMouseDown={(e) => handleMouseDown(e, true)}
+                  onMouseMove={(e) => handleMouseMove(e, true)}
+                  onMouseUp={() => handleMouseUp(true)}
+                  className="block"
+                />
+
+                {!currentImage && (
+                  <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
+                    <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm pointer-events-auto select-none animate-in fade-in duration-150">
+                      <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-2.5 text-blue-600 dark:text-blue-400">
+                        <FolderOpen className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO CELL DATA</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2.5 leading-relaxed">
+                        エクスプローラーやFinderから TGAファイルが入ったフォルダを開いてセル画像を選択してください
+                      </p>
+                      <span className="text-[9px] text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                        ファイル &gt; フォルダを開く (Ctrl+Shift+O) または 右パネル Open A
+                      </span>
+                    </div>
                   </div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">NO CELL DATA</h3>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                    エクスプローラーやFinderから TGAファイルが入ったフォルダを開いてセル画像を選択してください
-                  </p>
-                  <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                    ファイル &gt; フォルダを開く (Ctrl+Shift+O) または 右パネル Open A
-                  </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
@@ -1002,40 +1016,42 @@ export const CellWindow: React.FC = () => {
               )}
 
               <div
-                className="flex-1 bg-slate-200 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
+                className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
                 onWheel={(e) => handleWheel(e, false)}
               >
-                {splitImage ? (
-                  <div
-                    style={{
-                      transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale})`,
-                      transformOrigin: 'center center',
-                      transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-                    }}
-                    className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
-                  >
-                    <canvas
-                      ref={rightCanvasRef}
-                      onMouseDown={(e) => handleMouseDown(e, false)}
-                      onMouseMove={(e) => handleMouseMove(e, false)}
-                      onMouseUp={() => handleMouseUp(false)}
-                      className="block"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-6 text-center bg-white/90 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-xl backdrop-blur max-w-sm m-4 select-none animate-in fade-in duration-150">
-                    <div className="w-12 h-12 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-3 text-emerald-600 dark:text-emerald-400">
-                      <FolderOpen className="w-6 h-6" />
+                <div
+                  style={{
+                    transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale})`,
+                    transformOrigin: 'center center',
+                    transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                  }}
+                  className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
+                >
+                  <canvas
+                    ref={rightCanvasRef}
+                    onMouseDown={(e) => handleMouseDown(e, false)}
+                    onMouseMove={(e) => handleMouseMove(e, false)}
+                    onMouseUp={() => handleMouseUp(false)}
+                    className="block"
+                  />
+
+                  {!splitImage && (
+                    <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
+                      <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm pointer-events-auto select-none animate-in fade-in duration-150">
+                        <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-2.5 text-emerald-600 dark:text-emerald-400">
+                          <FolderOpen className="w-5 h-5" />
+                        </div>
+                        <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO RETAKE DATA</h3>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2.5 leading-relaxed">
+                          リテイク用（Dir B）フォルダを開いて比較セル画像を表示してください
+                        </p>
+                        <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                          右パネル Open B からリテイクフォルダを選択
+                        </span>
+                      </div>
                     </div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">NO RETAKE DATA</h3>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
-                      リテイク用（Dir B）フォルダを開いて比較セル画像を表示してください
-                    </p>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                      右パネル Open B からリテイクフォルダを選択
-                    </span>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )}
