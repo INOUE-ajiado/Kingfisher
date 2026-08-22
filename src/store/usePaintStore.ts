@@ -66,6 +66,36 @@ export interface ReferenceCanvasState {
   previousTool: ToolType | null;
 }
 
+export interface LightTableSubItem {
+  id: string;
+  name: string;
+  file?: File;
+  image?: TGAImage;
+  offsetX: number;
+  offsetY: number;
+  rotation: number;
+  opacity: number;
+  visible: boolean;
+}
+
+export interface LightTableState {
+  enabled: boolean;
+  pastFrames: number;
+  futureFrames: number;
+  startOpacity: number;
+  opacityStep: number;
+  displayMode: 'color' | 'half-color' | 'monochrome';
+  pastColor: { r: number; g: number; b: number };
+  futureColor: { r: number; g: number; b: number };
+  items: LightTableSubItem[];
+
+  // 互換用プロパティ
+  prevFrames?: number;
+  nextFrames?: number;
+  opacity?: number;
+  colorMode?: 'default' | 'tinted';
+}
+
 export interface PaintStore {
   // --- テーマ ---
   isDarkMode: boolean;
@@ -246,18 +276,19 @@ export interface PaintStore {
   zoomIn: () => void;
   zoomOut: () => void;
   resetCanvasTransform: () => void;
-
-  // --- ライトテーブル ---
-  lightTable: {
-    enabled: boolean;
-    prevFrames: number;
-    nextFrames: number;
-    opacity: number;
-    colorMode: 'default' | 'tinted';
-  };
+  // --- ライトテーブル ＆ オニオンスキン ---
+  lightTable: LightTableState;
   setLightTableEnabled: (enabled: boolean) => void;
   setLightTableOpacity: (opacity: number) => void;
   setLightTableColorMode: (mode: 'default' | 'tinted') => void;
+  setOnionSkinFrames: (past: number, future: number) => void;
+  setOnionSkinOpacityConfig: (startOpacity: number, opacityStep: number) => void;
+  setOnionSkinDisplayMode: (mode: 'color' | 'half-color' | 'monochrome') => void;
+  setOnionSkinColors: (pastColor: { r: number; g: number; b: number }, futureColor: { r: number; g: number; b: number }) => void;
+  addLightTableSubItem: (name: string, file?: File, image?: TGAImage) => void;
+  removeLightTableSubItem: (id: string) => void;
+  updateLightTableSubItemTransform: (id: string, transform: { offsetX?: number; offsetY?: number; rotation?: number; opacity?: number }) => void;
+  toggleLightTableSubItemVisible: (id: string) => void;
 
   renderTrigger: number;
   triggerRender: () => void;
@@ -930,6 +961,14 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
 
   lightTable: {
     enabled: true,
+    pastFrames: 1,
+    futureFrames: 1,
+    startOpacity: 30,
+    opacityStep: 10,
+    displayMode: 'monochrome',
+    pastColor: { r: 239, g: 68, b: 68 },
+    futureColor: { r: 59, g: 130, b: 246 },
+    items: [],
     prevFrames: 1,
     nextFrames: 1,
     opacity: 30,
@@ -941,11 +980,91 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
     })),
   setLightTableOpacity: (opacity) =>
     set((state) => ({
-      lightTable: { ...state.lightTable, opacity },
+      lightTable: { ...state.lightTable, opacity, startOpacity: opacity },
     })),
   setLightTableColorMode: (mode) =>
     set((state) => ({
-      lightTable: { ...state.lightTable, colorMode: mode },
+      lightTable: {
+        ...state.lightTable,
+        colorMode: mode,
+        displayMode: mode === 'tinted' ? 'monochrome' : 'color',
+      },
+    })),
+  setOnionSkinFrames: (past, future) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        pastFrames: Math.max(0, Math.min(5, past)),
+        futureFrames: Math.max(0, Math.min(5, future)),
+        prevFrames: past,
+        nextFrames: future,
+      },
+    })),
+  setOnionSkinOpacityConfig: (startOpacity, opacityStep) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        startOpacity: Math.max(0, Math.min(100, startOpacity)),
+        opacityStep: Math.max(0, Math.min(50, opacityStep)),
+        opacity: startOpacity,
+      },
+    })),
+  setOnionSkinDisplayMode: (mode) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        displayMode: mode,
+        colorMode: mode === 'color' ? 'default' : 'tinted',
+      },
+    })),
+  setOnionSkinColors: (pastColor, futureColor) =>
+    set((state) => ({
+      lightTable: { ...state.lightTable, pastColor, futureColor },
+    })),
+  addLightTableSubItem: (name, file, image) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        items: [
+          ...state.lightTable.items,
+          {
+            id: Date.now().toString(),
+            name,
+            file,
+            image,
+            offsetX: 0,
+            offsetY: 0,
+            rotation: 0,
+            opacity: 40,
+            visible: true,
+          },
+        ],
+      },
+    })),
+  removeLightTableSubItem: (id) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        items: state.lightTable.items.filter((item) => item.id !== id),
+      },
+    })),
+  updateLightTableSubItemTransform: (id, transform) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        items: state.lightTable.items.map((item) =>
+          item.id === id ? { ...item, ...transform } : item
+        ),
+      },
+    })),
+  toggleLightTableSubItemVisible: (id) =>
+    set((state) => ({
+      lightTable: {
+        ...state.lightTable,
+        items: state.lightTable.items.map((item) =>
+          item.id === id ? { ...item, visible: !item.visible } : item
+        ),
+      },
     })),
 
   renderTrigger: 0,

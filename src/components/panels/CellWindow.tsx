@@ -372,59 +372,132 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      // 1. Draw Light Table (前フレーム: 赤 Tint / 後フレーム: 青 Tint)
+      // 1. Draw Onion Skin Layers (オニオンスキン: 前後フレーム透過 & カラーコーディング)
       if (isLeft && lightTable.enabled && !isPlaying) {
-        const alphaVal = lightTable.opacity / 100;
-        if (prevImage) {
-          const prevImgData = ctx.createImageData(prevImage.width, prevImage.height);
-          for (let i = 0; i < prevImage.data.length; i += 4) {
-            const a = prevImage.data[i + 3];
+        // A. 過去フレーム描画 (Past Frames: デフォルト 赤)
+        const pastCount = lightTable.pastFrames ?? 1;
+        for (let step = pastCount; step >= 1; step--) {
+          const frameImg = step === 1 ? prevImage : null; // 第一段階: prevImage
+          if (!frameImg) continue;
+
+          const startOp = (lightTable.startOpacity ?? 30) / 100;
+          const stepDecay = ((lightTable.opacityStep ?? 10) * (step - 1)) / 100;
+          const frameAlpha = Math.max(0.05, startOp - stepDecay);
+
+          const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
+          const pColor = lightTable.pastColor || { r: 239, g: 68, b: 68 };
+          const mode = lightTable.displayMode || (lightTable.colorMode === 'tinted' ? 'monochrome' : 'color');
+
+          for (let i = 0; i < frameImg.data.length; i += 4) {
+            const a = frameImg.data[i + 3];
             if (a > 0) {
-              if (lightTable.colorMode === 'tinted') {
-                prevImgData.data[i] = 255;
-                prevImgData.data[i + 1] = 50;
-                prevImgData.data[i + 2] = 50;
-                prevImgData.data[i + 3] = a;
+              if (mode === 'monochrome') {
+                const lum = (0.299 * frameImg.data[i] + 0.587 * frameImg.data[i + 1] + 0.114 * frameImg.data[i + 2]) / 255;
+                frameImgData.data[i] = Math.round(lum * pColor.r);
+                frameImgData.data[i + 1] = Math.round(lum * pColor.g);
+                frameImgData.data[i + 2] = Math.round(lum * pColor.b);
+                frameImgData.data[i + 3] = a;
+              } else if (mode === 'half-color') {
+                frameImgData.data[i] = Math.round((frameImg.data[i] + pColor.r) / 2);
+                frameImgData.data[i + 1] = Math.round((frameImg.data[i + 1] + pColor.g) / 2);
+                frameImgData.data[i + 2] = Math.round((frameImg.data[i + 2] + pColor.b) / 2);
+                frameImgData.data[i + 3] = a;
               } else {
-                prevImgData.data[i] = prevImage.data[i];
-                prevImgData.data[i + 1] = prevImage.data[i + 1];
-                prevImgData.data[i + 2] = prevImage.data[i + 2];
-                prevImgData.data[i + 3] = a;
+                frameImgData.data[i] = frameImg.data[i];
+                frameImgData.data[i + 1] = frameImg.data[i + 1];
+                frameImgData.data[i + 2] = frameImg.data[i + 2];
+                frameImgData.data[i + 3] = a;
               }
             }
           }
+
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = prevImage.width;
-          tempCanvas.height = prevImage.height;
+          tempCanvas.width = frameImg.width;
+          tempCanvas.height = frameImg.height;
           const tempCtx = tempCanvas.getContext('2d');
           if (tempCtx) {
-            tempCtx.putImageData(prevImgData, 0, 0);
-            ctx.globalAlpha = alphaVal;
+            tempCtx.putImageData(frameImgData, 0, 0);
+            ctx.globalAlpha = frameAlpha;
             ctx.drawImage(tempCanvas, 0, 0);
             ctx.globalAlpha = 1.0;
           }
         }
 
-        if (nextImage && lightTable.colorMode === 'tinted') {
-          const nextImgData = ctx.createImageData(nextImage.width, nextImage.height);
-          for (let i = 0; i < nextImage.data.length; i += 4) {
-            const a = nextImage.data[i + 3];
+        // B. 未来フレーム描画 (Future Frames: デフォルト 青)
+        const futureCount = lightTable.futureFrames ?? 1;
+        for (let step = 1; step <= futureCount; step++) {
+          const frameImg = step === 1 ? nextImage : null;
+          if (!frameImg) continue;
+
+          const startOp = (lightTable.startOpacity ?? 30) / 100;
+          const stepDecay = ((lightTable.opacityStep ?? 10) * (step - 1)) / 100;
+          const frameAlpha = Math.max(0.05, startOp - stepDecay);
+
+          const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
+          const fColor = lightTable.futureColor || { r: 59, g: 130, b: 246 };
+          const mode = lightTable.displayMode || (lightTable.colorMode === 'tinted' ? 'monochrome' : 'color');
+
+          for (let i = 0; i < frameImg.data.length; i += 4) {
+            const a = frameImg.data[i + 3];
             if (a > 0) {
-              nextImgData.data[i] = 50;
-              nextImgData.data[i + 1] = 100;
-              nextImgData.data[i + 2] = 255;
-              nextImgData.data[i + 3] = a;
+              if (mode === 'monochrome') {
+                const lum = (0.299 * frameImg.data[i] + 0.587 * frameImg.data[i + 1] + 0.114 * frameImg.data[i + 2]) / 255;
+                frameImgData.data[i] = Math.round(lum * fColor.r);
+                frameImgData.data[i + 1] = Math.round(lum * fColor.g);
+                frameImgData.data[i + 2] = Math.round(lum * fColor.b);
+                frameImgData.data[i + 3] = a;
+              } else if (mode === 'half-color') {
+                frameImgData.data[i] = Math.round((frameImg.data[i] + fColor.r) / 2);
+                frameImgData.data[i + 1] = Math.round((frameImg.data[i + 1] + fColor.g) / 2);
+                frameImgData.data[i + 2] = Math.round((frameImg.data[i + 2] + fColor.b) / 2);
+                frameImgData.data[i + 3] = a;
+              } else {
+                frameImgData.data[i] = frameImg.data[i];
+                frameImgData.data[i + 1] = frameImg.data[i + 1];
+                frameImgData.data[i + 2] = frameImg.data[i + 2];
+                frameImgData.data[i + 3] = a;
+              }
             }
           }
+
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = nextImage.width;
-          tempCanvas.height = nextImage.height;
+          tempCanvas.width = frameImg.width;
+          tempCanvas.height = frameImg.height;
           const tempCtx = tempCanvas.getContext('2d');
           if (tempCtx) {
-            tempCtx.putImageData(nextImgData, 0, 0);
-            ctx.globalAlpha = alphaVal * 0.7;
+            tempCtx.putImageData(frameImgData, 0, 0);
+            ctx.globalAlpha = frameAlpha;
             ctx.drawImage(tempCanvas, 0, 0);
             ctx.globalAlpha = 1.0;
+          }
+        }
+      }
+
+      // 1.5 Draw Individual Light Table SubLayers (登録された個別の参照TGA: 移動・回転アフィン変換)
+      if (isLeft && lightTable.items && lightTable.items.length > 0) {
+        for (const subItem of lightTable.items) {
+          if (!subItem.visible || !subItem.image) continue;
+
+          const subImg = subItem.image;
+          const subCanvas = document.createElement('canvas');
+          subCanvas.width = subImg.width;
+          subCanvas.height = subImg.height;
+          const subCtx = subCanvas.getContext('2d');
+
+          if (subCtx) {
+            const imgData = subCtx.createImageData(subImg.width, subImg.height);
+            imgData.data.set(subImg.data);
+            subCtx.putImageData(imgData, 0, 0);
+
+            ctx.save();
+            // サブレイヤー位置オフセット & 回転中心移動
+            ctx.translate(canvas.width / 2 + subItem.offsetX, canvas.height / 2 + subItem.offsetY);
+            ctx.rotate((subItem.rotation * Math.PI) / 180);
+            ctx.translate(-subImg.width / 2, -subImg.height / 2);
+
+            ctx.globalAlpha = subItem.opacity / 100;
+            ctx.drawImage(subCanvas, 0, 0);
+            ctx.restore();
           }
         }
       }
