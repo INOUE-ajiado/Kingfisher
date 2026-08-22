@@ -3,6 +3,7 @@ import { usePaintStore } from '../../store/usePaintStore';
 import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
 import { decodeTGA } from '../../engine/tga';
 import { Columns2, Link, Link2Off, AlertTriangle, X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
+import { useFastDraggable } from '../../hooks/useFastDraggable';
 
 function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
   const patternCanvas = document.createElement('canvas');
@@ -34,40 +35,17 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  // フローティング移動用ステート
-  const [pos, setPos] = useState({ x: 120, y: 80 });
-  const [isWindowDragging, setIsWindowDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
+  const { targetRef, dragHandlers } = useFastDraggable({
+    initialX: 120,
+    initialY: 80,
+    enabled: isFloating,
+  });
 
   // Drag & Drop ハイライトステート
   const [isDragOver, setIsDragOver] = useState(false);
 
   const refImage = referenceCanvas.image;
-
-  // フローティングウィンドウのドラッグ移動制御
-  const handleTitleMouseDown = (e: React.MouseEvent) => {
-    if (!isFloating) return;
-    setIsWindowDragging(true);
-    setDragOffset({ x: e.clientX - pos.x, y: e.clientY - pos.y });
-  };
-
-  useEffect(() => {
-    if (!isWindowDragging) return;
-    const handleMouseMove = (e: MouseEvent) => {
-      setPos({
-        x: Math.max(0, Math.min(window.innerWidth - 150, e.clientX - dragOffset.x)),
-        y: Math.max(0, Math.min(window.innerHeight - 80, e.clientY - dragOffset.y)),
-      });
-    };
-    const handleMouseUp = () => setIsWindowDragging(false);
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isWindowDragging, dragOffset]);
 
   // Drag & Drop 画像ファイルドロップ受領制御
   const handleDragOver = (e: React.DragEvent) => {
@@ -170,7 +148,8 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
 
   return (
     <div
-      style={isFloating ? { position: 'fixed', left: `${pos.x}px`, top: `${pos.y}px`, zIndex: 50 } : undefined}
+      ref={targetRef}
+      style={isFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -189,11 +168,11 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
         </div>
       )}
 
-      {/* ワイヤーフレーム準拠: 緑のグラデーションタイトルバー (フローティング時ドラッグ可) */}
+      {/* ⚠️ 最適化仕様書準拠: Pointer Events API & PointerCapture による超高速ドラッグ対応タイトルバー */}
       <div
-        onMouseDown={handleTitleMouseDown}
-        className={`h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none ${
-          isFloating ? (isWindowDragging ? 'cursor-grabbing' : 'cursor-grab') : ''
+        {...(isFloating ? dragHandlers : {})}
+        className={`h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none ${
+          isFloating ? 'cursor-grab active:cursor-grabbing' : ''
         }`}
       >
         <div className="flex items-center gap-1.5 truncate">
