@@ -25,7 +25,7 @@ export const LayerPanel: React.FC = () => {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none p-2 min-h-[140px]">
+    <div className="bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col select-none p-1.5 min-h-[120px]">
       <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-700 mb-1 flex items-center justify-between">
         <div
           className="flex items-center gap-1.5 cursor-help"

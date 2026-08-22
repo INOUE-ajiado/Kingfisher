@@ -237,9 +237,9 @@ export const FileBrowser: React.FC = () => {
   };
 
   return (
-    <div className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none min-h-[220px]">
+    <div className="flex-1 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col select-none min-h-[200px]">
       {/* 1. 統合ファイルブラウザ ヘッダー */}
-      <div className="h-7 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300 rounded-t">
+      <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
         <div className="flex items-center gap-1.5 truncate">
           <FolderOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
           <span className="truncate">統合ファイルブラウザ</span>

@@ -89,13 +89,13 @@ export const App: React.FC = () => {
       {/* 1. Top Menu Bar */}
       <MenuBar />
 
-      {/* 2. Main Workspace Layout */}
-      <div className="flex-1 flex p-1.5 gap-1.5 overflow-hidden">
+      {/* 2. Main Workspace Layout (Zero-Margin Edge-to-Edge) */}
+      <div className="flex-1 flex p-0 gap-0 overflow-hidden">
         {/* Left: Tool Palette */}
         {panelVisibility.toolPalette && <ToolPalette />}
 
         {/* Center Main Column */}
-        <div className="flex-1 flex flex-col gap-1.5 overflow-hidden">
+        <div className="flex-1 flex flex-col gap-0 overflow-hidden">
           {/* Top: Tool Options Bar */}
           {panelVisibility.toolOptions && <ToolOptions />}
 
@@ -107,7 +107,7 @@ export const App: React.FC = () => {
         </div>
 
         {/* Right Docking Panels Column */}
-        <div className="w-80 flex flex-col gap-1.5 overflow-hidden">
+        <div className="w-80 flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800">
           {/* File Browser */}
           {panelVisibility.fileBrowser && <FileBrowser />}
 

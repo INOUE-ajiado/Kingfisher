@@ -116,7 +116,7 @@ export const ColorChart: React.FC = () => {
       className={`${
         isColorChartFloating
           ? 'bg-white dark:bg-slate-900 border-2 border-blue-500 shadow-2xl rounded-lg p-2 animate-in fade-in duration-100'
-          : 'flex-[1.5] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm p-2 min-h-[220px]'
+          : 'flex-[1.5] bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col p-1.5 min-h-[200px]'
       } select-none`}
     >
       <div

@@ -45,8 +45,8 @@ export const ToolPalette: React.FC = () => {
   ];
 
   return (
-    <div className="w-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none">
-      <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-2 text-[10px] font-semibold text-slate-700 dark:text-slate-300 rounded-t">
+    <div className="w-16 bg-white dark:bg-slate-900 border-r border-slate-300 dark:border-slate-800 flex flex-col select-none">
+      <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-2 text-[10px] font-semibold text-slate-700 dark:text-slate-300">
         <span>ツール</span>
         <button
           onClick={() => setActiveModal('replaceColor')}

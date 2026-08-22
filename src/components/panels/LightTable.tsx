@@ -49,7 +49,7 @@ export const LightTable: React.FC = () => {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col px-3 py-1 text-xs shadow-sm select-none gap-1.5 transition-all">
+    <div className="bg-white dark:bg-slate-900 border-t border-slate-300 dark:border-slate-800 flex flex-col px-2 py-1 text-xs select-none gap-1">
       {/* メインコントロールバー */}
       <div className="h-9 flex items-center justify-between gap-3">
         {/* オニオンスキン基本トグル ＆ フレーム表示 */}

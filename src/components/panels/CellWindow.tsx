@@ -980,7 +980,7 @@ export const CellWindow: React.FC = () => {
   const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
 
   return (
-    <div ref={containerRef} className="flex-1 bg-slate-300 dark:bg-slate-950 rounded border border-slate-300 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-inner select-none transition-colors duration-150">
+    <div ref={containerRef} className="flex-1 bg-slate-300 dark:bg-slate-950 flex flex-col relative overflow-hidden select-none">
       {/* 画面分割・連動・参照コントロール ヘッダーバー */}
       <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs z-10">
         <div className="flex items-center gap-2">

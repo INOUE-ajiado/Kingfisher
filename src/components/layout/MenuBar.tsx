@@ -348,7 +348,7 @@ export const MenuBar: React.FC = () => {
   ];
 
   return (
-    <div ref={menuRef} className="h-8 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-3 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
+    <div ref={menuRef} className="h-7 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
       {/* アイコン ＆ KINGFISHER Speed & Dynamic タイトルロゴ */}
       <div
         onClick={() => setActiveModal('about')}
