@@ -228,6 +228,76 @@ export const CellWindow: React.FC = () => {
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
 
   const [splitImage, setSplitImage] = useState<any>(null);
+  const [onionFramesMap, setOnionFramesMap] = useState<Map<number, any>>(new Map());
+
+  // オニオンスキン用マルチフレーム(前後最大5枚)の読み込み
+  useEffect(() => {
+    if (!lightTable.enabled || isPlaying) return;
+    let isSubscribed = true;
+
+    async function loadOnionFrames() {
+      const pastCount = lightTable.pastFrames ?? 1;
+      const futureCount = lightTable.futureFrames ?? 1;
+      const loadedMap = new Map<number, any>();
+
+      const fetchSingleFrame = async (targetIndex: number) => {
+        if (targetIndex < 0 || targetIndex >= unifiedFileList.length) return null;
+        const fileName = unifiedFileList[targetIndex];
+        if (!fileName) return null;
+
+        if (fileMapA.has(fileName)) {
+          try {
+            const file = fileMapA.get(fileName)!;
+            const buffer = await file.arrayBuffer();
+            return decodeTGA(buffer);
+          } catch (e) {
+            console.error('Failed to decode onion frame from fileMapA:', e);
+          }
+        }
+
+        if (folderHandleA && fileListA.includes(fileName)) {
+          try {
+            const fileHandle = await folderHandleA.getFileHandle(fileName);
+            const file = await fileHandle.getFile();
+            const buffer = await file.arrayBuffer();
+            return decodeTGA(buffer);
+          } catch (e) {
+            console.error('Failed to read onion frame from folderHandleA:', e);
+          }
+        }
+        return null;
+      };
+
+      // 過去フレーム (offset = -1, -2, ...)
+      for (let offset = -1; offset >= -pastCount; offset--) {
+        const frame = await fetchSingleFrame(currentFileIndex + offset);
+        if (frame) loadedMap.set(offset, frame);
+      }
+
+      // 未来フレーム (offset = 1, 2, ...)
+      for (let offset = 1; offset <= futureCount; offset++) {
+        const frame = await fetchSingleFrame(currentFileIndex + offset);
+        if (frame) loadedMap.set(offset, frame);
+      }
+
+      if (isSubscribed) {
+        setOnionFramesMap(loadedMap);
+      }
+    }
+
+    loadOnionFrames();
+    return () => { isSubscribed = false; };
+  }, [
+    currentFileIndex,
+    lightTable.enabled,
+    lightTable.pastFrames,
+    lightTable.futureFrames,
+    unifiedFileList,
+    fileListA,
+    fileMapA,
+    folderHandleA,
+    isPlaying,
+  ]);
 
   // メイン画像の読み込み (Dir A / Unified)
   useEffect(() => {
@@ -377,7 +447,7 @@ export const CellWindow: React.FC = () => {
         // A. 過去フレーム描画 (Past Frames: デフォルト 赤)
         const pastCount = lightTable.pastFrames ?? 1;
         for (let step = pastCount; step >= 1; step--) {
-          const frameImg = step === 1 ? prevImage : null; // 第一段階: prevImage
+          const frameImg = onionFramesMap.get(-step) || (step === 1 ? prevImage : null);
           if (!frameImg) continue;
 
           const startOp = (lightTable.startOpacity ?? 30) / 100;
@@ -426,7 +496,7 @@ export const CellWindow: React.FC = () => {
         // B. 未来フレーム描画 (Future Frames: デフォルト 青)
         const futureCount = lightTable.futureFrames ?? 1;
         for (let step = 1; step <= futureCount; step++) {
-          const frameImg = step === 1 ? nextImage : null;
+          const frameImg = onionFramesMap.get(step) || (step === 1 ? nextImage : null);
           if (!frameImg) continue;
 
           const startOp = (lightTable.startOpacity ?? 30) / 100;
