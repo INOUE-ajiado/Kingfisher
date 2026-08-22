@@ -1,0 +1,222 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Kingfisher - Color Specification Workflow UI</title>
+<style>
+    /* Classic Application Style */
+    :root {
+        --win-bg: #D4D0C8;
+        --win-border-light: #FFFFFF;
+        --win-border-dark: #808080;
+        --win-border-darker: #404040;
+        --win-title-bg: #0A246A;
+        --win-title-text: #FFFFFF;
+        --win-text: #000000;
+        --desktop-bg: #808080;
+        --c-blue-vibrant: #2563EB;
+        --c-green-jade: #38B48B;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Tahoma', 'MS UI Gothic', sans-serif;
+        font-size: 11px;
+        background-color: var(--desktop-bg);
+        color: var(--win-text);
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Top Menu & Toolbar (Simplified) */
+    .menu-bar { background-color: var(--win-bg); height: 20px; display: flex; align-items: center; padding: 0 4px; border-bottom: 1px solid var(--win-border-dark); box-shadow: 0 1px 0 var(--win-border-light) inset; }
+    .menu-item { padding: 2px 6px; cursor: default; }
+    
+    .workspace {
+        flex: 1;
+        display: flex;
+        padding: 4px;
+        gap: 4px;
+        background-color: #555555; /* Dark background to make canvas pop */
+    }
+
+    /* MDI Window Base */
+    .mdi-window {
+        background-color: var(--win-bg);
+        border: 2px solid;
+        border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .win-titlebar {
+        background: linear-gradient(to right, #0A246A, #A6CAF0);
+        height: 18px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 2px;
+        margin: 2px;
+    }
+    
+    .win-titlebar.reference {
+        background: linear-gradient(to right, #005A31, #66A586); /* Green for reference */
+    }
+
+    .win-title { color: var(--win-title-text); font-weight: bold; padding-left: 2px; }
+    
+    .canvas-area {
+        flex: 1;
+        background-color: #808080;
+        border: 2px solid;
+        border-color: var(--win-border-dark) var(--win-border-light) var(--win-border-light) var(--win-border-dark);
+        margin: 0 2px 2px 2px;
+        position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+    }
+
+    .tga-mock {
+        background-color: white;
+        box-shadow: 2px 2px 10px rgba(0,0,0,0.5);
+        position: relative;
+    }
+
+    /* Specific Window Styles */
+    .main-win { flex: 6; }
+    .ref-win { flex: 4; }
+
+    /* Mock Graphics */
+    .char-lineart {
+        width: 100%; height: 100%;
+        border: 1px solid black;
+        border-radius: 40% 40% 10% 10%;
+        position: absolute;
+    }
+    
+    .char-colored {
+        width: 100%; height: 100%;
+        border: 1px solid black;
+        border-radius: 40% 40% 10% 10%;
+        position: absolute;
+        background: linear-gradient(to bottom, #FFD700 40%, #FFE4B5 40%); /* Mock hair and skin */
+    }
+
+    /* Cursors and Action visualizers */
+    .cursor-bucket {
+        position: absolute;
+        font-size: 24px;
+        top: 30%; left: 40%;
+        text-shadow: 0 0 2px white;
+        z-index: 10;
+    }
+    
+    .cursor-eyedropper {
+        position: absolute;
+        font-size: 24px;
+        top: 25%; left: 50%;
+        text-shadow: 0 0 2px white;
+        z-index: 10;
+        animation: pulse 1s infinite alternate;
+    }
+
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        100% { transform: scale(1.2); }
+    }
+
+    .action-label {
+        position: absolute;
+        background-color: rgba(0,0,0,0.7);
+        color: #00FF00;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    /* Tools floating */
+    .tools-float {
+        position: absolute;
+        top: 40px; left: 10px;
+        width: 32px;
+        background-color: var(--win-bg);
+        border: 2px solid;
+        border-color: var(--win-border-light) var(--win-border-darker) var(--win-border-darker) var(--win-border-light);
+    }
+    .tool-btn { width: 28px; height: 28px; font-size: 14px; text-align: center; line-height: 28px; border: 1px solid transparent; cursor: pointer; }
+    .tool-btn.active { border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker); background-color: #E4E4E4; }
+    
+    /* Current Color Indicator */
+    .current-color {
+        position: absolute;
+        bottom: 10px; left: 10px;
+        width: 40px; height: 40px;
+        background-color: #FFD700; /* Hair color currently picked */
+        border: 2px solid;
+        border-color: var(--win-border-darker) var(--win-border-light) var(--win-border-light) var(--win-border-darker);
+    }
+
+</style>
+</head>
+<body>
+
+    <div class="menu-bar">
+        <div class="menu-item">ファイル(F)</div>
+        <div class="menu-item">編集(E)</div>
+        <div class="menu-item" style="color: blue;">ウィンドウ(W) ▼</div>
+        <div class="menu-item" style="margin-left: 20px; font-style: italic; color: #555;">[ 並べて表示 (垂直分割) 実行中 ]</div>
+    </div>
+
+    <div class="workspace">
+        
+        <!-- Main Window (Lineart / Target) -->
+        <div class="mdi-window main-win">
+            <div class="win-titlebar">
+                <div class="win-title">A_part_0001.tga (編集中)</div>
+            </div>
+            <div class="canvas-area">
+                <div class="tga-mock" style="width: 300px; height: 400px;">
+                    <div class="char-lineart"></div>
+                    <div class="cursor-bucket">🪣</div>
+                    <div class="action-label">クリックで塗りつぶし</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reference Window (Color Spec / Source) -->
+        <div class="mdi-window ref-win">
+            <div class="win-titlebar reference">
+                <div class="win-title">【参照】 Hero_ColorSpec.tga</div>
+            </div>
+            <div class="canvas-area">
+                <div class="tga-mock" style="width: 250px; height: 350px;">
+                    <div class="char-colored"></div>
+                    <div class="cursor-eyedropper">💉</div>
+                    <div class="action-label" style="color: #FFD700;">Alt+クリックで色を取得</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Floating UI -->
+    <div class="tools-float">
+        <div class="tool-btn">↖</div>
+        <div class="tool-btn active">🪣</div>
+        <div class="tool-btn">🖌</div>
+        <div class="tool-btn">💉</div>
+    </div>
+    
+    <div class="current-color" title="現在のアクティブカラー (取得済)"></div>
+
+</body>
+</html>

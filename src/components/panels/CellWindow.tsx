@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
-import { generateSampleTGA } from '../../engine/sampleGenerator';
+import { generateSampleTGA, generateSampleColorSpecTGA } from '../../engine/sampleGenerator';
 import { decodeTGA } from '../../engine/tga';
-import { Columns2, Link, Link2Off, AlertTriangle } from 'lucide-react';
+import { Columns2, Link, Link2Off, AlertTriangle, X, Maximize2, Minimize2, Pipette } from 'lucide-react';
 
 function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
   const patternCanvas = document.createElement('canvas');
@@ -20,6 +20,147 @@ function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): 
 
   return ctx.createPattern(patternCanvas, 'repeat');
 }
+
+const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = false }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const {
+    referenceCanvas,
+    closeReferenceWindow,
+    toggleReferenceFloating,
+    setReferenceTransform,
+    pickColorFromReference,
+  } = usePaintStore();
+
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  const refImage = referenceCanvas.image || generateSampleColorSpecTGA();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !refImage) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    canvas.width = refImage.width;
+    canvas.height = refImage.height;
+
+    const imgData = ctx.createImageData(refImage.width, refImage.height);
+    imgData.data.set(refImage.data);
+    ctx.putImageData(imgData, 0, 0);
+  }, [refImage]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.button === 2 || e.button === 1) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
+      return;
+    }
+
+    if (e.button === 0 && canvasRef.current && refImage) {
+      const rect = canvasRef.current.getBoundingClientRect();
+      const scaleX = canvasRef.current.width / rect.width;
+      const scaleY = canvasRef.current.height / rect.height;
+      const x = Math.floor((e.clientX - rect.left) * scaleX);
+      const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+      if (x >= 0 && x < refImage.width && y >= 0 && y < refImage.height) {
+        const idx = (y * refImage.width + x) * 4;
+        const r = refImage.data[idx];
+        const g = refImage.data[idx + 1];
+        const b = refImage.data[idx + 2];
+        const a = refImage.data[idx + 3];
+        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+
+        pickColorFromReference({ r, g, b, a, hex });
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPanning) {
+      setReferenceTransform({
+        ...referenceCanvas.transform,
+        offsetX: e.clientX - panStart.x,
+        offsetY: e.clientY - panStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (isPanning) setIsPanning(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = Math.min(Math.max(0.2, referenceCanvas.transform.scale * zoomFactor), 5.0);
+    setReferenceTransform({ ...referenceCanvas.transform, scale: newScale });
+  };
+
+  return (
+    <div
+      className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 border-emerald-600 rounded overflow-hidden shadow-xl ${
+        isFloating ? 'w-80 h-96 absolute top-12 right-4 z-40' : 'flex-1'
+      }`}
+    >
+      {/* ワイヤーフレーム準拠: 緑のグラデーションタイトルバー */}
+      <div className="h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none">
+        <div className="flex items-center gap-1.5 truncate">
+          <Pipette className="w-3.5 h-3.5 text-emerald-300" />
+          <span>【参照】 {referenceCanvas.fileName}</span>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={toggleReferenceFloating}
+            title={referenceCanvas.isFloating ? 'ドッキングに戻す' : '切り離してフローティング表示'}
+            className="p-0.5 hover:bg-emerald-700/80 rounded transition-colors"
+          >
+            {referenceCanvas.isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+          </button>
+          <button
+            onClick={closeReferenceWindow}
+            title="参照ウィンドウを閉じる"
+            className="p-0.5 hover:bg-red-600 rounded transition-colors"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* キャンバス領域 (Read-Only) */}
+      <div
+        className="flex-1 bg-slate-800 relative flex items-center justify-center overflow-hidden cursor-crosshair"
+        onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        <div
+          style={{
+            transform: `translate(${referenceCanvas.transform.offsetX}px, ${referenceCanvas.transform.offsetY}px) scale(${referenceCanvas.transform.scale})`,
+            transformOrigin: 'center center',
+            transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+          }}
+          className="shadow-2xl border border-emerald-900/50 bg-white relative"
+        >
+          <canvas
+            ref={canvasRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            className="block cursor-crosshair"
+          />
+        </div>
+
+        {/* ワイヤーフレーム準拠のアクション案内ラベル */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow">
+          クリックで色を取得 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const CellWindow: React.FC = () => {
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -62,6 +203,11 @@ export const CellWindow: React.FC = () => {
     showRuler,
     showUnpaintedFlash,
     pegStabilizer,
+    referenceCanvas,
+    openReferenceImage,
+    closeReferenceWindow,
+    colorSpecLayoutMode,
+    setColorSpecLayoutMode,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
@@ -519,10 +665,13 @@ export const CellWindow: React.FC = () => {
     }
   };
 
+  const isDockedReference = referenceCanvas.isOpen && !referenceCanvas.isFloating;
+  const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
+
   return (
     <div className="flex-1 bg-slate-300 dark:bg-slate-950 rounded border border-slate-300 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-inner select-none transition-colors duration-150">
-      {/* 画面分割・連動コントロール ヘッダーバー */}
-      <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs">
+      {/* 画面分割・連動・参照コントロール ヘッダーバー */}
+      <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs z-10">
         <div className="flex items-center gap-2">
           <button
             onClick={toggleIsSplitView}
@@ -549,6 +698,38 @@ export const CellWindow: React.FC = () => {
               <span>{syncMode ? '左右連動 (ON)' : '連動OFF'}</span>
             </button>
           )}
+
+          <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 mx-0.5" />
+
+          {/* 色指定参照ウィンドウ ボタン */}
+          <button
+            onClick={() => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage())}
+            className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
+              referenceCanvas.isOpen
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-500'
+            }`}
+          >
+            <Pipette className="w-3.5 h-3.5" />
+            <span>{referenceCanvas.isOpen ? '参照画像 ON' : '参照画像を開く'}</span>
+          </button>
+
+          {referenceCanvas.isOpen && !referenceCanvas.isFloating && (
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
+              <button
+                onClick={() => setColorSpecLayoutMode('split-vertical')}
+                className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-vertical' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+              >
+                垂直分割
+              </button>
+              <button
+                onClick={() => setColorSpecLayoutMode('split-horizontal')}
+                className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-horizontal' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+              >
+                水平分割
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
@@ -556,107 +737,116 @@ export const CellWindow: React.FC = () => {
         </div>
       </div>
 
-      {/* セルキャンバス領域 (1画面または2画面) */}
-      <div className="flex-1 flex overflow-hidden p-0.5 gap-0.5">
-        {/* 左ビュー (Dir A) */}
-        <div
-          onClick={() => setActiveViewIndex(0)}
-          className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
-            activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
-          }`}
-        >
-          <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
-            <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">
-              Win A (Orig): {unifiedFileList[currentFileIndex] || '0001.tga'} *
-            </span>
-            {!currentImage && (
-              <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3" /> NO DATA
-              </span>
-            )}
-          </div>
+      {/* フローティング参照ウィンドウ */}
+      {referenceCanvas.isOpen && referenceCanvas.isFloating && <ReferenceCanvasView isFloating={true} />}
 
-          {showRuler && currentImage && (
-            <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
-              <span>0px</span>
-              <span>{Math.floor(currentImage.width / 2)}px</span>
-              <span>{currentImage.width}px</span>
-            </div>
-          )}
-
+      {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
+      <div className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}>
+        {/* メイン編集エリア (1画面または2画面) */}
+        <div className="flex-1 flex overflow-hidden gap-0.5">
+          {/* 左ビュー (Dir A) */}
           <div
-            className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair"
-            onWheel={(e) => handleWheel(e, true)}
-          >
-            <div
-              style={{
-                transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale})`,
-                transformOrigin: 'center center',
-                transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-              }}
-              className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
-            >
-              <canvas
-                ref={leftCanvasRef}
-                onMouseDown={(e) => handleMouseDown(e, true)}
-                onMouseMove={(e) => handleMouseMove(e, true)}
-                onMouseUp={() => handleMouseUp(true)}
-                className="block"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 右ビュー (Dir B / Split View 有効時) */}
-        {isSplitView && (
-          <div
-            onClick={() => setActiveViewIndex(1)}
+            onClick={() => setActiveViewIndex(0)}
             className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
-              activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+              activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
             }`}
           >
-            <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
-              <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
-                Win B (Retake): {unifiedFileList[splitFileIndex] || '0001.tga'}
+            <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
+              <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">
+                Win A (Orig): {unifiedFileList[currentFileIndex] || '0001.tga'} *
               </span>
-              {!splitImage && (
+              {!currentImage && (
                 <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" /> NO DATA
                 </span>
               )}
             </div>
 
-            {showRuler && splitImage && (
+            {showRuler && currentImage && (
               <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
                 <span>0px</span>
-                <span>{Math.floor(splitImage.width / 2)}px</span>
-                <span>{splitImage.width}px</span>
+                <span>{Math.floor(currentImage.width / 2)}px</span>
+                <span>{currentImage.width}px</span>
               </div>
             )}
 
             <div
               className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair"
-              onWheel={(e) => handleWheel(e, false)}
+              onWheel={(e) => handleWheel(e, true)}
             >
               <div
                 style={{
-                  transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale})`,
+                  transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale})`,
                   transformOrigin: 'center center',
                   transition: isPanning ? 'none' : 'transform 0.05s ease-out',
                 }}
                 className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
               >
                 <canvas
-                  ref={rightCanvasRef}
-                  onMouseDown={(e) => handleMouseDown(e, false)}
-                  onMouseMove={(e) => handleMouseMove(e, false)}
-                  onMouseUp={() => handleMouseUp(false)}
+                  ref={leftCanvasRef}
+                  onMouseDown={(e) => handleMouseDown(e, true)}
+                  onMouseMove={(e) => handleMouseMove(e, true)}
+                  onMouseUp={() => handleMouseUp(true)}
                   className="block"
                 />
               </div>
             </div>
           </div>
-        )}
+
+          {/* 右ビュー (Dir B / Split View 有効時) */}
+          {isSplitView && (
+            <div
+              onClick={() => setActiveViewIndex(1)}
+              className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
+                activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+              }`}
+            >
+              <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
+                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
+                  Win B (Retake): {unifiedFileList[splitFileIndex] || '0001.tga'}
+                </span>
+                {!splitImage && (
+                  <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> NO DATA
+                  </span>
+                )}
+              </div>
+
+              {showRuler && splitImage && (
+                <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
+                  <span>0px</span>
+                  <span>{Math.floor(splitImage.width / 2)}px</span>
+                  <span>{splitImage.width}px</span>
+                </div>
+              )}
+
+              <div
+                className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair"
+                onWheel={(e) => handleWheel(e, false)}
+              >
+                <div
+                  style={{
+                    transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale})`,
+                    transformOrigin: 'center center',
+                    transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                  }}
+                  className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
+                >
+                  <canvas
+                    ref={rightCanvasRef}
+                    onMouseDown={(e) => handleMouseDown(e, false)}
+                    onMouseMove={(e) => handleMouseMove(e, false)}
+                    onMouseUp={() => handleMouseUp(false)}
+                    className="block"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ドッキング参照ウィンドウ (分割表示時) */}
+        {isDockedReference && <ReferenceCanvasView isFloating={false} />}
       </div>
     </div>
   );

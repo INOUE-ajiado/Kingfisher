@@ -41,6 +41,13 @@ export const MenuBar: React.FC = () => {
     separateLineartLayersGlobal,
     convertWhiteToAlphaGlobal,
     runPegStabilizerAutoDetect,
+    referenceCanvas,
+    openReferenceImage,
+    closeReferenceWindow,
+    toggleReferenceFloating,
+    colorSpecLayoutMode,
+    setColorSpecLayoutMode,
+    setAutoRevertTool,
   } = usePaintStore();
 
   useEffect(() => {
@@ -52,6 +59,28 @@ export const MenuBar: React.FC = () => {
     window.addEventListener('mousedown', handleClickOutside);
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  const handleOpenReference = async () => {
+    try {
+      if ('showOpenFilePicker' in window) {
+        const [fileHandle] = await (window as any).showOpenFilePicker({
+          types: [
+            {
+              description: 'Image Files (*.tga, *.png, *.jpg)',
+              accept: { 'image/*': ['.tga', '.png', '.jpg', '.jpeg'] },
+            },
+          ],
+        });
+        const file = await fileHandle.getFile();
+        openReferenceImage(fileHandle, file.name);
+      } else {
+        openReferenceImage(null, 'Hero_ColorSpec.tga');
+      }
+    } catch (e) {
+      // ユーザーがキャンセルした場合または非対応時
+      openReferenceImage(null, 'Hero_ColorSpec.tga');
+    }
+  };
 
   const handleSave = async () => {
     const targetFolderHandle = activeViewIndex === 1 && folderHandleB ? folderHandleB : folderHandleA;
@@ -83,6 +112,8 @@ export const MenuBar: React.FC = () => {
         { label: '新規作成', shortcut: 'Ctrl+N', action: () => alert('新規セルを作成します。') },
         { label: '上書き保存', shortcut: 'Ctrl+S', action: handleSave },
         { label: '名前を付けて保存', shortcut: 'Ctrl+Shift+S', action: handleSave },
+        { type: 'divider' },
+        { label: '参照画像として開く (Open as Reference)...', shortcut: 'Ctrl+O', action: handleOpenReference },
         { type: 'divider' },
         { label: '環境設定 & 画像補正', shortcut: 'Ctrl+K', action: () => setActiveModal('preferences') },
       ],
@@ -146,6 +177,48 @@ export const MenuBar: React.FC = () => {
       id: 'window',
       label: 'ウィンドウ (W)',
       items: [
+        {
+          label: '参照ウィンドウを表示',
+          shortcut: '',
+          checked: referenceCanvas.isOpen,
+          action: () => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage()),
+        },
+        {
+          label: '参照画面: 垂直分割',
+          shortcut: '',
+          checked: referenceCanvas.isOpen && !referenceCanvas.isFloating && colorSpecLayoutMode === 'split-vertical',
+          action: () => {
+            openReferenceImage();
+            if (referenceCanvas.isFloating) toggleReferenceFloating();
+            setColorSpecLayoutMode('split-vertical');
+          },
+        },
+        {
+          label: '参照画面: 水平分割',
+          shortcut: '',
+          checked: referenceCanvas.isOpen && !referenceCanvas.isFloating && colorSpecLayoutMode === 'split-horizontal',
+          action: () => {
+            openReferenceImage();
+            if (referenceCanvas.isFloating) toggleReferenceFloating();
+            setColorSpecLayoutMode('split-horizontal');
+          },
+        },
+        {
+          label: '参照ウィンドウの切り離し (Float)',
+          shortcut: '',
+          checked: referenceCanvas.isOpen && referenceCanvas.isFloating,
+          action: () => {
+            openReferenceImage();
+            toggleReferenceFloating();
+          },
+        },
+        {
+          label: 'スポイト後ツール自動復帰 (Auto-Revert)',
+          shortcut: '',
+          checked: referenceCanvas.autoRevertTool,
+          action: () => setAutoRevertTool(!referenceCanvas.autoRevertTool),
+        },
+        { type: 'divider' },
         { label: 'ツールパレット', shortcut: 'F5', checked: panelVisibility.toolPalette, action: () => togglePanelVisibility('toolPalette') },
         { label: 'ツールオプション', shortcut: 'F6', checked: panelVisibility.toolOptions, action: () => togglePanelVisibility('toolOptions') },
         { label: 'カラーチャート', shortcut: 'F7', checked: panelVisibility.colorChart, action: () => togglePanelVisibility('colorChart') },

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { TGAImage } from '../engine/tga';
 import { convertWhiteToAlphaMatting } from '../engine/paintAlgorithm';
 import { detectPegHolesAndCalculateTransform } from '../engine/pegStabilizer';
+import { generateSampleColorSpecTGA } from '../engine/sampleGenerator';
 
 export type ToolType = 
   | 'pointer' 
@@ -56,10 +57,31 @@ export interface PegStabilizerState {
   showGuide: boolean;
 }
 
+export interface ReferenceCanvasState {
+  isOpen: boolean;
+  isFloating: boolean;
+  fileName: string;
+  image: TGAImage | null;
+  transform: { scale: number; offsetX: number; offsetY: number };
+  autoRevertTool: boolean;
+  previousTool: ToolType | null;
+}
+
 export interface PaintStore {
   // --- テーマ ---
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+
+  // --- 色指定参照ウィンドウ (Color Spec Reference Window) ---
+  referenceCanvas: ReferenceCanvasState;
+  colorSpecLayoutMode: 'single' | 'split-vertical' | 'split-horizontal';
+  openReferenceImage: (fileHandle?: any, fileName?: string, image?: TGAImage) => void;
+  closeReferenceWindow: () => void;
+  toggleReferenceFloating: () => void;
+  setColorSpecLayoutMode: (mode: 'single' | 'split-vertical' | 'split-horizontal') => void;
+  setAutoRevertTool: (enable: boolean) => void;
+  setReferenceTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void;
+  pickColorFromReference: (color: RGBA) => void;
 
   // --- タップ穴自動検出 ＆ 傾き補正 (Peg Hole Stabilizer) ---
   pegStabilizer: PegStabilizerState;
@@ -256,6 +278,67 @@ const defaultColors: PaletteItem[] = [
 export const usePaintStore = create<PaintStore>((set, get) => ({
   isDarkMode: true,
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
+
+  // 色指定参照ウィンドウ (Color Spec Reference Window)
+  referenceCanvas: {
+    isOpen: false,
+    isFloating: false,
+    fileName: 'Hero_ColorSpec.tga',
+    image: null,
+    transform: { scale: 1, offsetX: 0, offsetY: 0 },
+    autoRevertTool: true,
+    previousTool: null,
+  },
+  colorSpecLayoutMode: 'split-vertical',
+
+  openReferenceImage: (_fileHandle, fileName, image) =>
+    set((state) => ({
+      referenceCanvas: {
+        ...state.referenceCanvas,
+        isOpen: true,
+        fileName: fileName || state.referenceCanvas.fileName,
+        image: image || state.referenceCanvas.image || generateSampleColorSpecTGA(),
+      },
+    })),
+
+  closeReferenceWindow: () =>
+    set((state) => ({
+      referenceCanvas: { ...state.referenceCanvas, isOpen: false },
+    })),
+
+  toggleReferenceFloating: () =>
+    set((state) => ({
+      referenceCanvas: { ...state.referenceCanvas, isFloating: !state.referenceCanvas.isFloating },
+    })),
+
+  setColorSpecLayoutMode: (mode) => set({ colorSpecLayoutMode: mode }),
+
+  setAutoRevertTool: (enable) =>
+    set((state) => ({
+      referenceCanvas: { ...state.referenceCanvas, autoRevertTool: enable },
+    })),
+
+  setReferenceTransform: (transform) =>
+    set((state) => ({
+      referenceCanvas: { ...state.referenceCanvas, transform },
+    })),
+
+  pickColorFromReference: (color) =>
+    set((state) => {
+      const activeTool = state.activeTool;
+      const autoRevert = state.referenceCanvas.autoRevertTool;
+      const prevTool = activeTool !== 'eyedropper' ? activeTool : state.referenceCanvas.previousTool || 'fill';
+      const nextTool = autoRevert ? prevTool : 'eyedropper';
+
+      return {
+        currentColor: color,
+        activeTool: nextTool,
+        referenceCanvas: {
+          ...state.referenceCanvas,
+          previousTool: prevTool,
+        },
+      };
+    }),
 
   // タップ穴自動検出 ＆ 傾き補正 (Peg Hole Stabilizer)
   pegStabilizer: {

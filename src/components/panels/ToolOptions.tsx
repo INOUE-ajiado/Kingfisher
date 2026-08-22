@@ -20,6 +20,8 @@ export const ToolOptions: React.FC = () => {
     runPegStabilizerAutoDetect,
     setPegManualOffset,
     togglePegGuide,
+    referenceCanvas,
+    setAutoRevertTool,
   } = usePaintStore();
 
   return (
@@ -249,6 +251,22 @@ export const ToolOptions: React.FC = () => {
           <option value="all">すべてのレイヤー</option>
           <option value="reference">参照レイヤー</option>
         </select>
+      </div>
+
+      <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 flex-shrink-0" />
+
+      {/* スポイト後ツール自動復帰 (Auto-Revert Tool) */}
+      <div className="flex items-center gap-1 flex-shrink-0" title="参照画像からスポイト後に直前のツール（バケツ等）へ自動復帰します">
+        <input
+          type="checkbox"
+          id="autoRevertTool"
+          checked={referenceCanvas.autoRevertTool}
+          onChange={(e) => setAutoRevertTool(e.target.checked)}
+          className="rounded accent-emerald-600 cursor-pointer"
+        />
+        <label htmlFor="autoRevertTool" className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer text-[11px]">
+          自動ツール復帰
+        </label>
       </div>
 
       <button
