@@ -13,6 +13,7 @@ import { AboutModal } from './components/modals/AboutModal';
 import { PreferencesModal } from './components/modals/PreferencesModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
+import { MobileGuard } from './components/common/MobileGuard';
 
 export const App: React.FC = () => {
   const {
@@ -121,11 +122,12 @@ export const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* Modals & Guards */}
       <AboutModal />
       <PreferencesModal />
       <ShortcutsModal />
       <ReplaceColorModal />
+      <MobileGuard />
     </div>
   );
 };
