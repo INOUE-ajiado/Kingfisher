@@ -190,7 +190,7 @@ export const FileBrowser: React.FC = () => {
       <div className="p-1.5 border-b border-slate-200 dark:border-slate-800 text-[10px] space-y-1 bg-slate-50 dark:bg-slate-950">
         <div className="flex items-center justify-between">
           <span className="truncate text-slate-600 dark:text-slate-400 font-mono">
-            A (Orig): <span className="font-semibold text-blue-600 dark:text-blue-400">{folderNameA}</span>
+            A (Orig): <span className="font-semibold text-blue-600 dark:text-blue-400">{folderNameA || '(未選択)'}</span>
           </span>
           <button
             onClick={handleOpenFolderA}
@@ -201,7 +201,7 @@ export const FileBrowser: React.FC = () => {
         </div>
         <div className="flex items-center justify-between">
           <span className="truncate text-slate-600 dark:text-slate-400 font-mono">
-            B (Retake): <span className="font-semibold text-emerald-600 dark:text-emerald-400">{folderNameB}</span>
+            B (Retake): <span className="font-semibold text-emerald-600 dark:text-emerald-400">{folderNameB || '(未選択)'}</span>
           </span>
           <button
             onClick={handleOpenFolderB}
@@ -214,15 +214,21 @@ export const FileBrowser: React.FC = () => {
 
       {/* 3カラム UIレイアウト (Win A 選択 | 統合ファイル名 | Win B 選択) */}
       <div className="flex-1 overflow-y-auto p-1">
-        <table className="w-full text-left text-xs border-collapse">
-          <thead>
-            <tr className="text-[9px] text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 select-none">
-              <th className="pb-1 text-left w-1/3 font-semibold pl-1">Win A (Orig)</th>
-              <th className="pb-1 text-center font-semibold">統合ファイル名</th>
-              <th className="pb-1 text-right w-1/3 font-semibold pr-1">Win B (Retake)</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+        {unifiedFileList.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-3 text-slate-400">
+            <span className="text-[11px] font-medium mb-1">フォルダが読み込まれていません</span>
+            <span className="text-[9px] text-slate-400">Open A / Open B または ファイル &gt; フォルダを開く から指定してください</span>
+          </div>
+        ) : (
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="text-[9px] text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 select-none">
+                <th className="pb-1 text-left w-1/3 font-semibold pl-1">Win A (Orig)</th>
+                <th className="pb-1 text-center font-semibold">統合ファイル名</th>
+                <th className="pb-1 text-right w-1/3 font-semibold pr-1">Win B (Retake)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
             {unifiedFileList.map((fileName, index) => {
               const inA = fileListA.includes(fileName);
               const inB = fileListB.includes(fileName);
@@ -291,6 +297,7 @@ export const FileBrowser: React.FC = () => {
             })}
           </tbody>
         </table>
+        )}
       </div>
 
       {/* フォルダ選択用非表示 inputs */}

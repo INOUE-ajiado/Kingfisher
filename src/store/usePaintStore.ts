@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { TGAImage } from '../engine/tga';
 import { convertWhiteToAlphaMatting } from '../engine/paintAlgorithm';
 import { detectPegHolesAndCalculateTransform } from '../engine/pegStabilizer';
-import { generateSampleColorSpecTGA } from '../engine/sampleGenerator';
 
 export type ToolType = 
   | 'pointer' 
@@ -287,7 +286,7 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   referenceCanvas: {
     isOpen: false,
     isFloating: false,
-    fileName: 'Hero_ColorSpec.tga',
+    fileName: '',
     image: null,
     transform: { scale: 1, offsetX: 0, offsetY: 0 },
     autoRevertTool: true,
@@ -301,7 +300,7 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
         ...state.referenceCanvas,
         isOpen: true,
         fileName: fileName || state.referenceCanvas.fileName,
-        image: image || state.referenceCanvas.image || generateSampleColorSpecTGA(),
+        image: image !== undefined ? image : state.referenceCanvas.image,
       },
     })),
 
@@ -420,11 +419,11 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   folderHandleB: null,
   fileMapA: new Map(),
   fileMapB: new Map(),
-  folderNameA: 'Cut001_Original',
-  folderNameB: 'Cut001_Retake',
-  fileListA: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
-  fileListB: ['0001.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
-  unifiedFileList: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
+  folderNameA: '',
+  folderNameB: '',
+  fileListA: [],
+  fileListB: [],
+  unifiedFileList: [],
 
   setFolderHandleA: (handle, name, files) =>
     set((state) => {
@@ -791,9 +790,9 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
     })),
 
   folderHandle: null,
-  folderName: 'Demo_Folder',
-  fileList: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
-  currentFileIndex: 1,
+  folderName: '',
+  fileList: [],
+  currentFileIndex: 0,
   setFolderHandle: (handle, name, files) =>
     set({ folderHandle: handle, folderName: name, fileList: files, currentFileIndex: 0, splitFileIndex: 0, historyStack: [], historyIndex: -1 }),
   setCurrentFileIndex: (index) => set({ currentFileIndex: index, historyStack: [], historyIndex: -1 }),

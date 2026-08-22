@@ -1,7 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
-import { generateSampleTGA, generateSampleColorSpecTGA } from '../../engine/sampleGenerator';
 import { decodeTGA } from '../../engine/tga';
 import { Columns2, Link, Link2Off, AlertTriangle, X, Maximize2, Minimize2, Pipette } from 'lucide-react';
 
@@ -34,7 +33,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  const refImage = referenceCanvas.image || generateSampleColorSpecTGA();
+  const refImage = referenceCanvas.image;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -136,27 +135,36 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <div
-          style={{
-            transform: `translate(${referenceCanvas.transform.offsetX}px, ${referenceCanvas.transform.offsetY}px) scale(${referenceCanvas.transform.scale})`,
-            transformOrigin: 'center center',
-            transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-          }}
-          className="shadow-2xl border border-emerald-900/50 bg-white relative"
-        >
-          <canvas
-            ref={canvasRef}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            className="block cursor-crosshair"
-          />
-        </div>
+        {refImage ? (
+          <>
+            <div
+              style={{
+                transform: `translate(${referenceCanvas.transform.offsetX}px, ${referenceCanvas.transform.offsetY}px) scale(${referenceCanvas.transform.scale})`,
+                transformOrigin: 'center center',
+                transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+              }}
+              className="shadow-2xl border border-emerald-900/50 bg-white relative"
+            >
+              <canvas
+                ref={canvasRef}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                className="block cursor-crosshair"
+              />
+            </div>
 
-        {/* ワイヤーフレーム準拠のアクション案内ラベル */}
-        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow">
-          クリックで色を取得 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
-        </div>
+            {/* ワイヤーフレーム準拠のアクション案内ラベル */}
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow">
+              クリックで色を取得 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
+            </div>
+          </>
+        ) : (
+          <div className="text-center p-4">
+            <div className="text-slate-400 font-bold text-xs mb-1">NO REFERENCE IMAGE</div>
+            <div className="text-[10px] text-slate-500">ファイル &gt; 参照画像として開く から画像を選択してください</div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -227,7 +235,10 @@ export const CellWindow: React.FC = () => {
 
     async function loadImage() {
       const currentFileName = unifiedFileList[currentFileIndex];
-      const hasFileInA = fileListA.includes(currentFileName);
+      if (!currentFileName) {
+        if (isSubscribed) setCurrentImage(null);
+        return;
+      }
 
       if (fileMapA.has(currentFileName)) {
         try {
@@ -241,7 +252,7 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      if (folderHandleA && currentFileName && hasFileInA) {
+      if (folderHandleA && fileListA.includes(currentFileName)) {
         try {
           const fileHandle = await folderHandleA.getFileHandle(currentFileName);
           const file = await fileHandle.getFile();
@@ -250,19 +261,11 @@ export const CellWindow: React.FC = () => {
           if (isSubscribed) setCurrentImage(decoded);
           return;
         } catch (e) {
-          if (isSubscribed) setCurrentImage(generateSampleTGA(currentFileIndex + 1));
-          return;
+          console.error('Failed to read TGA from folderHandleA:', e);
         }
-      } else if (hasFileInA || (!folderHandleA && fileMapA.size === 0)) {
-        if (isSubscribed) {
-          setCurrentImage(generateSampleTGA(currentFileIndex + 1));
-          const prev = currentFileIndex > 0 ? generateSampleTGA(currentFileIndex) : null;
-          const next = currentFileIndex < unifiedFileList.length - 1 ? generateSampleTGA(currentFileIndex + 2) : null;
-          setPrevNextImages(prev, next);
-        }
-      } else {
-        if (isSubscribed) setCurrentImage(null);
       }
+
+      if (isSubscribed) setCurrentImage(null);
     }
 
     loadImage();
@@ -276,7 +279,10 @@ export const CellWindow: React.FC = () => {
 
     async function loadSplitImage() {
       const splitFileName = unifiedFileList[splitFileIndex];
-      const hasFileInB = fileListB.includes(splitFileName);
+      if (!splitFileName) {
+        if (isSubscribed) setSplitImage(null);
+        return;
+      }
 
       if (fileMapB.has(splitFileName)) {
         try {
@@ -290,7 +296,7 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      if (folderHandleB && splitFileName && hasFileInB) {
+      if (folderHandleB && fileListB.includes(splitFileName)) {
         try {
           const fileHandle = await folderHandleB.getFileHandle(splitFileName);
           const file = await fileHandle.getFile();
@@ -299,14 +305,11 @@ export const CellWindow: React.FC = () => {
           if (isSubscribed) setSplitImage(decoded);
           return;
         } catch (e) {
-          if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
-          return;
+          console.error('Failed to read TGA from folderHandleB:', e);
         }
-      } else if (hasFileInB || (!folderHandleB && fileMapB.size === 0)) {
-        if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
-      } else {
-        if (isSubscribed) setSplitImage(null);
       }
+
+      if (isSubscribed) setSplitImage(null);
     }
 
     loadSplitImage();
@@ -341,14 +344,14 @@ export const CellWindow: React.FC = () => {
         ctx.fillStyle = '#0F172A';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
-        ctx.font = 'bold 36px monospace';
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
+        ctx.font = 'bold 32px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('NO DATA', canvas.width / 2, canvas.height / 2 - 10);
+        ctx.fillText('NO CELL DATA', canvas.width / 2, canvas.height / 2 - 10);
 
-        ctx.font = '14px sans-serif';
+        ctx.font = '13px sans-serif';
         ctx.fillStyle = '#94A3B8';
-        ctx.fillText('File Not Found in this Directory', canvas.width / 2, canvas.height / 2 + 25);
+        ctx.fillText('フォルダを開いてTGAセル画像を選択してください', canvas.width / 2, canvas.height / 2 + 25);
         return;
       }
 
