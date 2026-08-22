@@ -176,6 +176,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
 };
 
 export const CellWindow: React.FC = () => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -234,6 +235,30 @@ export const CellWindow: React.FC = () => {
 
   const [splitImage, setSplitImage] = useState<any>(null);
   const [onionFramesMap, setOnionFramesMap] = useState<Map<number, any>>(new Map());
+
+  // 画面サイズ（PCディスプレイのキャンバスエリア高さ）に合わせて、仮想フレーム/セル画像が上下にぴったり収まるサイズに自動計算＆初期位置設定
+  const fitToScreenHeight = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const availableHeight = container.clientHeight - 48; // 上下24pxずつのマージン余白
+    const targetHeight = currentImage ? currentImage.height : 480;
+    if (availableHeight <= 0 || targetHeight <= 0) return;
+
+    const fitScale = Math.min(Math.max(0.2, availableHeight / targetHeight), 3.0);
+    const fitTransform = { scale: fitScale, offsetX: 0, offsetY: 0 };
+
+    setCanvasTransform(fitTransform);
+    setSplitCanvasTransform(fitTransform);
+  }, [currentImage, setCanvasTransform, setSplitCanvasTransform]);
+
+  // 初回マウント時、画像読み込み時、およびウィンドウリサイズ時に上下フィット位置を適用
+  useEffect(() => {
+    fitToScreenHeight();
+    const handleResize = () => fitToScreenHeight();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [fitToScreenHeight]);
 
   // オニオンスキン用マルチフレーム(前後最大5枚)の読み込み
   useEffect(() => {
@@ -846,7 +871,7 @@ export const CellWindow: React.FC = () => {
   const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
 
   return (
-    <div className="flex-1 bg-slate-300 dark:bg-slate-950 rounded border border-slate-300 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-inner select-none transition-colors duration-150">
+    <div ref={containerRef} className="flex-1 bg-slate-300 dark:bg-slate-950 rounded border border-slate-300 dark:border-slate-800 flex flex-col relative overflow-hidden shadow-inner select-none transition-colors duration-150">
       {/* 画面分割・連動・参照コントロール ヘッダーバー */}
       <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs z-10">
         <div className="flex items-center gap-2">
@@ -910,8 +935,15 @@ export const CellWindow: React.FC = () => {
           )}
         </div>
 
-        <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
-          Zoom: {Math.round(canvasTransform.scale * 100)}%
+        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+          <span>Zoom: {Math.round(canvasTransform.scale * 100)}%</span>
+          <button
+            onClick={fitToScreenHeight}
+            title="PC画面の高さに合わせて用紙フレームを上下ぴったり初期化 (Fit Height)"
+            className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans text-[10px] border border-slate-300 dark:border-slate-700 transition-colors"
+          >
+            画面高さにフィット
+          </button>
         </div>
       </div>
 
