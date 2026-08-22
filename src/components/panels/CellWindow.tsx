@@ -28,12 +28,82 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
     toggleReferenceFloating,
     setReferenceTransform,
     pickColorFromReference,
+    openReferenceImage,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
+  // フローティング移動用ステート
+  const [pos, setPos] = useState({ x: 120, y: 80 });
+  const [isWindowDragging, setIsWindowDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Drag & Drop ハイライトステート
+  const [isDragOver, setIsDragOver] = useState(false);
+
   const refImage = referenceCanvas.image;
+
+  // フローティングウィンドウのドラッグ移動制御
+  const handleTitleMouseDown = (e: React.MouseEvent) => {
+    if (!isFloating) return;
+    setIsWindowDragging(true);
+    setDragOffset({ x: e.clientX - pos.x, y: e.clientY - pos.y });
+  };
+
+  useEffect(() => {
+    if (!isWindowDragging) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      setPos({
+        x: Math.max(0, Math.min(window.innerWidth - 150, e.clientX - dragOffset.x)),
+        y: Math.max(0, Math.min(window.innerHeight - 80, e.clientY - dragOffset.y)),
+      });
+    };
+    const handleMouseUp = () => setIsWindowDragging(false);
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isWindowDragging, dragOffset]);
+
+  // Drag & Drop 画像ファイルドロップ受領制御
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith('.tga') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
+      try {
+        const decoded = await decodeAnyImageFile(file);
+        openReferenceImage(null, file.name, decoded);
+      } catch (err) {
+        console.error('Failed to load dropped reference image:', err);
+        alert('参照画像の読み込みに失敗しました。');
+      }
+    } else {
+      alert('対応している画像ファイル (.tga, .jpg, .png) をドロップしてください。');
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -100,12 +170,32 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
 
   return (
     <div
-      className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 border-emerald-600 rounded overflow-hidden shadow-xl ${
-        isFloating ? 'w-80 h-96 absolute top-12 right-4 z-40' : 'flex-1'
+      style={isFloating ? { position: 'fixed', left: `${pos.x}px`, top: `${pos.y}px`, zIndex: 50 } : undefined}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 ${
+        isDragOver ? 'border-amber-400 ring-4 ring-amber-400/50' : 'border-emerald-600'
+      } rounded overflow-hidden shadow-2xl relative transition-all ${
+        isFloating ? 'w-80 h-96' : 'flex-1'
       }`}
     >
-      {/* ワイヤーフレーム準拠: 緑のグラデーションタイトルバー */}
-      <div className="h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none">
+      {/* ドラッグ＆ドロップ受領オーバーレイ */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs border-2 border-dashed border-amber-300 rounded flex flex-col items-center justify-center text-amber-300 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
+          <FolderOpen className="w-8 h-8 mb-2 animate-bounce" />
+          <span className="font-bold text-xs">ここにドロップして参照画像を開く</span>
+          <span className="text-[9px] opacity-80 mt-1">.tga / .jpg / .png に対応</span>
+        </div>
+      )}
+
+      {/* ワイヤーフレーム準拠: 緑のグラデーションタイトルバー (フローティング時ドラッグ可) */}
+      <div
+        onMouseDown={handleTitleMouseDown}
+        className={`h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none ${
+          isFloating ? (isWindowDragging ? 'cursor-grabbing' : 'cursor-grab') : ''
+        }`}
+      >
         <div className="flex items-center gap-1.5 truncate">
           <Pipette className="w-3.5 h-3.5 text-emerald-300" />
           <span>【参照】 {referenceCanvas.fileName}</span>
@@ -155,7 +245,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
             </div>
 
             {/* ワイヤーフレーム準拠のアクション案内ラベル */}
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow whitespace-nowrap">
               クリックで色を取得 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
             </div>
           </>
@@ -166,7 +256,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
             </div>
             <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO REFERENCE IMAGE</h4>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              ファイル &gt; 参照画像として開く (Ctrl+O) から色指定TGAファイルを選択してください
+              画像をここにドラッグ＆ドロップ、または<br />ファイル &gt; 参照画像として開く (Ctrl+O)
             </p>
           </div>
         )}
