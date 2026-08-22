@@ -175,6 +175,43 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
   );
 };
 
+async function decodeAnyImageFile(file: File): Promise<any> {
+  const lower = file.name.toLowerCase();
+  if (lower.endsWith('.tga')) {
+    const buffer = await file.arrayBuffer();
+    return decodeTGA(buffer);
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas context error'));
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, img.width, img.height);
+      resolve({
+        width: img.width,
+        height: img.height,
+        data: imgData.data,
+        isReadOnly: true,
+      });
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    img.src = url;
+  });
+}
+
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const leftCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -211,6 +248,8 @@ export const CellWindow: React.FC = () => {
     triggerRender,
     folderHandleA,
     folderHandleB,
+    folderNameA,
+    folderNameB,
     fileMapA,
     fileMapB,
     saveUndoState,
@@ -343,12 +382,11 @@ export const CellWindow: React.FC = () => {
       if (fileMapA.has(currentFileName)) {
         try {
           const file = fileMapA.get(currentFileName)!;
-          const arrayBuffer = await file.arrayBuffer();
-          const decoded = decodeTGA(arrayBuffer);
+          const decoded = await decodeAnyImageFile(file);
           if (isSubscribed) setCurrentImage(decoded);
           return;
         } catch (e) {
-          console.error('Failed to decode TGA from fileMapA:', e);
+          console.error('Failed to decode image from fileMapA:', e);
         }
       }
 
@@ -356,12 +394,11 @@ export const CellWindow: React.FC = () => {
         try {
           const fileHandle = await folderHandleA.getFileHandle(currentFileName);
           const file = await fileHandle.getFile();
-          const arrayBuffer = await file.arrayBuffer();
-          const decoded = decodeTGA(arrayBuffer);
+          const decoded = await decodeAnyImageFile(file);
           if (isSubscribed) setCurrentImage(decoded);
           return;
         } catch (e) {
-          console.error('Failed to read TGA from folderHandleA:', e);
+          console.error('Failed to read image from folderHandleA:', e);
         }
       }
 
@@ -387,12 +424,11 @@ export const CellWindow: React.FC = () => {
       if (fileMapB.has(splitFileName)) {
         try {
           const file = fileMapB.get(splitFileName)!;
-          const arrayBuffer = await file.arrayBuffer();
-          const decoded = decodeTGA(arrayBuffer);
+          const decoded = await decodeAnyImageFile(file);
           if (isSubscribed) setSplitImage(decoded);
           return;
         } catch (e) {
-          console.error('Failed to decode TGA from fileMapB:', e);
+          console.error('Failed to decode image from fileMapB:', e);
         }
       }
 
@@ -400,12 +436,11 @@ export const CellWindow: React.FC = () => {
         try {
           const fileHandle = await folderHandleB.getFileHandle(splitFileName);
           const file = await fileHandle.getFile();
-          const arrayBuffer = await file.arrayBuffer();
-          const decoded = decodeTGA(arrayBuffer);
+          const decoded = await decodeAnyImageFile(file);
           if (isSubscribed) setSplitImage(decoded);
           return;
         } catch (e) {
-          console.error('Failed to read TGA from folderHandleB:', e);
+          console.error('Failed to read image from folderHandleB:', e);
         }
       }
 
@@ -717,6 +752,11 @@ export const CellWindow: React.FC = () => {
 
     const { x, y } = getCanvasCoords(e, canvas);
 
+    // 閲覧専用（タイムシートや指示メモなどのJPG画像）の場合は塗り・描画操作をガード
+    if (targetImg.isReadOnly && activeTool !== 'eyedropper' && e.button !== 1 && !e.altKey) {
+      return;
+    }
+
     if (activeTool === 'fill') {
       saveUndoState('バケツ塗り');
       floodFill(
@@ -962,8 +1002,13 @@ export const CellWindow: React.FC = () => {
             }`}
           >
             <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
-              <span className="font-semibold text-blue-600 dark:text-blue-400 truncate">
-                Win A (Orig): {unifiedFileList[currentFileIndex] || '0001.tga'} *
+              <span className="font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1.5">
+                <span>Win A ({folderNameA || 'Orig'}): {unifiedFileList[currentFileIndex] || '0001.tga'}</span>
+                {currentImage?.isReadOnly && (
+                  <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
+                    🔒 閲覧専用 (Sheet View)
+                  </span>
+                )}
               </span>
               {!currentImage && (
                 <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
@@ -1029,8 +1074,13 @@ export const CellWindow: React.FC = () => {
               }`}
             >
               <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
-                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate">
-                  Win B (Retake): {unifiedFileList[splitFileIndex] || '0001.tga'}
+                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
+                  <span>Win B ({folderNameB || 'Retake'}): {unifiedFileList[splitFileIndex] || '0001.tga'}</span>
+                  {splitImage?.isReadOnly && (
+                    <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
+                      🔒 閲覧専用 (Sheet View)
+                    </span>
+                  )}
                 </span>
                 {!splitImage && (
                   <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">

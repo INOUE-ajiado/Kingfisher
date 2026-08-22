@@ -69,25 +69,64 @@ export const MenuBar: React.FC = () => {
   const handleOpenFolderDir = async () => {
     if ('showDirectoryPicker' in window) {
       try {
-        const handle = await (window as any).showDirectoryPicker();
-        const files: string[] = [];
-        for await (const entry of handle.values()) {
-          if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
-            files.push(entry.name);
+        const rootHandle = await (window as any).showDirectoryPicker();
+        const subDirs: any[] = [];
+
+        for await (const entry of rootHandle.values()) {
+          if (entry.kind === 'directory') {
+            const filesMap = new Map<string, File>();
+            const fileList: string[] = [];
+            let isImageFolder = false;
+
+            for await (const fileEntry of entry.values()) {
+              if (fileEntry.kind === 'file') {
+                const lower = fileEntry.name.toLowerCase();
+                if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+                  fileList.push(fileEntry.name);
+                  try {
+                    const file = await fileEntry.getFile();
+                    filesMap.set(fileEntry.name, file);
+                  } catch (e) {}
+                  if (lower.endsWith('.tga') || lower.endsWith('.png')) isImageFolder = true;
+                }
+              }
+            }
+
+            fileList.sort();
+            if (fileList.length > 0) {
+              subDirs.push({
+                name: entry.name,
+                handle: entry,
+                filesMap,
+                fileList,
+                isImageFolder,
+              });
+            }
           }
         }
-        files.sort();
-        if (files.length > 0) {
-          setFolderHandleA(handle, handle.name, files);
-          const firstFileHandle = await handle.getFileHandle(files[0]);
-          const file = await firstFileHandle.getFile();
-          const buffer = await file.arrayBuffer();
-          const decoded = decodeTGA(buffer);
-          setCurrentImage(decoded);
+
+        subDirs.sort((a, b) => {
+          if (a.name.startsWith('_') && !b.name.startsWith('_')) return -1;
+          if (!a.name.startsWith('_') && b.name.startsWith('_')) return 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        if (subDirs.length > 0) {
+          usePaintStore.getState().setCutRootFolder(rootHandle, rootHandle.name, subDirs);
           return;
         } else {
-          alert('選択したフォルダに .tga ファイルが見つかりませんでした。');
-          return;
+          // 直下に画像がある場合
+          const files: string[] = [];
+          for await (const entry of rootHandle.values()) {
+            if (entry.kind === 'file' && (entry.name.toLowerCase().endsWith('.tga') || entry.name.toLowerCase().endsWith('.jpg'))) {
+              files.push(entry.name);
+            }
+          }
+          files.sort();
+          if (files.length > 0) {
+            setFolderHandleA(rootHandle, rootHandle.name, files);
+            return;
+          }
         }
       } catch (e: any) {
         if (e.name === 'AbortError') return;

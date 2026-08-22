@@ -89,11 +89,71 @@ export interface LightTableState {
   futureColor: { r: number; g: number; b: number };
   items: LightTableSubItem[];
 
-  // 互換用プロパティ
+  // 互換性エイリアス
   prevFrames?: number;
   nextFrames?: number;
   opacity?: number;
-  colorMode?: 'default' | 'tinted';
+  colorMode?: string;
+}
+
+export interface SubDirectoryItem {
+  name: string;
+  handle: any;
+  filesMap: Map<string, File>;
+  fileList: string[];
+  isImageFolder: boolean;
+}
+
+export interface MergedFrameMapItem {
+  frameNumber: string;
+  fileNameA?: string;
+  fileNameB?: string;
+}
+
+// ファイル名から「4桁等の連番数字」を抽出する関数 (例: b_go0003.tga -> "0003", a0012.tga -> "0012")
+export function extractFrameNumber(fileName: string): string {
+  const match = fileName.match(/(?:^|[^0-9])([0-9]{2,4})(?=[^0-9]*\.[a-z0-9]+$)/i);
+  if (match) return match[1];
+  const numMatch = fileName.match(/([0-9]+)(?=[^0-9]*\.[a-z0-9]+$)/i);
+  return numMatch ? numMatch[1].padStart(4, '0') : fileName;
+}
+
+// サブフォルダAとサブフォルダBのファイル群から異名連番マージマップを再構築する関数
+export function buildMergedFrameData(
+  listA: string[],
+  listB: string[]
+): { frameNumbers: string[]; frameMap: Map<string, MergedFrameMapItem>; unifiedFiles: string[] } {
+  const frameMap = new Map<string, MergedFrameMapItem>();
+
+  listA.forEach((f) => {
+    const num = extractFrameNumber(f);
+    const item = frameMap.get(num) || { frameNumber: num };
+    item.fileNameA = f;
+    frameMap.set(num, item);
+  });
+
+  listB.forEach((f) => {
+    const num = extractFrameNumber(f);
+    const item = frameMap.get(num) || { frameNumber: num };
+    item.fileNameB = f;
+    frameMap.set(num, item);
+  });
+
+  const frameNumbers = Array.from(frameMap.keys()).sort((a, b) => {
+    const numA = parseInt(a, 10);
+    const numB = parseInt(b, 10);
+    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    return a.localeCompare(b);
+  });
+
+  const unifiedFiles: string[] = [];
+  frameNumbers.forEach((num) => {
+    const item = frameMap.get(num)!;
+    const representative = item.fileNameA || item.fileNameB || num;
+    unifiedFiles.push(representative);
+  });
+
+  return { frameNumbers, frameMap, unifiedFiles };
 }
 
 export interface PaintStore {
@@ -131,7 +191,18 @@ export interface PaintStore {
   setSplitFileIndex: (index: number) => void;
   setSplitCanvasTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void;
 
-  // --- 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理) ---
+  // --- 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理 ＆ カット階層ナビゲーション) ---
+  rootFolderHandle: any | null;
+  rootFolderName: string | null;
+  availableSubDirectories: SubDirectoryItem[];
+  selectedSubDirA: string | null;
+  selectedSubDirB: string | null;
+  mergedFrameNumbers: string[];
+  mergedFrameMap: Map<string, MergedFrameMapItem>;
+  setCutRootFolder: (rootHandle: any, rootName: string, subDirs: SubDirectoryItem[]) => void;
+  setSelectedSubDirA: (dirName: string | null) => void;
+  setSelectedSubDirB: (dirName: string | null) => void;
+
   folderHandleA: any | null;
   folderHandleB: any | null;
   fileMapA: Map<string, File>;
@@ -447,7 +518,97 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   setSplitFileIndex: (index) => set({ splitFileIndex: index }),
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
 
-  // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理)
+  // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理 ＆ カット階層ナビゲーション)
+  rootFolderHandle: null,
+  rootFolderName: null,
+  availableSubDirectories: [],
+  selectedSubDirA: null,
+  selectedSubDirB: null,
+  mergedFrameNumbers: [],
+  mergedFrameMap: new Map(),
+
+  setCutRootFolder: (rootHandle, rootName, subDirs) => {
+    // 初期状態で _go や a, b 等の画像フォルダをデフォルトで自動選択
+    let defaultDirA: SubDirectoryItem | undefined = subDirs.find((d) => d.name === '_go' || d.name === 'a');
+      let defaultDirB: SubDirectoryItem | undefined = subDirs.find((d) => d.name === 'b' || d.name === 'c');
+
+      if (!defaultDirA && subDirs.length > 0) defaultDirA = subDirs[0];
+      if (!defaultDirB && subDirs.length > 1) defaultDirB = subDirs[1];
+
+      const listA = defaultDirA ? defaultDirA.fileList : [];
+      const listB = defaultDirB ? defaultDirB.fileList : [];
+      const mapA = defaultDirA ? defaultDirA.filesMap : new Map();
+      const mapB = defaultDirB ? defaultDirB.filesMap : new Map();
+
+      const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, listB);
+
+      set({
+        rootFolderHandle: rootHandle,
+        rootFolderName: rootName,
+        availableSubDirectories: subDirs,
+        selectedSubDirA: defaultDirA ? defaultDirA.name : null,
+        selectedSubDirB: defaultDirB ? defaultDirB.name : null,
+        folderNameA: defaultDirA ? defaultDirA.name : rootName,
+        folderNameB: defaultDirB ? defaultDirB.name : rootName,
+        folderHandleA: defaultDirA ? defaultDirA.handle : rootHandle,
+        folderHandleB: defaultDirB ? defaultDirB.handle : rootHandle,
+        fileMapA: mapA,
+        fileMapB: mapB,
+        fileListA: listA,
+        fileListB: listB,
+        unifiedFileList: unifiedFiles,
+        fileList: unifiedFiles,
+        mergedFrameNumbers: frameNumbers,
+        mergedFrameMap: frameMap,
+        currentFileIndex: 0,
+        splitFileIndex: 0,
+      });
+    },
+
+  setSelectedSubDirA: (dirName) =>
+    set((state) => {
+      const targetDir = state.availableSubDirectories.find((d) => d.name === dirName);
+      const listA = targetDir ? targetDir.fileList : [];
+      const mapA = targetDir ? targetDir.filesMap : new Map();
+
+      const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
+
+      return {
+        selectedSubDirA: dirName,
+        folderNameA: dirName || state.rootFolderName || '',
+        folderHandleA: targetDir ? targetDir.handle : state.rootFolderHandle,
+        fileMapA: mapA,
+        fileListA: listA,
+        unifiedFileList: unifiedFiles,
+        fileList: unifiedFiles,
+        mergedFrameNumbers: frameNumbers,
+        mergedFrameMap: frameMap,
+        currentFileIndex: 0,
+      };
+    }),
+
+  setSelectedSubDirB: (dirName) =>
+    set((state) => {
+      const targetDir = state.availableSubDirectories.find((d) => d.name === dirName);
+      const listB = targetDir ? targetDir.fileList : [];
+      const mapB = targetDir ? targetDir.filesMap : new Map();
+
+      const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
+
+      return {
+        selectedSubDirB: dirName,
+        folderNameB: dirName || state.rootFolderName || '',
+        folderHandleB: targetDir ? targetDir.handle : state.rootFolderHandle,
+        fileMapB: mapB,
+        fileListB: listB,
+        unifiedFileList: unifiedFiles,
+        fileList: unifiedFiles,
+        mergedFrameNumbers: frameNumbers,
+        mergedFrameMap: frameMap,
+        splitFileIndex: 0,
+      };
+    }),
+
   folderHandleA: null,
   folderHandleB: null,
   fileMapA: new Map(),

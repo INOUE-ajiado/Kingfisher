@@ -8,6 +8,7 @@ export interface TGAImage {
   height: number;
   pixelDepth: number; // 24 or 32
   data: Uint8ClampedArray; // RGBA byte array (width * height * 4)
+  isReadOnly?: boolean;
 }
 
 export function decodeTGA(buffer: ArrayBuffer): TGAImage {
