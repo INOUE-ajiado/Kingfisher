@@ -49,43 +49,43 @@ export const LightTable: React.FC = () => {
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border-t border-slate-300 dark:border-slate-800 flex flex-col px-2 py-1 text-xs select-none gap-1">
+    <div className="bg-white dark:bg-slate-900 border-t border-slate-300 dark:border-slate-800 flex flex-col px-2 py-0.5 text-xs select-none gap-0.5">
       {/* メインコントロールバー */}
-      <div className="h-9 flex items-center justify-between gap-3">
+      <div className="h-6.5 flex items-center justify-between gap-2">
         {/* オニオンスキン基本トグル ＆ フレーム表示 */}
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 cursor-pointer font-bold text-slate-700 dark:text-slate-200 text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <label className="flex items-center gap-1 cursor-pointer font-bold text-slate-700 dark:text-slate-200 text-[10px]">
             <input
               type="checkbox"
               checked={lightTable.enabled}
               onChange={(e) => setLightTableEnabled(e.target.checked)}
-              className="rounded accent-blue-600 cursor-pointer"
+              className="rounded accent-blue-600 cursor-pointer w-3.5 h-3.5"
             />
             <span>オニオンスキン</span>
           </label>
 
           {/* 前後フレーム状況 */}
-          <div className="flex items-center gap-1 ml-1">
+          <div className="flex items-center gap-1 ml-0.5">
             {prevFrameName ? (
-              <div className="px-1.5 h-6 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 font-medium rounded flex items-center justify-center text-[10px]">
+              <div className="px-1.5 h-5 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 font-medium rounded flex items-center justify-center text-[9px]">
                 前: {prevFrameName.replace('.tga', '')}
               </div>
             ) : (
-              <div className="px-1.5 h-6 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[10px] text-slate-400">
+              <div className="px-1.5 h-5 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[9px] text-slate-400">
                 前: なし
               </div>
             )}
 
-            <div className="px-2 h-6 border border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold rounded flex items-center justify-center text-[11px]">
+            <div className="px-2 h-5 border border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold rounded flex items-center justify-center text-[10px]">
               現: {currentFrameName.replace('.tga', '')}
             </div>
 
             {nextFrameName ? (
-              <div className="px-1.5 h-6 border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-medium rounded flex items-center justify-center text-[10px]">
+              <div className="px-1.5 h-5 border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-medium rounded flex items-center justify-center text-[9px]">
                 後: {nextFrameName.replace('.tga', '')}
               </div>
             ) : (
-              <div className="px-1.5 h-6 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[10px] text-slate-400">
+              <div className="px-1.5 h-5 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[9px] text-slate-400">
                 後: なし
               </div>
             )}

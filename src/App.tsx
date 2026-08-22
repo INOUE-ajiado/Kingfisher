@@ -84,6 +84,39 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [nextCell, prevCell, undo, redo, setActiveTool, setActivePaletteTab]);
 
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState<number>(320);
+  const isRightResizing = React.useRef(false);
+  const startXRef = React.useRef(0);
+  const startWidthRef = React.useRef(320);
+
+  const handleRightResizeDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    isRightResizing.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = rightSidebarWidth;
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+  };
+
+  const handleRightResizeMove = (e: React.PointerEvent) => {
+    if (!isRightResizing.current) return;
+    const deltaX = startXRef.current - e.clientX;
+    const newWidth = Math.min(600, Math.max(180, startWidthRef.current + deltaX));
+    setRightSidebarWidth(newWidth);
+  };
+
+  const handleRightResizeUp = (e: React.PointerEvent) => {
+    if (!isRightResizing.current) return;
+    isRightResizing.current = false;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch (err) {}
+  };
+
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans select-none transition-colors duration-150">
       {/* 1. Top Menu Bar */}
@@ -106,8 +139,21 @@ export const App: React.FC = () => {
           {panelVisibility.lightTable && <LightTable />}
         </div>
 
-        {/* Right Docking Panels Column */}
-        <div className="w-80 flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800">
+        {/* Right Docking Panels Column (Resizable) */}
+        <div
+          style={{ width: `${rightSidebarWidth}px` }}
+          className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
+        >
+          {/* 左端ドラッグリサイズハンドルバー (境界線をつかんで幅調整) */}
+          <div
+            onPointerDown={handleRightResizeDown}
+            onPointerMove={handleRightResizeMove}
+            onPointerUp={handleRightResizeUp}
+            onPointerCancel={handleRightResizeUp}
+            title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
+            className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
+          />
+
           {/* File Browser */}
           {panelVisibility.fileBrowser && <FileBrowser />}
 
