@@ -21,7 +21,7 @@ function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): 
   return ctx.createPattern(patternCanvas, 'repeat');
 }
 
-const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = false }) => {
+const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ isFloating = false }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const {
     referenceCanvas,
@@ -155,7 +155,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
       onDrop={handleDrop}
       className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 ${
         isDragOver ? 'border-amber-400 ring-4 ring-amber-400/50' : 'border-emerald-600'
-      } rounded overflow-hidden shadow-2xl relative transition-all ${
+      } rounded overflow-hidden shadow-2xl relative ${
         isFloating ? 'w-80 h-96' : 'flex-1'
       }`}
     >
@@ -242,7 +242,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = ({ isFloating = 
       </div>
     </div>
   );
-};
+});
 
 async function decodeAnyImageFile(file: File): Promise<any> {
   const lower = file.name.toLowerCase();

@@ -28,6 +28,7 @@ export function useFastDraggable<T extends HTMLElement = HTMLDivElement>(
       if (!enabled || !targetRef.current) return;
       if (e.button !== 0) return;
 
+      e.stopPropagation();
       isDragging.current = true;
       startPos.current = {
         x: e.clientX - currentPos.current.x,
@@ -46,6 +47,9 @@ export function useFastDraggable<T extends HTMLElement = HTMLDivElement>(
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDragging.current || !targetRef.current || !enabled) return;
+
+      e.stopPropagation();
+      e.preventDefault();
 
       const x = e.clientX - startPos.current.x;
       const y = e.clientY - startPos.current.y;
