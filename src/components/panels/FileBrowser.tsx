@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { FolderOpen, Link, Link2Off, AlertTriangle } from 'lucide-react';
 import { decodeTGA } from '../../engine/tga';
 
 export const FileBrowser: React.FC = () => {
+  const fileInputRefA = useRef<HTMLInputElement | null>(null);
+  const fileInputRefB = useRef<HTMLInputElement | null>(null);
+
   const {
     folderNameA,
     folderNameB,
@@ -16,53 +19,119 @@ export const FileBrowser: React.FC = () => {
     setSplitFileIndex,
     setFolderHandleA,
     setFolderHandleB,
+    setFolderFilesA,
+    setFolderFilesB,
     setCurrentImage,
     syncMode,
     toggleSyncMode,
   } = usePaintStore();
 
   const handleOpenFolderA = async () => {
-    try {
-      const handle = await (window as any).showDirectoryPicker();
-      const files: string[] = [];
-      for await (const entry of handle.values()) {
-        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
-          files.push(entry.name);
+    if ('showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker();
+        const files: string[] = [];
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
+            files.push(entry.name);
+          }
         }
+        files.sort();
+        if (files.length > 0) {
+          setFolderHandleA(handle, handle.name, files);
+          const firstFileHandle = await handle.getFileHandle(files[0]);
+          const file = await firstFileHandle.getFile();
+          const buffer = await file.arrayBuffer();
+          const decoded = decodeTGA(buffer);
+          setCurrentImage(decoded);
+          return;
+        } else {
+          alert('選択した Dir A フォルダに .tga ファイルが見つかりませんでした。');
+          return;
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
       }
-      files.sort();
-      if (files.length > 0) {
-        setFolderHandleA(handle, handle.name, files);
-        const firstFileHandle = await handle.getFileHandle(files[0]);
-        const file = await firstFileHandle.getFile();
-        const buffer = await file.arrayBuffer();
-        const decoded = decodeTGA(buffer);
-        setCurrentImage(decoded);
-      } else {
-        alert('選択した Dir A フォルダに .tga ファイルが見つかりませんでした。');
-      }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') console.error('Error selecting Dir A:', err);
     }
+    fileInputRefA.current?.click();
   };
 
   const handleOpenFolderB = async () => {
-    try {
-      const handle = await (window as any).showDirectoryPicker();
-      const files: string[] = [];
-      for await (const entry of handle.values()) {
-        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
-          files.push(entry.name);
+    if ('showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker();
+        const files: string[] = [];
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
+            files.push(entry.name);
+          }
+        }
+        files.sort();
+        if (files.length > 0) {
+          setFolderHandleB(handle, handle.name, files);
+          return;
+        } else {
+          alert('選択した Dir B フォルダに .tga ファイルが見つかりませんでした。');
+          return;
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+    fileInputRefB.current?.click();
+  };
+
+  const handleFileInputChangeA = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const filesMap = new Map<string, File>();
+    let folderName = 'Folder_A';
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (file.name.toLowerCase().endsWith('.tga')) {
+        filesMap.set(file.name, file);
+        if ((file as any).webkitRelativePath) {
+          const parts = (file as any).webkitRelativePath.split('/');
+          if (parts.length > 1) folderName = parts[0];
         }
       }
-      files.sort();
-      if (files.length > 0) {
-        setFolderHandleB(handle, handle.name, files);
-      } else {
-        alert('選択した Dir B フォルダに .tga ファイルが見つかりませんでした。');
+    }
+
+    if (filesMap.size > 0) {
+      setFolderFilesA(folderName, filesMap);
+      const firstFile = Array.from(filesMap.values())[0];
+      const buffer = await firstFile.arrayBuffer();
+      const decoded = decodeTGA(buffer);
+      setCurrentImage(decoded);
+    } else {
+      alert('選択した Dir A フォルダに .tga ファイルが見つかりませんでした。');
+    }
+  };
+
+  const handleFileInputChangeB = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const filesMap = new Map<string, File>();
+    let folderName = 'Folder_B';
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (file.name.toLowerCase().endsWith('.tga')) {
+        filesMap.set(file.name, file);
+        if ((file as any).webkitRelativePath) {
+          const parts = (file as any).webkitRelativePath.split('/');
+          if (parts.length > 1) folderName = parts[0];
+        }
       }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') console.error('Error selecting Dir B:', err);
+    }
+
+    if (filesMap.size > 0) {
+      setFolderFilesB(folderName, filesMap);
+    } else {
+      alert('選択した Dir B フォルダに .tga ファイルが見つかりませんでした。');
     }
   };
 
@@ -223,6 +292,22 @@ export const FileBrowser: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* フォルダ選択用非表示 inputs */}
+      <input
+        type="file"
+        ref={fileInputRefA}
+        onChange={handleFileInputChangeA}
+        className="hidden"
+        {...({ webkitdirectory: '', directory: '', multiple: true } as any)}
+      />
+      <input
+        type="file"
+        ref={fileInputRefB}
+        onChange={handleFileInputChangeB}
+        className="hidden"
+        {...({ webkitdirectory: '', directory: '', multiple: true } as any)}
+      />
     </div>
   );
 };

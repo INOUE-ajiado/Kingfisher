@@ -197,6 +197,8 @@ export const CellWindow: React.FC = () => {
     triggerRender,
     folderHandleA,
     folderHandleB,
+    fileMapA,
+    fileMapB,
     saveUndoState,
     isPlaying,
     showGrid,
@@ -227,6 +229,18 @@ export const CellWindow: React.FC = () => {
       const currentFileName = unifiedFileList[currentFileIndex];
       const hasFileInA = fileListA.includes(currentFileName);
 
+      if (fileMapA.has(currentFileName)) {
+        try {
+          const file = fileMapA.get(currentFileName)!;
+          const arrayBuffer = await file.arrayBuffer();
+          const decoded = decodeTGA(arrayBuffer);
+          if (isSubscribed) setCurrentImage(decoded);
+          return;
+        } catch (e) {
+          console.error('Failed to decode TGA from fileMapA:', e);
+        }
+      }
+
       if (folderHandleA && currentFileName && hasFileInA) {
         try {
           const fileHandle = await folderHandleA.getFileHandle(currentFileName);
@@ -234,10 +248,12 @@ export const CellWindow: React.FC = () => {
           const arrayBuffer = await file.arrayBuffer();
           const decoded = decodeTGA(arrayBuffer);
           if (isSubscribed) setCurrentImage(decoded);
+          return;
         } catch (e) {
           if (isSubscribed) setCurrentImage(generateSampleTGA(currentFileIndex + 1));
+          return;
         }
-      } else if (hasFileInA || !folderHandleA) {
+      } else if (hasFileInA || (!folderHandleA && fileMapA.size === 0)) {
         if (isSubscribed) {
           setCurrentImage(generateSampleTGA(currentFileIndex + 1));
           const prev = currentFileIndex > 0 ? generateSampleTGA(currentFileIndex) : null;
@@ -251,7 +267,7 @@ export const CellWindow: React.FC = () => {
 
     loadImage();
     return () => { isSubscribed = false; };
-  }, [currentFileIndex, unifiedFileList, fileListA, folderHandleA, setCurrentImage, setPrevNextImages]);
+  }, [currentFileIndex, unifiedFileList, fileListA, folderHandleA, fileMapA, setCurrentImage, setPrevNextImages]);
 
   // 分割右側ビュー画像の読み込み (Dir B / Unified)
   useEffect(() => {
@@ -262,6 +278,18 @@ export const CellWindow: React.FC = () => {
       const splitFileName = unifiedFileList[splitFileIndex];
       const hasFileInB = fileListB.includes(splitFileName);
 
+      if (fileMapB.has(splitFileName)) {
+        try {
+          const file = fileMapB.get(splitFileName)!;
+          const arrayBuffer = await file.arrayBuffer();
+          const decoded = decodeTGA(arrayBuffer);
+          if (isSubscribed) setSplitImage(decoded);
+          return;
+        } catch (e) {
+          console.error('Failed to decode TGA from fileMapB:', e);
+        }
+      }
+
       if (folderHandleB && splitFileName && hasFileInB) {
         try {
           const fileHandle = await folderHandleB.getFileHandle(splitFileName);
@@ -269,10 +297,12 @@ export const CellWindow: React.FC = () => {
           const arrayBuffer = await file.arrayBuffer();
           const decoded = decodeTGA(arrayBuffer);
           if (isSubscribed) setSplitImage(decoded);
+          return;
         } catch (e) {
           if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
+          return;
         }
-      } else if (hasFileInB || !folderHandleB) {
+      } else if (hasFileInB || (!folderHandleB && fileMapB.size === 0)) {
         if (isSubscribed) setSplitImage(generateSampleTGA(splitFileIndex + 1));
       } else {
         if (isSubscribed) setSplitImage(null);
@@ -281,7 +311,7 @@ export const CellWindow: React.FC = () => {
 
     loadSplitImage();
     return () => { isSubscribed = false; };
-  }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB]);
+  }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB, fileMapB]);
 
   // アニメーション再生
   useEffect(() => {

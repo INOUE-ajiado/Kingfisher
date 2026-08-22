@@ -1,18 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { encodeTGA } from '../../engine/tga';
+import { encodeTGA, decodeTGA } from '../../engine/tga';
 import { Moon, Sun } from 'lucide-react';
 
 export const MenuBar: React.FC = () => {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+
   const {
     isDarkMode,
     toggleDarkMode,
     currentImage,
+    setCurrentImage,
     folderHandleA,
     folderHandleB,
+    setFolderHandleA,
+    setFolderFilesA,
     unifiedFileList,
     currentFileIndex,
     splitFileIndex,
@@ -60,6 +65,65 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleOpenFolderDir = async () => {
+    if ('showDirectoryPicker' in window) {
+      try {
+        const handle = await (window as any).showDirectoryPicker();
+        const files: string[] = [];
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.tga')) {
+            files.push(entry.name);
+          }
+        }
+        files.sort();
+        if (files.length > 0) {
+          setFolderHandleA(handle, handle.name, files);
+          const firstFileHandle = await handle.getFileHandle(files[0]);
+          const file = await firstFileHandle.getFile();
+          const buffer = await file.arrayBuffer();
+          const decoded = decodeTGA(buffer);
+          setCurrentImage(decoded);
+          return;
+        } else {
+          alert('選択したフォルダに .tga ファイルが見つかりませんでした。');
+          return;
+        }
+      } catch (e: any) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    folderInputRef.current?.click();
+  };
+
+  const handleFolderInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+
+    const filesMap = new Map<string, File>();
+    let folderName = 'Loaded_Folder';
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (file.name.toLowerCase().endsWith('.tga')) {
+        filesMap.set(file.name, file);
+        if ((file as any).webkitRelativePath) {
+          const parts = (file as any).webkitRelativePath.split('/');
+          if (parts.length > 1) folderName = parts[0];
+        }
+      }
+    }
+
+    if (filesMap.size > 0) {
+      setFolderFilesA(folderName, filesMap);
+      const firstFile = Array.from(filesMap.values())[0];
+      const buffer = await firstFile.arrayBuffer();
+      const decoded = decodeTGA(buffer);
+      setCurrentImage(decoded);
+    } else {
+      alert('選択したフォルダに .tga ファイルが見つかりませんでした。');
+    }
+  };
+
   const handleOpenReference = async () => {
     try {
       if ('showOpenFilePicker' in window) {
@@ -77,7 +141,6 @@ export const MenuBar: React.FC = () => {
         openReferenceImage(null, 'Hero_ColorSpec.tga');
       }
     } catch (e) {
-      // ユーザーがキャンセルした場合または非対応時
       openReferenceImage(null, 'Hero_ColorSpec.tga');
     }
   };
@@ -110,10 +173,11 @@ export const MenuBar: React.FC = () => {
       label: 'ファイル (F)',
       items: [
         { label: '新規作成', shortcut: 'Ctrl+N', action: () => alert('新規セルを作成します。') },
+        { label: 'フォルダを開く (Open Directory)...', shortcut: 'Ctrl+Shift+O', action: handleOpenFolderDir },
+        { label: '参照画像として開く (Open as Reference)...', shortcut: 'Ctrl+O', action: handleOpenReference },
+        { type: 'divider' },
         { label: '上書き保存', shortcut: 'Ctrl+S', action: handleSave },
         { label: '名前を付けて保存', shortcut: 'Ctrl+Shift+S', action: handleSave },
-        { type: 'divider' },
-        { label: '参照画像として開く (Open as Reference)...', shortcut: 'Ctrl+O', action: handleOpenReference },
         { type: 'divider' },
         { label: '環境設定 & 画像補正', shortcut: 'Ctrl+K', action: () => setActiveModal('preferences') },
       ],
@@ -320,6 +384,14 @@ export const MenuBar: React.FC = () => {
           Ver 2.0 (Studio)
         </span>
       </div>
+
+      <input
+        type="file"
+        ref={folderInputRef}
+        onChange={handleFolderInputChange}
+        className="hidden"
+        {...({ webkitdirectory: '', directory: '', multiple: true } as any)}
+      />
     </div>
   );
 };

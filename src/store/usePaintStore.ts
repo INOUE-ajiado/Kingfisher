@@ -105,6 +105,8 @@ export interface PaintStore {
   // --- 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理) ---
   folderHandleA: any | null;
   folderHandleB: any | null;
+  fileMapA: Map<string, File>;
+  fileMapB: Map<string, File>;
   folderNameA: string;
   folderNameB: string;
   fileListA: string[];
@@ -112,6 +114,8 @@ export interface PaintStore {
   unifiedFileList: string[];
   setFolderHandleA: (handle: any, name: string, files: string[]) => void;
   setFolderHandleB: (handle: any, name: string, files: string[]) => void;
+  setFolderFilesA: (name: string, filesMap: Map<string, File>) => void;
+  setFolderFilesB: (name: string, filesMap: Map<string, File>) => void;
 
   // --- ツール関連 ---
   activeTool: ToolType;
@@ -414,6 +418,8 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理)
   folderHandleA: null,
   folderHandleB: null,
+  fileMapA: new Map(),
+  fileMapB: new Map(),
   folderNameA: 'Cut001_Original',
   folderNameB: 'Cut001_Retake',
   fileListA: ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga', '0006.tga'],
@@ -439,6 +445,36 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
       const union = Array.from(new Set([...state.fileListA, ...files])).sort();
       return {
         folderHandleB: handle,
+        folderNameB: name,
+        fileListB: files,
+        unifiedFileList: union,
+        fileList: union,
+        currentFileIndex: 0,
+        splitFileIndex: 0,
+      };
+    }),
+
+  setFolderFilesA: (name, filesMap) =>
+    set((state) => {
+      const files = Array.from(filesMap.keys()).sort();
+      const union = Array.from(new Set([...files, ...state.fileListB])).sort();
+      return {
+        fileMapA: filesMap,
+        folderNameA: name,
+        fileListA: files,
+        unifiedFileList: union,
+        fileList: union,
+        currentFileIndex: 0,
+        splitFileIndex: 0,
+      };
+    }),
+
+  setFolderFilesB: (name, filesMap) =>
+    set((state) => {
+      const files = Array.from(filesMap.keys()).sort();
+      const union = Array.from(new Set([...state.fileListA, ...files])).sort();
+      return {
+        fileMapB: filesMap,
         folderNameB: name,
         fileListB: files,
         unifiedFileList: union,
