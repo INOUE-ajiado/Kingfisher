@@ -11,52 +11,24 @@ export const LogoTitle: React.FC<LogoTitleProps> = ({
   showSubtitle = false,
   className = '',
 }) => {
-  const fontSizeClass =
-    size === 'lg' ? 'text-3xl' : size === 'md' ? 'text-xl' : 'text-[15px]';
+  const fontSizeStyle =
+    size === 'lg'
+      ? { fontSize: '32px' }
+      : size === 'md'
+      ? { fontSize: '24px' }
+      : { fontSize: '15px' };
 
   return (
-    <div className={`flex flex-col items-center select-none ${className}`}>
-      <div
-        className={`main-title flex items-baseline justify-center leading-none font-black italic ${fontSizeClass}`}
-        style={{
-          fontFamily: "'Montserrat', 'Helvetica Neue', Arial, sans-serif",
-          fontWeight: 900,
-          background: 'linear-gradient(90deg, #2563EB, #009E9F)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          paddingRight: '2px',
-        }}
-      >
-        <span
-          className="accent-color"
-          style={{
-            fontSize: '0.65em',
-            lineHeight: 1,
-            display: 'inline-block',
-            verticalAlign: 'text-top',
-            position: 'relative',
-            top: '0.18em',
-            fontWeight: 900,
-            marginRight: '2px',
-            WebkitTextFillColor: '#F97316',
-            WebkitTextStroke: size === 'lg' ? '2px #F97316' : '1.2px #F97316',
-          }}
-        >
+    <div className={`theme-speed-logo inline-flex flex-col items-center select-none ${className}`}>
+      <div className="main-title" style={fontSizeStyle}>
+        <span className="accent-color">
           <sup>++</sup>
         </span>
         <span className="text-part1">KING</span>
         <span className="text-part2">FISHER</span>
         <span className="dots">..</span>
       </div>
-
-      {showSubtitle && (
-        <div
-          className="sub-title text-[11px] text-slate-500 dark:text-slate-400 font-mono tracking-wider mt-1"
-          style={{ fontFamily: "'Courier New', Consolas, monospace" }}
-        >
-          Ver 2.0 (Studio Ultimate)
-        </div>
-      )}
+      {showSubtitle && <div className="sub-title">Ver 2.0 (Studio Ultimate)</div>}
     </div>
   );
 };

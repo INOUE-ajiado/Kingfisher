@@ -21,3 +21,51 @@ body {
   background-color: var(--bg-main);
   color: var(--text-main);
 }
+
+/* =========================================
+   ++KINGFISHER.. ロゴタイトル (Speed & Dynamic)
+========================================= */
+.theme-speed-logo {
+  font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+  text-align: center;
+}
+
+.theme-speed-logo .main-title {
+  font-family: 'Montserrat', 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1; 
+  display: flex;
+  align-items: baseline; /* テキストの底辺を揃える */
+  justify-content: center;
+  font-weight: 900;
+  font-style: italic;
+  background: linear-gradient(90deg, #2563EB, #009E9F);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding-right: 2px;
+}
+
+/* 「++」の厳密な位置調整と太字化 */
+.theme-speed-logo .main-title sup {
+  font-size: 0.65em;
+  line-height: 1;
+  display: inline-block;
+  vertical-align: text-top; 
+  position: relative;
+  top: 0.18em; /* Kの角とツライチになるように押し込む */
+  font-weight: 900;
+  margin-right: 2px;
+}
+
+/* 黒い縁取りを防ぎ、オレンジ色で太く上書き */
+.theme-speed-logo .main-title .accent-color sup {
+  -webkit-text-fill-color: #F97316; 
+  -webkit-text-stroke: 1.5px #F97316;
+}
+
+.theme-speed-logo .sub-title {
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 11px;
+  color: #6b7280;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
