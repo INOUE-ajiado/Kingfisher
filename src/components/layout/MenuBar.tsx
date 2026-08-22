@@ -295,6 +295,11 @@ export const MenuBar: React.FC = () => {
       id: 'help',
       label: 'ヘルプ (H)',
       items: [
+        {
+          label: '仕様書・取扱説明書 (Manual)',
+          shortcut: 'F1',
+          action: () => window.open('/Kingfisher_Manual.html', '_blank'),
+        },
         { label: 'ショートカット一覧', shortcut: '', action: () => setActiveModal('shortcuts') },
         { type: 'divider' },
         { label: 'Kingfisher について', shortcut: '', action: () => setActiveModal('about') },

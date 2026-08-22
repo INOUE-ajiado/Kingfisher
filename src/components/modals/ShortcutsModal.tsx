@@ -8,6 +8,7 @@ export const ShortcutsModal: React.FC = () => {
   if (activeModal !== 'shortcuts') return null;
 
   const shortcutsList = [
+    { key: 'F1', desc: '仕様書・取扱説明書 (HTMLマニュアル) を新規タブで開く' },
     { key: 'PageDown / ↓', desc: '次のセルへ移動' },
     { key: 'PageUp / ↑', desc: '前のセルへ移動' },
     { key: 'Ctrl + S', desc: '現在編集中のセルを上書き保存' },

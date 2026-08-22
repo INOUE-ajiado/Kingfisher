@@ -42,7 +42,10 @@ export const App: React.FC = () => {
         return;
       }
 
-      if (e.key === 'PageDown' || e.key === 'ArrowDown') {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        window.open('/Kingfisher_Manual.html', '_blank');
+      } else if (e.key === 'PageDown' || e.key === 'ArrowDown') {
         e.preventDefault();
         nextCell();
       } else if (e.key === 'PageUp' || e.key === 'ArrowUp') {
