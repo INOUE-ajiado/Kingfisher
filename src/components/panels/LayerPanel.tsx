@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { Layers, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { Layers, Eye, EyeOff, Plus, Trash2, Info } from 'lucide-react';
 
 export const LayerPanel: React.FC = () => {
   const {
@@ -26,14 +26,18 @@ export const LayerPanel: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none p-2 min-h-[140px]">
-      <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
+      <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-700 mb-1 flex items-center justify-between">
+        <div
+          className="flex items-center gap-1.5 cursor-help"
+          title="※TGAは単一層フォーマットです。本パネルはGPUによる仮想表示フィルタ（線画・彩色・影の個別分離表示）を提供します。"
+        >
           <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-          <span>Layers ({layers.length})</span>
+          <span>View Filters (GPU仮想レイヤー)</span>
+          <Info className="w-3 h-3 text-slate-400" />
         </div>
         <button
           onClick={() => setShowAddInput(!showAddInput)}
-          title="Add New Layer"
+          title="Add New Filter Layer"
           className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-blue-600 dark:text-blue-400 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />

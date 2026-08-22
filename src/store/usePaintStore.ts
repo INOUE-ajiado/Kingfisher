@@ -183,7 +183,7 @@ export interface PaintStore {
   setBackgroundColor: (color: RGBA) => void;
   swapColors: () => void;
 
-  // --- パネル可視性 ---
+  // --- パネル可視性 ＆ フローティング ---
   panelVisibility: {
     toolPalette: boolean;
     toolOptions: boolean;
@@ -194,6 +194,8 @@ export interface PaintStore {
     historyPanel: boolean;
   };
   togglePanelVisibility: (panel: 'toolPalette' | 'toolOptions' | 'colorChart' | 'lightTable' | 'fileBrowser' | 'layerPanel' | 'historyPanel') => void;
+  isColorChartFloating: boolean;
+  toggleColorChartFloating: () => void;
 
   // --- 未塗り漏れ点滅表示 ---
   showUnpaintedFlash: boolean;
@@ -608,6 +610,8 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
         [panel]: !state.panelVisibility[panel],
       },
     })),
+  isColorChartFloating: false,
+  toggleColorChartFloating: () => set((state) => ({ isColorChartFloating: !state.isColorChartFloating })),
 
   showUnpaintedFlash: false,
   toggleShowUnpaintedFlash: () => set((state) => ({ showUnpaintedFlash: !state.showUnpaintedFlash })),

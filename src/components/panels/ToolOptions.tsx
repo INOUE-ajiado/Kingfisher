@@ -137,52 +137,74 @@ export const ToolOptions: React.FC = () => {
 
       {/* 色トレス線 */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        <input
-          type="checkbox"
-          id="trace"
-          checked={toolOptions.enableIncludeTrace}
-          onChange={(e) => setEnableIncludeTrace(e.target.checked)}
-          className="rounded accent-blue-600 cursor-pointer"
-        />
-        <label htmlFor="trace" className="text-slate-700 dark:text-slate-300 font-medium cursor-pointer">
-          色トレス線を含む
+        <label
+          htmlFor="trace"
+          className="text-slate-700 dark:text-slate-300 font-medium cursor-pointer px-1 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 min-h-[28px] transition-colors"
+        >
+          <input
+            type="checkbox"
+            id="trace"
+            checked={toolOptions.enableIncludeTrace}
+            onChange={(e) => setEnableIncludeTrace(e.target.checked)}
+            className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+          />
+          <span>色トレス線を含む</span>
         </label>
-        <div className="flex gap-1">
-          <div
+
+        <div className="flex gap-1.5 items-center">
+          <button
+            type="button"
             onClick={() => toggleTraceColor('red')}
-            title="Red Trace"
-            className={`w-3.5 h-3.5 rounded-sm bg-red-500 cursor-pointer border ${
-              toolOptions.traceColors.red ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
-            }`}
-          />
-          <div
+            title="Red Trace Toggle"
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          >
+            <div
+              className={`w-4 h-4 rounded-sm bg-red-500 border ${
+                toolOptions.traceColors.red ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
+              }`}
+            />
+          </button>
+          <button
+            type="button"
             onClick={() => toggleTraceColor('blue')}
-            title="Blue Trace"
-            className={`w-3.5 h-3.5 rounded-sm bg-blue-500 cursor-pointer border ${
-              toolOptions.traceColors.blue ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
-            }`}
-          />
-          <div
+            title="Blue Trace Toggle"
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          >
+            <div
+              className={`w-4 h-4 rounded-sm bg-blue-500 border ${
+                toolOptions.traceColors.blue ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
+              }`}
+            />
+          </button>
+          <button
+            type="button"
             onClick={() => toggleTraceColor('green')}
-            title="Green Trace"
-            className={`w-3.5 h-3.5 rounded-sm bg-emerald-500 cursor-pointer border ${
-              toolOptions.traceColors.green ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
-            }`}
-          />
+            title="Green Trace Toggle"
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+          >
+            <div
+              className={`w-4 h-4 rounded-sm bg-emerald-500 border ${
+                toolOptions.traceColors.green ? 'border-2 border-slate-900 dark:border-slate-100 scale-110' : 'border-slate-300 opacity-40'
+              }`}
+            />
+          </button>
         </div>
       </div>
 
       {/* トレス線を残す */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        <input
-          type="checkbox"
-          id="retainTrace"
-          checked={toolOptions.retainTraceLine}
-          onChange={(e) => setRetainTraceLine(e.target.checked)}
-          className="rounded accent-blue-600 cursor-pointer"
-        />
-        <label htmlFor="retainTrace" className="text-slate-700 dark:text-slate-300 cursor-pointer text-[11px]">
-          線を残す
+        <label
+          htmlFor="retainTrace"
+          className="text-slate-700 dark:text-slate-300 cursor-pointer text-[11px] px-1 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 min-h-[28px] transition-colors"
+        >
+          <input
+            type="checkbox"
+            id="retainTrace"
+            checked={toolOptions.retainTraceLine}
+            onChange={(e) => setRetainTraceLine(e.target.checked)}
+            className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+          />
+          <span>線を残す</span>
         </label>
       </div>
 
@@ -206,15 +228,18 @@ export const ToolOptions: React.FC = () => {
 
       {/* 隣接ピクセルのみ */}
       <div className="flex items-center gap-1 flex-shrink-0">
-        <input
-          type="checkbox"
-          id="contiguous"
-          checked={toolOptions.contiguous}
-          onChange={(e) => setContiguous(e.target.checked)}
-          className="rounded accent-blue-600 cursor-pointer"
-        />
-        <label htmlFor="contiguous" className="text-slate-700 dark:text-slate-300 cursor-pointer">
-          隣接のみ
+        <label
+          htmlFor="contiguous"
+          className="text-slate-700 dark:text-slate-300 cursor-pointer px-1 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-1.5 min-h-[28px] transition-colors"
+        >
+          <input
+            type="checkbox"
+            id="contiguous"
+            checked={toolOptions.contiguous}
+            onChange={(e) => setContiguous(e.target.checked)}
+            className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+          />
+          <span>隣接のみ</span>
         </label>
       </div>
 

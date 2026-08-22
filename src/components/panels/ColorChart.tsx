@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { Download, Upload, Plus, Trash2 } from 'lucide-react';
+import { Download, Upload, Plus, Trash2, Maximize2, Minimize2, Pin } from 'lucide-react';
 
 export const ColorChart: React.FC = () => {
   const {
@@ -15,6 +15,8 @@ export const ColorChart: React.FC = () => {
     importACTPalette,
     addPaletteColor,
     deletePaletteColor,
+    isColorChartFloating,
+    toggleColorChartFloating,
   } = usePaintStore();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -23,6 +25,26 @@ export const ColorChart: React.FC = () => {
   const [newColorName, setNewColorName] = useState('');
   const [newColorHex, setNewColorHex] = useState('#FF0000');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // フローティング用ドラッグ状態
+  const [floatPos, setFloatPos] = useState({ x: window.innerWidth - 360, y: 120 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!isColorChartFloating) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - floatPos.x, y: e.clientY - floatPos.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setFloatPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   const handleExport = () => {
     const jsonStr = exportPaletteJSON();
@@ -83,9 +105,30 @@ export const ColorChart: React.FC = () => {
   };
 
   return (
-    <div className="flex-[1.5] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm select-none p-2 min-h-[220px]">
-      <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between">
-        <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト">Color Chart (1/2/3 Tab)</span>
+    <div
+      style={
+        isColorChartFloating
+          ? { position: 'fixed', left: `${floatPos.x}px`, top: `${floatPos.y}px`, zIndex: 45, width: '320px' }
+          : undefined
+      }
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      className={`${
+        isColorChartFloating
+          ? 'bg-white dark:bg-slate-900 border-2 border-blue-500 shadow-2xl rounded-lg p-2 animate-in fade-in duration-100'
+          : 'flex-[1.5] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded flex flex-col shadow-sm p-2 min-h-[220px]'
+      } select-none`}
+    >
+      <div
+        onMouseDown={handleMouseDown}
+        className={`text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between ${
+          isColorChartFloating ? 'cursor-move bg-slate-100 dark:bg-slate-800 -mx-2 -mt-2 p-2 rounded-t-md' : ''
+        }`}
+      >
+        <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト" className="flex items-center gap-1">
+          {isColorChartFloating && <Pin className="w-3 h-3 text-amber-500" />}
+          <span>Color Chart (1/2/3 Tab)</span>
+        </span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowAddForm(!showAddForm)}
@@ -107,6 +150,17 @@ export const ColorChart: React.FC = () => {
             className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
           >
             <Upload className="w-3 h-3" />
+          </button>
+          <button
+            onClick={toggleColorChartFloating}
+            title={isColorChartFloating ? '右下へドッキング' : 'キャンバス上に切り離して浮遊ピン留め (Float)'}
+            className={`p-1 rounded transition-colors ${
+              isColorChartFloating
+                ? 'bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-300'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-blue-600'
+            }`}
+          >
+            {isColorChartFloating ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
           <input
             type="file"

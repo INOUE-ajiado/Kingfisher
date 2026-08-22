@@ -851,14 +851,15 @@ export const CellWindow: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={toggleIsSplitView}
+            title="1画面と左右分割比較（スプリットビュー ◫）をワンクリックで切替"
             className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
               isSplitView
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500'
             }`}
           >
-            <Columns2 className="w-3.5 h-3.5" />
-            <span>{isSplitView ? '2画面分割中' : '1画面表示'}</span>
+            <Columns2 className="w-3.5 h-3.5 text-blue-400" />
+            <span>◫ {isSplitView ? '2画面分割比較中' : '左右並べる (Split)'}</span>
           </button>
 
           {isSplitView && (
