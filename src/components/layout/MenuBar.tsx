@@ -348,7 +348,7 @@ export const MenuBar: React.FC = () => {
   ];
 
   return (
-    <div ref={menuRef} className="h-7 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative overflow-x-auto no-scrollbar">
+    <div ref={menuRef} className="h-7 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs text-slate-800 dark:text-slate-200 z-50 select-none relative">
       {/* アイコン ＆ KINGFISHER Speed & Dynamic タイトルロゴ */}
       <div
         onClick={() => setActiveModal('about')}
@@ -382,7 +382,7 @@ export const MenuBar: React.FC = () => {
               </button>
 
               {isOpen && (
-                <div className="absolute top-full left-0 mt-0.5 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-lg py-1 z-40 text-xs animate-in fade-in zoom-in-95 duration-100">
+                <div className="absolute top-full left-0 mt-0.5 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-2xl py-1 z-[9999] text-xs animate-in fade-in zoom-in-95 duration-100">
                   {menu.items.map((item: any, idx: number) => {
                     if (item.type === 'divider') {
                       return <div key={idx} className="my-1 border-t border-slate-200 dark:border-slate-700" />;
