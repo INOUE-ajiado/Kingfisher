@@ -25,7 +25,7 @@ export const ToolOptions: React.FC = () => {
   } = usePaintStore();
 
   return (
-    <div className="h-8 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs select-none gap-2.5 overflow-x-auto">
+    <div className="h-8 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs select-none gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar">
       {/* タップ穴スタビライザー (Peg Hole Stabilizer) */}
       <div className="flex items-center gap-1.5 flex-shrink-0 bg-slate-50 dark:bg-slate-800/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
         <button

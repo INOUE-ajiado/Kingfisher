@@ -69,3 +69,12 @@ body {
   letter-spacing: 0.05em;
   margin-top: 4px;
 }
+
+/* スクロールバー非表示（シークバー全廃）ユーティリティ */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

@@ -348,23 +348,23 @@ export const MenuBar: React.FC = () => {
   ];
 
   return (
-    <div ref={menuRef} className="h-7 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative">
+    <div ref={menuRef} className="h-7 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex items-center px-2 text-xs text-slate-800 dark:text-slate-200 z-30 select-none relative overflow-x-auto no-scrollbar">
       {/* アイコン ＆ KINGFISHER Speed & Dynamic タイトルロゴ */}
       <div
         onClick={() => setActiveModal('about')}
         title="Kingfisher について (About)"
-        className="mr-5 flex items-center gap-1.5 cursor-pointer select-none hover:opacity-90 transition-opacity"
+        className="mr-3 sm:mr-5 flex items-center gap-1.5 cursor-pointer select-none hover:opacity-90 transition-opacity flex-shrink-0"
       >
         <img
           src="/icon.jpg"
           alt="Kingfisher Icon"
-          className="w-5 h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700 flex-shrink-0"
+          className="w-4 h-4 sm:w-5 sm:h-5 rounded-md object-cover shadow-xs border border-slate-200 dark:border-slate-700 flex-shrink-0"
         />
         <LogoTitle size="sm" />
       </div>
 
       {/* メニューアイテム */}
-      <div className="flex gap-1">
+      <div className="flex gap-0.5 sm:gap-1 flex-shrink-0">
         {menuData.map((menu) => {
           const isOpen = openMenu === menu.id;
           return (
@@ -372,7 +372,7 @@ export const MenuBar: React.FC = () => {
               <button
                 onClick={() => setOpenMenu(isOpen ? null : menu.id)}
                 onMouseEnter={() => openMenu && setOpenMenu(menu.id)}
-                className={`px-2.5 py-1 rounded transition-colors text-[11px] ${
+                className={`px-1.5 sm:px-2.5 py-0.5 rounded transition-colors text-[11px] whitespace-nowrap ${
                   isOpen
                     ? 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-semibold'
                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
