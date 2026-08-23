@@ -159,6 +159,27 @@ export const FileBrowser: React.FC = () => {
     return tree;
   }, [unifiedFileList]);
 
+  // 再帰的ディレクトリ走査 (ネストされた階層パスを完全保持)
+  const scanDirectoryRecursively = async (dirHandle: any, currentPath: string, filesMap: Map<string, File>, fileList: string[]) => {
+    for await (const entry of dirHandle.values()) {
+      const entryPath = `${currentPath}/${entry.name}`;
+      if (entry.kind === 'file') {
+        const lower = entry.name.toLowerCase();
+        if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+          fileList.push(entryPath);
+          try {
+            const file = await entry.getFile();
+            filesMap.set(entryPath, file);
+          } catch (e) {
+            console.error('File getFile error:', e);
+          }
+        }
+      } else if (entry.kind === 'directory') {
+        await scanDirectoryRecursively(entry, entryPath, filesMap, fileList);
+      }
+    }
+  };
+
   // カットフォルダ（ルート）一括読み込み
   const handleOpenCutRootFolder = async () => {
     if (!('showDirectoryPicker' in window)) {
@@ -174,23 +195,8 @@ export const FileBrowser: React.FC = () => {
         if (entry.kind === 'directory') {
           const filesMap = new Map<string, File>();
           const fileList: string[] = [];
-          let isImageFolder = false;
 
-          for await (const fileEntry of entry.values()) {
-            if (fileEntry.kind === 'file') {
-              const lower = fileEntry.name.toLowerCase();
-              if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-                fileList.push(fileEntry.name);
-                try {
-                  const file = await fileEntry.getFile();
-                  filesMap.set(fileEntry.name, file);
-                } catch (e) {
-                  console.error('File getFile error:', e);
-                }
-                if (lower.endsWith('.tga') || lower.endsWith('.png')) isImageFolder = true;
-              }
-            }
-          }
+          await scanDirectoryRecursively(entry, entry.name, filesMap, fileList);
 
           fileList.sort();
           if (fileList.length > 0) {
@@ -199,7 +205,7 @@ export const FileBrowser: React.FC = () => {
               handle: entry,
               filesMap,
               fileList,
-              isImageFolder,
+              isImageFolder: true,
             });
           }
         }

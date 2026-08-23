@@ -481,21 +481,22 @@ export const CellWindow: React.FC = () => {
   const [isWinADragOver, setIsWinADragOver] = useState(false);
   const [isWinBDragOver, setIsWinBDragOver] = useState(false);
 
-  // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理
-  const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>) => {
+  // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理 (階層パス保持)
+  const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>, currentPath = '') => {
     const dirReader = dirEntry.createReader();
     const entries: any[] = await new Promise((resolve) => {
       dirReader.readEntries((results: any[]) => resolve(results));
     });
 
     for (const entry of entries) {
+      const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
       if (entry.isFile) {
         const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
         if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
-          fileMap.set(file.name, file);
+          fileMap.set(relPath, file);
         }
       } else if (entry.isDirectory) {
-        await readDirectoryEntries(entry, fileMap);
+        await readDirectoryEntries(entry, fileMap, relPath);
       }
     }
   };
@@ -520,11 +521,12 @@ export const CellWindow: React.FC = () => {
           if (entry) {
             if (entry.isDirectory) {
               if (!detectedFolderName) detectedFolderName = entry.name;
-              await readDirectoryEntries(entry, fileMap);
+              await readDirectoryEntries(entry, fileMap, entry.name);
             } else if (entry.isFile) {
               const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
               if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
-                fileMap.set(file.name, file);
+                const relPath = (file as any).webkitRelativePath || file.name;
+                fileMap.set(relPath, file);
               }
             }
           }
@@ -536,7 +538,8 @@ export const CellWindow: React.FC = () => {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         if (/\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
-          fileMap.set(file.name, file);
+          const relPath = (file as any).webkitRelativePath || file.name;
+          fileMap.set(relPath, file);
         }
       }
     }
