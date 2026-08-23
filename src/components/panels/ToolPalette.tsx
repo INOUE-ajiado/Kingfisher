@@ -27,7 +27,44 @@ interface ToolItem {
 }
 
 export const ToolPalette: React.FC = () => {
-  const { activeTool, setActiveTool, currentColor, backgroundColor, swapColors, setActiveModal } = usePaintStore();
+  const {
+    activeTool,
+    setActiveTool,
+    currentColor,
+    backgroundColor,
+    setCurrentColor,
+    setBackgroundColor,
+    swapColors,
+    setActiveModal,
+  } = usePaintStore();
+
+  const fgInputRef = useRef<HTMLInputElement | null>(null);
+  const bgInputRef = useRef<HTMLInputElement | null>(null);
+
+  const hexToRgba = (hex: string) => {
+    let clean = hex.replace('#', '');
+    if (clean.length === 3) clean = clean.split('').map((c) => c + c).join('');
+    const num = parseInt(clean, 16);
+    return {
+      r: (num >> 16) & 255,
+      g: (num >> 8) & 255,
+      b: num & 255,
+      a: 255,
+      hex: `#${clean.toUpperCase()}`,
+    };
+  };
+
+  const handleFgClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    usePaintStore.getState().togglePanelVisibility('colorChart');
+    fgInputRef.current?.click();
+  };
+
+  const handleBgClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    usePaintStore.getState().togglePanelVisibility('colorChart');
+    bgInputRef.current?.click();
+  };
   
   // デフォルト 1列 (40px)、ドラッグで最大2列 (74px)
   const [cols, setCols] = useState<1 | 2>(1);
@@ -166,23 +203,42 @@ export const ToolPalette: React.FC = () => {
 
       {/* クラシック 前景色 / 背景色 重ね合わせカラーピッカー */}
       <div className="p-1 border-t border-slate-200 dark:border-slate-800 flex flex-col items-center">
-        <div className="relative w-7 h-7 cursor-pointer" title="クリックで前景色と背景色を入れ替え">
+        <div className="relative w-7 h-7" title="前景色/背景色をクリックでカラーパレット表示・色変更">
           {/* 背景色 (BG) */}
           <div
-            onClick={swapColors}
+            onClick={handleBgClick}
             style={{ backgroundColor: backgroundColor.hex }}
-            className="absolute bottom-0 right-0 w-4 h-4 border border-slate-400 dark:border-slate-600 rounded-sm shadow-sm"
+            className="absolute bottom-0 right-0 w-4 h-4 border border-slate-400 dark:border-slate-600 rounded-sm shadow-sm cursor-pointer hover:scale-110 transition-transform"
+            title="クリックで背景色を変更"
           />
           {/* 前景色 (FG) */}
           <div
-            onClick={swapColors}
+            onClick={handleFgClick}
             style={{ backgroundColor: currentColor.hex }}
-            className="absolute top-0 left-0 w-5 h-5 border-2 border-slate-800 dark:border-slate-100 rounded-sm shadow-md z-10"
+            className="absolute top-0 left-0 w-5 h-5 border-2 border-slate-800 dark:border-slate-100 rounded-sm shadow-md z-10 cursor-pointer hover:scale-110 transition-transform"
+            title="クリックで描画色 (前景色) を変更"
           />
         </div>
+
+        {/* 隠しカラーピッカーインプット */}
+        <input
+          ref={fgInputRef}
+          type="color"
+          value={currentColor.hex}
+          onChange={(e) => setCurrentColor(hexToRgba(e.target.value))}
+          className="hidden"
+        />
+        <input
+          ref={bgInputRef}
+          type="color"
+          value={backgroundColor.hex}
+          onChange={(e) => setBackgroundColor(hexToRgba(e.target.value))}
+          className="hidden"
+        />
+
         <button
           onClick={swapColors}
-          title="前景色 / 背景色の反転"
+          title="前景色 / 背景色の反転 (Swap)"
           className="mt-0.5 p-0.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
         >
           <ArrowLeftRight className="w-2.5 h-2.5" />
