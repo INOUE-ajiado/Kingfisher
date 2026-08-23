@@ -30,6 +30,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     setReferenceTransform,
     pickColorFromReference,
     openReferenceImage,
+    activeTool,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
@@ -107,10 +108,16 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   }, [refImage, isFloating, referenceCanvas.isOpen]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button === 2 || e.button === 1) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
-      return;
+    // ⚠️ 左クリック (0), 中ボタン (1), 右ボタン (2) すべてで自由パン移動
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
+      // スポイト操作 (Alt キーまたはスポイトツール有効時) 以外は左ドラッグでパン移動
+      if (e.button === 0 && (e.altKey || activeTool === 'eyedropper')) {
+        // 色取得へパススルー
+      } else {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
+        return;
+      }
     }
 
     if (e.button === 0 && canvasRef.current && refImage) {
@@ -476,6 +483,28 @@ export const CellWindow: React.FC = () => {
   const [isLassoing, setIsLassoing] = useState(false);
   const [isBrushing, setIsBrushing] = useState(false);
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+
+  // ⌨️ Space キー検出 (Space キーを押している間は一時的にパン移動ツール化)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+        setIsSpacePressed(true);
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
 
   // エクスプローラーダイレクト D&D ドラッグオーバー・ステート
   const [isWinADragOver, setIsWinADragOver] = useState(false);
@@ -1111,7 +1140,12 @@ export const CellWindow: React.FC = () => {
 
     const currentTransform = isLeftView ? canvasTransform : splitCanvasTransform;
 
-    if (e.button === 1 || activeTool === 'pan') {
+    // ⚠️ 左クリック (0) (panツール/Spaceキー押下時), 中ボタン (1), 右ボタン (2) でパン移動
+    if (
+      e.button === 1 ||
+      e.button === 2 ||
+      (e.button === 0 && (activeTool === 'pan' || isSpacePressed))
+    ) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - currentTransform.offsetX, y: e.clientY - currentTransform.offsetY });
       return;
@@ -1436,7 +1470,9 @@ export const CellWindow: React.FC = () => {
             )}
 
             <div
-              className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
+              className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
+                activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+              }`}
               onWheel={(e) => handleWheel(e, true)}
             >
               <div
@@ -1549,7 +1585,9 @@ export const CellWindow: React.FC = () => {
               )}
 
               <div
-                className="flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden cursor-crosshair transition-colors"
+                className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
+                  activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+                }`}
                 onWheel={(e) => handleWheel(e, false)}
               >
                 <div
