@@ -281,14 +281,17 @@ export const App: React.FC = () => {
       <ExportTraceModal />
       <MobileGuard />
 
-      {/* 🌟 右サイドパネル非表示時のみ表示される縦全高極細コンパクト再展開バー */}
+      {/* 🌟 右サイドパネル非表示時のみ表示される縦全高コンパクト再展開バー (Light/Darkテーマ対応) */}
       {!isRightSidebarOpen && (
         <button
           onClick={toggleRightSidebarOpen}
           title="右サイドパネルを展開 (Ctrl+Alt / Ctrl+Cmd)"
-          className="fixed right-0 top-7 bottom-0 z-40 w-2.5 bg-slate-800/80 hover:bg-blue-600 text-slate-400 hover:text-white border-l border-slate-700/80 shadow-md transition-all duration-150 group flex items-center justify-center cursor-pointer"
+          className="fixed right-0 top-7 bottom-0 z-40 w-6 bg-slate-200/90 dark:bg-slate-800/90 hover:bg-blue-600 dark:hover:bg-blue-600 text-slate-700 dark:text-slate-300 hover:text-white dark:hover:text-white border-l border-slate-300 dark:border-slate-700 shadow-md transition-all duration-150 group flex flex-col items-center justify-center gap-2 cursor-pointer py-4"
         >
-          <ChevronLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
+          <ChevronLeft className="w-4 h-4 flex-shrink-0 transition-transform group-hover:-translate-x-0.5" />
+          <span className="text-[10px] font-bold tracking-widest [writing-mode:vertical-rl] select-none">
+            右サイドパネル
+          </span>
         </button>
       )}
     </div>
