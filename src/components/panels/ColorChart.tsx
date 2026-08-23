@@ -29,7 +29,7 @@ export const ColorChart: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
 
   // 参照画像からのドラッグ＆ドロップ色登録ハンドラー
-  const handleDropRegister = (e: React.MouseEvent, targetTab?: 'normal' | 'shadow' | 'highlight', targetIndex?: number) => {
+  const handleDropRegister = (e: React.SyntheticEvent, targetTab?: 'normal' | 'shadow' | 'highlight', targetIndex?: number) => {
     const dragColor = usePaintStore.getState().activeDragColor;
     if (!dragColor) return;
     e.stopPropagation();
@@ -233,6 +233,7 @@ export const ColorChart: React.FC = () => {
               key={tab}
               onClick={() => setActivePaletteTab(tab)}
               onMouseUp={(e) => handleDropRegister(e, tab)}
+              onPointerUp={(e) => handleDropRegister(e, tab)}
               title={`キー [${i + 1}] で切り替え (参照画像からドロップして ${tab} へ色追加)`}
               className={`text-[11px] px-2.5 py-0.5 rounded-full capitalize transition-all ${
                 isActive
@@ -255,6 +256,7 @@ export const ColorChart: React.FC = () => {
               key={item.id}
               onClick={() => setSelectedColorIndex(index)}
               onMouseUp={(e) => handleDropRegister(e, activePaletteTab, index)}
+              onPointerUp={(e) => handleDropRegister(e, activePaletteTab, index)}
               onContextMenu={(e) => handleCellContextMenu(e, index)}
               title={`${item.name} (参照画像からドロップでこのスロットに色上書き)`}
               style={{ backgroundColor: item.color.hex }}

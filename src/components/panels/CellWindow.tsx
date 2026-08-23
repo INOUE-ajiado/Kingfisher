@@ -108,8 +108,8 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     return () => cancelAnimationFrame(animId);
   }, [refImage, isFloating, referenceCanvas.isOpen]);
 
-  const pickColorFromPos = (clientX: number, clientY: number) => {
-    if (!canvasRef.current || !refImage) return;
+  const getPixelColorAt = (clientX: number, clientY: number) => {
+    if (!canvasRef.current || !refImage) return null;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const scaleX = canvasRef.current.width / rect.width;
@@ -125,11 +125,9 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       const a = refImage.data[idx + 3];
       const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
 
-      const colorObj = { r, g, b, a, hex };
-      pickColorFromReference(colorObj);
-      setActiveDragColor(colorObj);
-      setDragCursorPos({ x: clientX, y: clientY });
+      return { r, g, b, a, hex };
     }
+    return null;
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -140,16 +138,32 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       return;
     }
 
-    // 🌟 左クリック (0): 参照画像からダイレクト色スポイト ＆ ドロップドラッグ準備
+    // 🌟 左クリック (0): 最初のクリック色を完全に固定（Initial Color Lock）しドラッグ開始
     if (e.button === 0) {
-      pickColorFromPos(e.clientX, e.clientY);
+      const colorObj = getPixelColorAt(e.clientX, e.clientY);
+      if (colorObj) {
+        pickColorFromReference(colorObj);
+        setActiveDragColor(colorObj); // 最初のクリック色を固定ロック
+        setDragCursorPos({ x: e.clientX, y: e.clientY });
 
-      const onGlobalPointerUp = () => {
-        window.removeEventListener('pointerup', onGlobalPointerUp);
-        setActiveDragColor(null);
-        setDragCursorPos(null);
-      };
-      window.addEventListener('pointerup', onGlobalPointerUp);
+        // 全画面領域でのドラッグ位置追跡（色は初回クリック色を絶対維持）
+        const onGlobalPointerMove = (moveEvt: PointerEvent) => {
+          setDragCursorPos({ x: moveEvt.clientX, y: moveEvt.clientY });
+        };
+
+        const onGlobalPointerUp = () => {
+          window.removeEventListener('pointermove', onGlobalPointerMove);
+          window.removeEventListener('pointerup', onGlobalPointerUp);
+          // ColorChart 側のドロップ完了を待ってクリア
+          setTimeout(() => {
+            setActiveDragColor(null);
+            setDragCursorPos(null);
+          }, 100);
+        };
+
+        window.addEventListener('pointermove', onGlobalPointerMove);
+        window.addEventListener('pointerup', onGlobalPointerUp);
+      }
     }
   };
 
@@ -160,9 +174,6 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
         offsetX: e.clientX - panStart.x,
         offsetY: e.clientY - panStart.y,
       });
-    } else if (e.buttons === 1) {
-      // 左ボタンを押したままドラッグ中も連続で色を取得＆カーソルチップ更新
-      pickColorFromPos(e.clientX, e.clientY);
     }
   };
 
