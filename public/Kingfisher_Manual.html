@@ -94,7 +94,7 @@
     sidebar a {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       display: block;
       padding: 6px 10px;
       border-radius: 4px;
@@ -154,6 +154,16 @@
       color: #CBD5E1;
     }
 
+    ul, ol {
+      margin-left: 20px;
+      margin-bottom: 15px;
+      color: #CBD5E1;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
     /* テーブルスタイル */
     table {
       width: 100%;
@@ -194,6 +204,7 @@
       font-family: monospace;
       font-size: 0.85rem;
       color: #FCD34D;
+      font-weight: bold;
     }
 
     .badge {
@@ -256,12 +267,13 @@
       <li><a href="#overview">1. アプリケーション概要</a></li>
       <li><a href="#ui-layout">2. 画面レイアウト構成</a></li>
       <li><a href="#toolbar">3. ツールバー ＆ 各種機能一覧</a></li>
-      <li><a href="#menu-bar">4. メニューバー機能リファレンス</a></li>
-      <li><a href="#file-browser">5. 統合ファイルブラウザ (Dir A/B)</a></li>
-      <li><a href="#color-spec">6. 色指定参照 ＆ 一発スポイト</a></li>
-      <li><a href="#onion-lighttable">7. オニオンスキン ＆ ライトテーブル</a></li>
-      <li><a href="#peg-stabilizer">8. ペグスタビライザー (理想タップ合わせ)</a></li>
-      <li><a href="#shortcuts">9. ショートカットキー一覧</a></li>
+      <li><a href="#bg-matte">4. 透過検図背景マット切替</a></li>
+      <li><a href="#file-browser">5. 統合ファイルツリー (480px固定)</a></li>
+      <li><a href="#color-spec-drop">6. 参照画像 ➔ ColorChart ドラッグ＆ドロップ色登録</a></li>
+      <li><a href="#tool-options-panel">7. ツールオプション (右サイドパネル統合)</a></li>
+      <li><a href="#onion-lighttable">8. オニオンスキン ＆ ライトテーブル</a></li>
+      <li><a href="#peg-stabilizer">9. ペグスタビライザー (理想タップ合わせ)</a></li>
+      <li><a href="#shortcuts">10. 最新ショートカットキー一覧</a></li>
     </ul>
   </sidebar>
 
@@ -270,7 +282,7 @@
     <header>
       <div style="display:flex; align-items:baseline; gap:12px; margin-bottom:6px;">
         <span class="logo-title" style="font-size: 2.5rem;"><sup>++</sup>KINGFISHER..</span>
-        <span style="font-family:'Courier New', Consolas, monospace; font-size:13px; color:#94A3B8;">Ver 2.0 (Studio Ultimate)</span>
+        <span style="font-family:'Courier New', Consolas, monospace; font-size:13px; color:#94A3B8;">Ver 2.5 (Studio Ultimate Edition)</span>
       </div>
       <p>WebGPU駆動 アニメーション仕上げ・彩色・検図・デジタルペイント総合スタジオ</p>
     </header>
@@ -279,24 +291,25 @@
     <section id="overview">
       <h2>1. アプリケーション概要</h2>
       <div class="card">
-        <p><strong>Kingfisher（キングフィッシャー）</strong>は、プロのアニメーション制作現場における「仕上げ（彩色）」「検図」「動割り」「仕上げ比較修正」の作業効率を劇的に向上させるために開発された、WebGPU駆動の次世代ブラウザ型WebStudioアプリケーションです。</p>
-        <p>アニメーション特有の <strong>TGA（32bit/24bit）フォーマットをネイティブ処理</strong> し、専用ソフトをインストールすることなく、エクスプローラーやFinderからローカルフォルダを直接開いてリアルタイムにセル彩色・比較・修正を行うことができます。</p>
+        <p><strong>Kingfisher（キングフィッシャー）</strong>は、プロのアニメーション制作現場における「仕上げ（彩色）」「検図」「動割り」「仕上げ比較修正」の作業効率を極限まで高めるために開発された、WebGPU駆動の次世代ブラウザ型WebStudioアプリケーションです。</p>
+        <p>アニメーション特有の <strong>TGA（32bit/24bit）フォーマットをネイティブ処理</strong> し、専用ソフトを一切インストールすることなく、エクスプローラーやFinderからローカルフォルダを直接開いてリアルタイムにセル彩色・比較・修正を行うことができます。</p>
       </div>
 
       <h3>主な仕様と特長</h3>
       <ul>
         <li><strong>WebGPU & WGSL シェーダー処理</strong>: 超高速なアルファ抽出、リアルタイムオニオンスキン合成、マルチレイヤーアフィン変換処理を実現。</li>
-        <li><strong>ローカルTGA直接読み書き</strong>: File System Access API および webkitdirectory により、ローカルの原画・リテイクフォルダを直接閲覧・一括処理・上書き保存可能。</li>
-        <li><strong>二画面分割 ＆ 左右連動比較</strong>: 原画（Dir A）とリテイク（Dir B）の同一セルを左右に並べ、ズームやパンを完全に同期させて比較検図。</li>
-        <li><strong>色指定参照 (ColorSpec) ワークフロー</strong>: 参照ウィンドウをドッキング/切り離し表示し、スポイト後に直前のペイントツールへ自動復帰（Auto-Revert）する画期的機能。</li>
-        <li><strong>自動ペグスタビライザー</strong>: 理想の3穴タップ位置を全自動検出して画像傾き・平行移動をリアルタイムアフィン補正。</li>
+        <li><strong>最上位ヘッダー1行化 ＆ 作画縦領域 100% 最大化</strong>: 最上部ヘッダーを極限までスッキリ1行に統合し、キャンバス領域を画面いっぱいに広げて作業効率を高めます。</li>
+        <li><strong>背景マット切替（検図・セルバレ・ドット抜け検知）</strong>: 市松模様（透過）、純黒（#000000）、純白（#FFFFFF）、マゼンタ（#FF00FF）、カスタム色の5モード背景切り替えにより、塗り穴や色抜けを一瞬で検知。</li>
+        <li><strong>参照画像 ➔ ColorChart ダイレクトドラッグ＆ドロップ色登録</strong>: 参照画像上で左クリックした最初の色をロック固定し、そのまま右サイドパネルの ColorChart（ノーマル/影/ハイライト）や特定スロットへドラッグ＆ドロップして一発登録。</li>
+        <li><strong>右サイドパネル一括開閉 ＆ 全高コンパクト再展開バー</strong>: <span class="kbd">Ctrl+Alt</span> / <span class="kbd">Ctrl+Cmd</span> によるワンタッチ開閉と、縦全高の縦書き「右サイドパネル」コンパクトボタンに対応。</li>
+        <li><strong>ファイルツリー最上位ピン留め ＆ デフォルト縦幅2倍化 (480px)</strong>: パネル最上部に固定され、下部ツールと分離されたスムーズな縦スクロール構造。</li>
       </ul>
     </section>
 
     <!-- 2. 画面レイアウト構成 -->
     <section id="ui-layout">
       <h2>2. 画面レイアウト構成</h2>
-      <p>KingfisherのUIは、アニメーション制作に特化した直感的なマルチパネル構造で設計されています。</p>
+      <p>KingfisherのUIは、作画縦幅を最大化しつつ必要な全パラメータに素早くアクセスできるマルチパネル構造で設計されています。</p>
 
       <table>
         <thead>
@@ -309,33 +322,33 @@
         <tbody>
           <tr>
             <td><strong>Top MenuBar</strong></td>
-            <td>画面最上部</td>
-            <td>ファイル操作、編集コマンド、表示設定、ウィンドウ切替、ヘルプリンク</td>
+            <td>画面最上部 (1行)</td>
+            <td>ファイル操作、編集、表示設定、ウィンドウ比較切替、Dark/Lightテーマ切替、ヘルプ</td>
           </tr>
           <tr>
             <td><strong>Tool Palette</strong></td>
-            <td>画面左端</td>
-            <td>バケツ、ブラシ、鉛筆、閉領域フィル、ノイズ除去、消しゴム、スポイト等の描画ツール</td>
-          </tr>
-          <tr>
-            <td><strong>Tool Options</strong></td>
-            <td>ツールバー右隣</td>
-            <td>選択中のツールの不透明度、許容値、アンチエイリアス、自動ツール復帰チェック等</td>
+            <td>画面左端 (40px / 74px)</td>
+            <td>鉛筆、ブラシ、バケツ、グラデーション、閉領域フィル、ゴミ取り、消しゴム、スポイト、選択ツール等の見切れゼロヘッダー付きツール群</td>
           </tr>
           <tr>
             <td><strong>Cell View Window</strong></td>
             <td>中央メインエリア</td>
-            <td>メインキャンバス（単一表示または左右2画面分割表示）、ルーラー、理想タップガイド</td>
+            <td>メインキャンバス（単一表示または左右2画面分割比較）、セルバレ検知背景マット、理想タップガイド</td>
           </tr>
           <tr>
             <td><strong>File Browser</strong></td>
-            <td>画面右パネル上部</td>
-            <td>カット袋（ルートフォルダ `ATO_07_213_r/`）の一括走査、Win A / Win B サブフォルダ切替、異名ファイル 4桁連番マージテーブル</td>
+            <td>画面右パネル最上部 (480px)</td>
+            <td>最上位ピン留め固定ファイルツリー。フォルダ構造走査、カット袋連動、差分アレイ表示</td>
+          </tr>
+          <tr>
+            <td><strong>Tool Options Panel</strong></td>
+            <td>画面右パネル中段</td>
+            <td>タップ補正、隙間閉じ (Gap Close)、領域拡張 (Expand)、色トレス線（赤・青・緑）設定の集約パネル</td>
           </tr>
           <tr>
             <td><strong>Color Chart / Spec</strong></td>
             <td>画面右パネル下部</td>
-            <td>カラーパレット、カラー検索、新規色登録、色置換コントロール</td>
+            <td>Normal / 1-Shadow / Highlight パレットタブ、参照画像ドラッグ＆ドロップ受け入れスロット、色置換</td>
           </tr>
           <tr>
             <td><strong>LightTable & Timeline</strong></td>
@@ -349,7 +362,6 @@
     <!-- 3. ツールバー & 各種機能一覧 -->
     <section id="toolbar">
       <h2>3. ツールバー ＆ 各種機能一覧</h2>
-      <p>左側のツールパレットおよびメニューから呼び出せる各ツールの割り当てと使用方法です。</p>
 
       <table>
         <thead>
@@ -360,120 +372,81 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><strong>バケツ (Fill)</strong></td>
-            <td><span class="kbd">F</span></td>
-            <td>同色領域を一括塗りつぶし。許容値 (Tolerance) を調整してトレス線囲み内部を迅速彩色。</td>
-          </tr>
-          <tr>
-            <td><strong>グラデーション塗り</strong></td>
-            <td><span class="kbd">G</span></td>
-            <td>2色間を滑らかに塗りつぶし。アニメの影グラデーションや背景処理に使用。</td>
-          </tr>
-          <tr>
-            <td><strong>閉領域フィル (Closed Fill)</strong></td>
-            <td><span class="kbd">C</span></td>
-            <td>フリーハンドで囲んだ内側の未塗り領域を一発で塗る。細かな未塗り隙間の穴埋めに最適。</td>
-          </tr>
-          <tr>
-            <td><strong>ブラシ (Brush)</strong></td>
-            <td><span class="kbd">B</span></td>
-            <td>アンチエイリアス付きの滑らかな描画線。修正指示書きや自由描画に使用。</td>
-          </tr>
-          <tr>
-            <td><strong>鉛筆 (Pencil)</strong></td>
-            <td><span class="kbd">P</span></td>
-            <td>ドット2値の境界線・トレス線修正用鉛筆。境界がクッキリした二値ペイント。</td>
-          </tr>
-          <tr>
-            <td><strong>手動ワンクリックゴミ取り</strong></td>
-            <td><span class="kbd">N</span></td>
-            <td>クリックした場所の孤立1〜4ピクセルのノイズゴミをワンクリックで自動消去。</td>
-          </tr>
-          <tr>
-            <td><strong>消しゴム (Eraser)</strong></td>
-            <td><span class="kbd">E</span></td>
-            <td>ペイントした色を削除して透明（または指定背景色）に戻す。</td>
-          </tr>
-          <tr>
-            <td><strong>スポイト (Eyedropper)</strong></td>
-            <td><span class="kbd">Alt</span> / 長押し</td>
-            <td>キャンバス上の色を取得して現在色に設定。参照画面をクリックすると即取得。</td>
-          </tr>
-          <tr>
-            <td><strong>手のひら (Pan)</strong></td>
-            <td><span class="kbd">Space</span> / 中クリック</td>
-            <td>キャンバスを自由に移動（パン）。ホイール操作で拡大縮小。</td>
-          </tr>
+          <tr><td><strong>鉛筆 (Pencil)</strong></td><td><span class="kbd">P</span></td><td>ドット2値のクッキリしたトレス線・境界線修正用鉛筆。</td></tr>
+          <tr><td><strong>ブラシ (Brush)</strong></td><td><span class="kbd">B</span></td><td>アンチエイリアス付きの滑らかな描画線。修正指示書きや自由描画用。</td></tr>
+          <tr><td><strong>バケツ (Fill)</strong></td><td><span class="kbd">F</span></td><td>同色領域を一括塗りつぶし。トレス線囲み内部を迅速彩色。</td></tr>
+          <tr><td><strong>グラデーション塗り</strong></td><td><span class="kbd">G</span></td><td>2色間を滑らかに塗りつぶし。アニメの影グラデーション処理に使用。</td></tr>
+          <tr><td><strong>閉領域フィル (Closed Fill)</strong></td><td><span class="kbd">U</span></td><td>フリーハンドで囲んだ内側の未塗り領域を一発で塗る。細かな穴埋めに最適。</td></tr>
+          <tr><td><strong>消しゴム (Eraser)</strong></td><td><span class="kbd">E</span></td><td>ペイントした色を削除して透明に戻す。</td></tr>
+          <tr><td><strong>手動ワンクリックゴミ取り</strong></td><td><span class="kbd">N</span></td><td>クリックした箇所の孤立ノイズゴミをワンクリックで自動消去。</td></tr>
+          <tr><td><strong>スポイト (Eyedropper)</strong></td><td><span class="kbd">I</span> / <span class="kbd">Alt+クリック</span></td><td>キャンバス上の色を取得して現在色に設定。参照画面上でも直接取得。</td></tr>
+          <tr><td><strong>選択ツール群</strong></td><td><span class="kbd">M</span> / <span class="kbd">L</span> / <span class="kbd">W</span></td><td>矩形選択 (M)、投げ縄選択 (L)、マジックワンド選択 (W)。</td></tr>
+          <tr><td><strong>手のひら (Pan)</strong></td><td><span class="kbd">H</span> / <span class="kbd">Space+ドラッグ</span></td><td>キャンバスを自由に移動（パン）。ホイール操作で拡大縮小。</td></tr>
         </tbody>
       </table>
-
-      <div class="tip-box">
-        <h4>💡 仕上げ特有の高速ペイントコマンド</h4>
-        <p><strong>未塗り漏れ点滅表示 (<span class="kbd">Ctrl+F</span>)</strong>: 未彩色領域（Alpha=0）を鮮やかなマゼンタ色でチカチカ点滅させ、塗り残しを1ピクセルも見逃さずチェックできます。</p>
-        <p><strong>主線アルファ抽出 (Unmultiply)</strong>: 白背景のTGA線画から純粋な線画アルファ成分のみを自動抽出し、透過セル化します。</p>
-      </div>
     </section>
 
-    <!-- 4. メニューバー機能リファレンス -->
-    <section id="menu-bar">
-      <h2>4. メニューバー機能リファレンス</h2>
-
-      <h3>ファイル (F) メニュー</h3>
-      <ul>
-        <li><strong>新規作成 (<span class="kbd">Ctrl+N</span>)</strong>: 空白の新規セルキャンバスを作成。</li>
-        <li><strong>フォルダを開く (Open Directory)... (<span class="kbd">Ctrl+Shift+O</span>)</strong>: エクスプローラーやFinderからTGA画像が大量に入ったフォルダを選択して直接ロード。</li>
-        <li><strong>参照画像として開く (Open as Reference)... (<span class="kbd">Ctrl+O</span>)</strong>: 色指定画像やTGAパレットを参照ウィンドウに読み込み。</li>
-        <li><strong>上書き保存 (<span class="kbd">Ctrl+S</span>)</strong>: 編集したTGAセルをローカルファイルへ直接上書き保存。</li>
-      </ul>
-
-      <h3>編集 (E) メニュー</h3>
-      <ul>
-        <li><strong>元に戻す (<span class="kbd">Ctrl+Z</span>) / やり直し (<span class="kbd">Ctrl+Y</span>)</strong>: 操作履歴を無限段階復元。</li>
-        <li><strong>タップ穴自動検出＆傾き補正 (Peg Stabilizer)</strong>: セルの3タップ穴位置をカメラ検出して傾きをミリ単位で水平補正。</li>
-        <li><strong>全セル一括色置換 (<span class="kbd">Ctrl+H</span>)</strong>: 指定したカラーHEXをフォルダ内の全セル画像にわたって一括変換。</li>
-      </ul>
-
-      <h3>ヘルプ (H) メニュー</h3>
-      <ul>
-        <li><strong>仕様書・取扱説明書</strong>: 本マニュアル（仕様書HTML）を新規タブでいつでも閲覧。</li>
-        <li><strong>ショートカット一覧</strong>: キーボード操作ガイドダイアログを開く。</li>
-      </ul>
-    </section>
-
-    <!-- 5. 統合ファイルブラウザ -->
-    <section id="file-browser">
-      <h2>5. 統合ファイルブラウザ (Dir A / Dir B)</h2>
+    <!-- 4. 透過検図背景マット切替 -->
+    <section id="bg-matte">
+      <h2>4. 透過検図背景マット切替 (Matte Color Modes)</h2>
       <div class="card">
-        <p>画面右上のファイルブラウザは、原画フォルダ（Dir A）とリテイク/修正フォルダ（Dir B）の2系統を同時管理する統合型ブラウザです。</p>
+        <p>アニメーション仕上げ検査（検図）において、透明画像内部の「塗り穴」「色抜け」「白フリンジ」を瞬時に検出するための背景切替ツールバーです。</p>
         <ul>
-          <li><strong>Open A / Open B ボタン</strong>: 任意のローカルフォルダを指定。</li>
-          <li><strong>連動 ON/OFF トグル</strong>: 連動ON時は中央の統合リストをクリックすると左右両方のセルが同期して切り替わります。</li>
-          <li><strong>欠落表示 (Alert)</strong>: Dir A にあって Dir B にないセルは一目でわかるように警告アイコンが表示されます。</li>
+          <li>🏁 <strong>市松 (Checkerboard)</strong>: 標準的な透過グラフィック背景。</li>
+          <li>⬛ <strong>黒 (Black #000000)</strong>: 白フリンジ、塗り穴、トレス線の隙間検知に最適（プロ仕上げ標準）。</li>
+          <li>⬜ <strong>白 (White #FFFFFF)</strong>: 暗部カラーの色抜け・塗り漏れ検出。</li>
+          <li>🟪 <strong>マゼンタ (Magenta #FF00FF)</strong>: 特殊色や塗り残りピクセルの浮き彫り検知。</li>
+          <li>🎨 <strong>カスタム色 (Custom)</strong>: 任意のカラーピッカー背景色指定。</li>
         </ul>
+        <p>通常作画ウィンドウ（CellWindow）および背景透過PNG/ベクターSVGエクスポートモーダルの両方でワンタッチ切り替え可能です。</p>
       </div>
     </section>
 
-    <!-- 6. 色指定参照 & 一発スポイト -->
-    <section id="color-spec">
-      <h2>6. 色指定参照 ＆ 一発スポイト (ColorSpec Workflow)</h2>
-      <p>色指定TGA画像を参照画面として表示し、一発で色を取得して作業効率を高める機能です。</p>
+    <!-- 5. 統合ファイルツリー -->
+    <section id="file-browser">
+      <h2>5. 統合ファイルツリー (480px固定・独立スクロール)</h2>
+      <p>右サイドパネル最上位に配置されたファイルツリーウィンドウは、前バージョンの2倍のデフォルト縦幅 <strong>480px</strong> に拡張されています。</p>
+      <div class="tip-box">
+        <h4>💡 快適な閲覧構造</h4>
+        <p>ファイルツリーはパネル最上位に固定（ピン留め）され、下部のツールオプションやColorChartのみがスムーズに独立縦スクロール（スクロールバー非表示 `no-scrollbar`）するため、フォルダ階層を見失うことなく快適に操作できます。</p>
+      </div>
+    </section>
 
+    <!-- 6. 参照画像 ➔ ColorChart ドラッグ＆ドロップ色登録 -->
+    <section id="color-spec-drop">
+      <h2>6. 参照画像 ➔ ColorChart ドラッグ＆ドロップ色登録 (Zero-Lag UX)</h2>
       <div class="card">
-        <h3>使い方の手順</h3>
+        <h3>色登録の手順</h3>
         <ol>
-          <li><code>ファイル</code> &gt; <code>参照画像として開く...</code> で色指定TGAファイルをロードします。</li>
-          <li><code>ウィンドウ</code> メニューから「垂直分割」「水平分割」または「切り離し (Float)」を選択。</li>
-          <li>「スポイト後ツール自動復帰 (Auto-Revert)」をONにしておくと、参照画面上でカラーをクリックした瞬間に色を取得し、<strong>直前に使っていた塗りつぶしバケツやブラシツールへ自動的に戻ります。</strong></li>
+          <li><code>ファイル</code> &gt; <code>参照画像として開く...</code> (<span class="kbd">Ctrl+O</span>) で色指定画像をロードします。</li>
+          <li>参照画像上で登録したいカラーの位置を<strong>左クリックしてそのまま掴みます</strong>（初回クリック時の色が完全にロック固定されます）。</li>
+          <li>そのまま右サイドパネルの **ColorChart** の目的の場所へドラッグ＆ドロップします：
+            <ul>
+              <li><strong>パレットタブ上 (`[1] normal` / `[2] shadow` / `[3] highlight`) へドロップ</strong>: そのタブのパレットへダイレクトに追加登録！</li>
+              <li><strong>特定のスロットセル上へドロップ</strong>: その箇所の既存色を選択色でピンポイント上書き更新！</li>
+            </ul>
+          </li>
         </ol>
+        <p>※ GPU コンポジタ（Direct DOM）追従により、どれだけ素早くマウスを動かしてもカクつきゼロの完全スムーズなカーソルカラーチップが表示されます。</p>
       </div>
     </section>
 
-    <!-- 7. オニオンスキン & ライトテーブル -->
-    <section id="onion-lighttable">
-      <h2>7. オニオンスキン ＆ ライトテーブル</h2>
-      <p>画面最下部のコントロールから、アニメーションの前後フレーム透過重ね合わせ表示が可能です。</p>
+    <!-- 7. ツールオプション (右サイドパネル統合) -->
+    <section id="tool-options-panel">
+      <h2>7. ツールオプション (右サイドパネル統合)</h2>
+      <p>画面上部の領域を圧迫していたツールオプションバーを、右サイドパネルの <strong>⚙️ ツールオプション</strong> パネルへ完全移行・集約いたしました。</p>
+      <ul>
+        <li><strong>隙間閉じ (Gap Close)</strong>: 0〜20px の全幅スライダー。トレス線の切れ目を動的に閉じて塗りつぶし。</li>
+        <li><strong>領域拡張 (Expand / Contract)</strong>: -10〜10px の全幅スライダー。塗り領域を太らせる/細らせる調整。</li>
+        <li><strong>色トレス線を含む (Include Trace Lines)</strong>: 赤・青・緑の色トレス線を塗りに含める/残すチェックボックス。</li>
+        <li><strong>ブラシ・消しゴムサイズ</strong>: 1〜100px の全幅スライダーで直感的サイズコントロール。</li>
+      </ul>
+    </section>
 
+    <!-- 8. オニオンスキン & ライトテーブル -->
+    <section id="onion-lighttable">
+      <h2>8. オニオンスキン ＆ ライトテーブル</h2>
+      <p>画面最下部のコントロールから、アニメーションの前後フレーム透過重ね合わせ表示が可能です。</p>
       <table>
         <thead>
           <tr>
@@ -482,42 +455,25 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><strong>オニオンスキン ON/OFF</strong></td>
-            <td>前後の動画フレームを半透明でキャンバスに重ねて表示。動きの繋がりチェックに使用。</td>
-          </tr>
-          <tr>
-            <td><strong>枚数 (前 / 後)</strong></td>
-            <td>前0〜5枚、後0〜5枚の表示枚数を動的設定。</td>
-          </tr>
-          <tr>
-            <td><strong>表示モード</strong></td>
-            <td><code>モノクロ(前赤/後青)</code>: 前フレームを赤、後フレームを青に単色着色して前後を一目で識別。<br><code>ハーフカラー / フルカラー</code>: 元のセルカラーを透過。</td>
-          </tr>
-          <tr>
-            <td><strong>不透明度ステップ減衰</strong></td>
-            <td>1フレーム離れるごとに指定%ずつ透過率を下げ、近いフレームほどクッキリ表示。</td>
-          </tr>
-          <tr>
-            <td><strong>個別ライトテーブル (サブレイヤー)</strong></td>
-            <td>「参照TGAサブレイヤー追加」で任意のTGAを登録し、X/Y位置移動・回転 (Rot) を個別に調整してタップ割り動画の重ね合わせチェックが可能。</td>
-          </tr>
+          <tr><td><strong>オニオンスキン ON/OFF</strong></td><td>前後の動画フレームを半透明でキャンバスに重ねて表示。動きの繋がりチェックに使用。</td></tr>
+          <tr><td><strong>枚数 (前 / 後)</strong></td><td>前0〜5枚、後0〜5枚の表示枚数を動的設定。</td></tr>
+          <tr><td><strong>表示モード</strong></td><td><code>モノクロ(前赤/後青)</code>: 前フレームを赤、後フレームを青に単色着色して前後を一目で識別。<br><code>ハーフカラー / フルカラー</code>: 元のセルカラーを透過。</td></tr>
+          <tr><td><strong>不透明度スライダー</strong></td><td>全幅・ワイド化された不透明度スライダーで滑らかに透過率を調整。</td></tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 8. ペグスタビライザー -->
+    <!-- 9. ペグスタビライザー -->
     <section id="peg-stabilizer">
-      <h2>8. ペグスタビライザー (理想タップ穴合わせ)</h2>
+      <h2>9. ペグスタビライザー (理想タップ穴合わせ)</h2>
       <div class="card">
         <p>スキャンしたアニメーション用紙のタップ穴（3穴）の位置ズレや傾きをWebGPU画像解析で自動検出し、キャンバス上で完璧な水平位置に補正アフィン変換する高度な機能です。</p>
-        <p>手動でX/Y/回転角度を微調整することも可能です。</p>
       </div>
     </section>
 
-    <!-- 9. ショートカットキー一覧 -->
+    <!-- 10. 最新ショートカットキー一覧 -->
     <section id="shortcuts">
-      <h2>9. キーボードショートカット一覧</h2>
+      <h2>10. 最新キーボードショートカット一覧</h2>
       <table>
         <thead>
           <tr>
@@ -526,21 +482,23 @@
           </tr>
         </thead>
         <tbody>
+          <tr><td><span class="kbd">P</span></td><td>鉛筆 (ドット2値線) ツール</td></tr>
+          <tr><td><span class="kbd">B</span></td><td>ブラシ描画ツール</td></tr>
           <tr><td><span class="kbd">F</span></td><td>バケツ塗りつぶしツール</td></tr>
           <tr><td><span class="kbd">G</span></td><td>グラデーション塗りツール</td></tr>
-          <tr><td><span class="kbd">C</span></td><td>閉領域フィルツール</td></tr>
-          <tr><td><span class="kbd">B</span></td><td>ブラシ描画ツール</td></tr>
-          <tr><td><span class="kbd">P</span></td><td>鉛筆 (ドット2値) ツール</td></tr>
-          <tr><td><span class="kbd">N</span></td><td>手動ワンクリックゴミ取り</td></tr>
+          <tr><td><span class="kbd">U</span></td><td>閉領域フィルツール</td></tr>
           <tr><td><span class="kbd">E</span></td><td>消しゴムツール</td></tr>
-          <tr><td><span class="kbd">Alt</span> / 長押し</td><td>スポイト (色取得)</td></tr>
-          <tr><td><span class="kbd">Space</span> + ドラッグ</td><td>キャンバス パン (移動)</td></tr>
-          <tr><td><span class="kbd">PageDown</span> / <span class="kbd">↓</span></td><td>次のセル画像へ移動</td></tr>
-          <tr><td><span class="kbd">PageUp</span> / <span class="kbd">↑</span></td><td>前のセル画像へ移動</td></tr>
-          <tr><td><span class="kbd">Ctrl + Z</span></td><td>元に戻す (Undo)</td></tr>
-          <tr><td><span class="kbd">Ctrl + Y</span></td><td>やり直し (Redo)</td></tr>
+          <tr><td><span class="kbd">N</span></td><td>手動ワンクリックゴミ取り</td></tr>
+          <tr><td><span class="kbd">I</span> / <span class="kbd">Alt+クリック</span></td><td>スポイト (描画色取得)</td></tr>
+          <tr><td><span class="kbd">1</span> / <span class="kbd">2</span> / <span class="kbd">3</span></td><td>ColorChart パレットタブ切替 ([1]Normal, [2]Shadow, [3]Highlight)</td></tr>
+          <tr><td><span class="kbd">参照画像ドラッグ</span></td><td>ColorChart の各スロット/タブへ一発ドロップ色登録</td></tr>
+          <tr><td><span class="kbd">PageDown</span> / <span class="kbd">↓</span> / <span class="kbd">テンキー3</span></td><td>次のセル画像へ移動 (Next Cell)</td></tr>
+          <tr><td><span class="kbd">PageUp</span> / <span class="kbd">↑</span> / <span class="kbd">テンキー9</span></td><td>前のセル画像へ移動 (Prev Cell)</td></tr>
+          <tr><td><span class="kbd">Ctrl + Alt (Win)</span> / <span class="kbd">Ctrl + Cmd (Mac)</span></td><td>右サイドパネル一括開閉 (フルキャンバストグル)</td></tr>
+          <tr><td><span class="kbd">Space</span> + ドラッグ / 中・右ボタン</td><td>キャンバスの自由パン (移動)</td></tr>
           <tr><td><span class="kbd">Ctrl + S</span></td><td>アクティブセルを上書き保存</td></tr>
-          <tr><td><span class="kbd">Ctrl + F</span></td><td>未塗り漏れ点滅表示 (Unpainted Flash) ON/OFF</td></tr>
+          <tr><td><span class="kbd">Ctrl + Z</span> / <span class="kbd">Ctrl + Y</span></td><td>Undo (元に戻す) / Redo (やり直し)</td></tr>
+          <tr><td><span class="kbd">F1</span></td><td>本仕様書・取扱説明書を別タブで開く</td></tr>
         </tbody>
       </table>
     </section>
