@@ -2,6 +2,8 @@ import React, { useRef, useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { Download, Upload, Plus, Trash2, Maximize2, Minimize2, Pin } from 'lucide-react';
 import { useFastDraggable } from '../../hooks/useFastDraggable';
+import { useResizableWindow } from '../../hooks/useResizableWindow';
+import { CornerResizeHandles } from '../common/CornerResizeHandles';
 
 export const ColorChart: React.FC = () => {
   const {
@@ -30,9 +32,16 @@ export const ColorChart: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
 
   // ⚡ 画像previewウィンドウと同仕様の超高速 Direct DOM GPU ドラッグフック
-  const { targetRef, dragHandlers } = useFastDraggable<HTMLDivElement>({
+  const { targetRef, dragHandlers, currentPos, setPosition } = useFastDraggable<HTMLDivElement>({
     initialX: Math.max(20, window.innerWidth - 360),
     initialY: 120,
+    enabled: isColorChartFloating,
+  });
+
+  // ⚡ 全四つ角マルチ方向コーナーリサイズフック
+  const { getResizeHandler } = useResizableWindow(targetRef, currentPos, setPosition, {
+    minWidth: 260,
+    minHeight: 180,
     enabled: isColorChartFloating,
   });
 
@@ -303,6 +312,9 @@ export const ColorChart: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* ⚡ フローティング時の全4角マルチリサイズグリップ */}
+      {isColorChartFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} />}
     </div>
   );
 };

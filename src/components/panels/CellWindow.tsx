@@ -4,6 +4,8 @@ import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoi
 import { decodeTGA } from '../../engine/tga';
 import { AlertTriangle, X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
 import { useFastDraggable } from '../../hooks/useFastDraggable';
+import { useResizableWindow } from '../../hooks/useResizableWindow';
+import { CornerResizeHandles } from '../common/CornerResizeHandles';
 
 function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
   const patternCanvas = document.createElement('canvas');
@@ -45,6 +47,13 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   const { targetRef, currentPos, setPosition } = useFastDraggable({
     initialX: 120,
     initialY: 80,
+    enabled: isFloating,
+  });
+
+  // ⚡ 全4角マルチ方向コーナーリサイズフック
+  const { getResizeHandler } = useResizableWindow(targetRef, currentPos, setPosition, {
+    minWidth: 240,
+    minHeight: 200,
     enabled: isFloating,
   });
 
@@ -466,6 +475,9 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
           </div>
         )}
       </div>
+
+      {/* ⚡ フローティング時の全4角マルチリサイズグリップ */}
+      {isFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} />}
     </div>
   );
 });
@@ -565,6 +577,18 @@ export const CellWindow: React.FC = () => {
 
   const winADrag = useFastDraggable({ initialX: 60, initialY: 60, enabled: isWinAFloating });
   const winBDrag = useFastDraggable({ initialX: 200, initialY: 80, enabled: isWinBFloating });
+
+  const winAResize = useResizableWindow(winADrag.targetRef, winADrag.currentPos, winADrag.setPosition, {
+    minWidth: 320,
+    minHeight: 240,
+    enabled: isWinAFloating,
+  });
+
+  const winBResize = useResizableWindow(winBDrag.targetRef, winBDrag.currentPos, winBDrag.setPosition, {
+    minWidth: 320,
+    minHeight: 240,
+    enabled: isWinBFloating,
+  });
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -1557,6 +1581,9 @@ export const CellWindow: React.FC = () => {
                 )}
               </div>
             </div>
+
+            {/* ⚡ フローティング Win A 用の全4角マルチリサイズグリップ */}
+            {isWinAFloating && <CornerResizeHandles getResizeHandler={winAResize.getResizeHandler} />}
           </div>
 
           {/* 右ビュー (Win B / Dir B / Split View 有効時) */}
@@ -1690,6 +1717,9 @@ export const CellWindow: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {/* ⚡ フローティング Win B 用の全4角マルチリサイズグリップ */}
+              {isWinBFloating && <CornerResizeHandles getResizeHandler={winBResize.getResizeHandler} />}
             </div>
           )}
         </div>
