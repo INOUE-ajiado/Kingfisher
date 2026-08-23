@@ -10,24 +10,27 @@ interface Point {
   y: number;
 }
 
-// 2点間の距離の2乗
-function distSq(p1: Point, p2: Point): number {
+// 2点間の距離
+function dist(p1: Point, p2: Point): number {
   const dx = p1.x - p2.x;
   const dy = p1.y - p2.y;
-  return dx * dx + dy * dy;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 // 点Pと線分ABとの距離の2乗
 function pointToSegmentDistSq(p: Point, a: Point, b: Point): number {
-  const l2 = distSq(a, b);
-  if (l2 === 0) return distSq(p, a);
-  let t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) return (p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
   t = Math.max(0, Math.min(1, t));
-  const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
-  return distSq(p, proj);
+  const projX = a.x + t * dx;
+  const projY = a.y + t * dy;
+  return (p.x - projX) * (p.x - projX) + (p.y - projY) * (p.y - projY);
 }
 
-// Douglas-Peucker アルゴリズムによる頂点削減
+// Douglas-Peucker アルゴリズムによる高精度頂点削減
 function simplifyPath(points: Point[], sqTolerance: number): Point[] {
   if (points.length <= 2) return points;
 
@@ -51,22 +54,57 @@ function simplifyPath(points: Point[], sqTolerance: number): Point[] {
   }
 }
 
-// メモリ効率 O(1) ・安全ガード付きラスター -> SVG ベクトルトレースエンジン
+// 頂点群から3次ベジェ曲線 (Cubic Bezier Path: "M... C x1 y1, x2 y2, x3 y3...") を構築
+function pointsToCubicBezierPath(points: Point[], smoothness: number): string {
+  const len = points.length;
+  if (len < 2) return '';
+  if (len === 2) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
+
+  let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+  for (let i = 0; i < len - 1; i++) {
+    const p0 = i > 0 ? points[i - 1] : points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = i < len - 2 ? points[i + 2] : p2;
+
+    const d1 = dist(p0, p1);
+    const d2 = dist(p1, p2);
+    const d3 = dist(p2, p3);
+
+    // Smooth control points computation (Catmull-Rom to Cubic Bezier)
+    const tension = Math.min(0.4, 0.25 * smoothness);
+
+    const cp1x = p1.x + (p2.x - p0.x) * tension * (d2 / (d1 + d2 || 1));
+    const cp1y = p1.y + (p2.y - p0.y) * tension * (d2 / (d1 + d2 || 1));
+
+    const cp2x = p2.x - (p3.x - p1.x) * tension * (d2 / (d2 + d3 || 1));
+    const cp2y = p2.y - (p3.y - p1.y) * tension * (d2 / (d2 + d3 || 1));
+
+    d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+  }
+
+  d += ' Z';
+  return d;
+}
+
+// 高精度サブピクセル境界解析 ＆ 3次ベジエトレースエンジン
 export function convertImageToSVG(image: TGAImage, options: VectorExportOptions): string {
   const { width, height, data } = image;
   if (!data || width <= 0 || height <= 0) return '';
 
   const tolerance = Math.max(0.1, options.tolerance);
-  const sqTolerance = tolerance * tolerance * 2;
+  const sqTolerance = tolerance * tolerance * 0.8;
   const totalPixels = width * height;
 
-  // メモリ割り当てエラーを防ぐ単一のインデックス配列 (約 width * height * 4 バイトのみ)
   const pixelColors = new Int32Array(totalPixels);
   pixelColors.fill(-1);
 
-  // カラーパレット (RGB -> PaletteID)
   const palette: string[] = [];
   const colorToPaletteId = new Map<string, number>();
+
+  // 1. カラー精度の維持 (量子化ステップを細かく設定して解像感・精度向上)
+  const qStep = tolerance > 2.0 ? 4 : tolerance > 1.0 ? 2 : 1;
 
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i];
@@ -74,19 +112,18 @@ export function convertImageToSVG(image: TGAImage, options: VectorExportOptions)
     const b = data[i + 2];
     const a = data[i + 3];
 
-    if (a < 10) continue; // 透明エリアスキップ
-    if (options.ignoreWhite && r >= 248 && g >= 248 && b >= 248) continue; // 白背景スキップ
+    if (a < 10) continue;
+    if (options.ignoreWhite && r >= 250 && g >= 250 && b >= 250) continue;
 
-    // 色精度を量子化して色数を適切に収束 (メモリ爆発防止)
-    const qr = Math.round(r / 4) * 4;
-    const qg = Math.round(g / 4) * 4;
-    const qb = Math.round(b / 4) * 4;
+    const qr = Math.round(r / qStep) * qStep;
+    const qg = Math.round(g / qStep) * qStep;
+    const qb = Math.round(b / qStep) * qStep;
     const colorKey = `${qr},${qg},${qb}`;
 
     let paletteId = colorToPaletteId.get(colorKey);
     if (paletteId === undefined) {
-      if (palette.length >= 512) {
-        paletteId = 0; // 最大色数制限
+      if (palette.length >= 1024) {
+        paletteId = 0;
       } else {
         paletteId = palette.length;
         const hex = `#${((1 << 24) + (qr << 16) + (qg << 8) + qb).toString(16).slice(1)}`;
@@ -100,7 +137,7 @@ export function convertImageToSVG(image: TGAImage, options: VectorExportOptions)
   const visited = new Uint8Array(totalPixels);
   const svgPaths: string[] = [];
 
-  // 単一パスで輪郭抽出
+  // 2. サブピクセル精度の境界追跡
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
@@ -110,7 +147,7 @@ export function convertImageToSVG(image: TGAImage, options: VectorExportOptions)
         const outlinePoints: Point[] = [];
         let currX = x;
         let currY = y;
-        let dir = 0; // 0: R, 1: D, 2: L, 3: U
+        let dir = 0;
 
         const startX = currX;
         const startY = currY;
@@ -118,7 +155,8 @@ export function convertImageToSVG(image: TGAImage, options: VectorExportOptions)
         const maxSteps = width * 4 + height * 4;
 
         while (steps < maxSteps) {
-          outlinePoints.push({ x: currX, y: currY });
+          // グリッドセンターからサブピクセル座標へオフセット (+0.5)
+          outlinePoints.push({ x: currX + 0.5, y: currY + 0.5 });
           visited[currY * width + currX] = 1;
 
           let found = false;
@@ -152,12 +190,10 @@ export function convertImageToSVG(image: TGAImage, options: VectorExportOptions)
           const simplified = simplifyPath(outlinePoints, sqTolerance);
           if (simplified.length >= 3) {
             const hexColor = palette[targetColorId] || '#000000';
-            let d = `M ${simplified[0].x} ${simplified[0].y}`;
-            for (let i = 1; i < simplified.length; i++) {
-              d += ` L ${simplified[i].x} ${simplified[i].y}`;
+            const bezierD = pointsToCubicBezierPath(simplified, tolerance);
+            if (bezierD) {
+              svgPaths.push(`<path d="${bezierD}" fill="${hexColor}" stroke="${hexColor}" stroke-width="0.3" stroke-linejoin="round" />`);
             }
-            d += ' Z';
-            svgPaths.push(`<path d="${d}" fill="${hexColor}" stroke="${hexColor}" stroke-width="0.5" stroke-linejoin="round" />`);
           }
         }
       }

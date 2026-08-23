@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { convertImageToSVG } from '../../engine/vectorTrace';
-import { X, Download, Sliders, FileCode, Check, Loader2 } from 'lucide-react';
+import { X, Download, Sliders, FileCode, Check, Loader2, Maximize2 } from 'lucide-react';
 
 export const ExportVectorModal: React.FC = () => {
   const { activeModal, setActiveModal, currentImage, unifiedFileList, currentFileIndex } = usePaintStore();
@@ -13,7 +13,7 @@ export const ExportVectorModal: React.FC = () => {
 
   const isOpen = activeModal === 'exportVector';
 
-  // 非同期・メモリ安全なSVGトレース変換
+  // 非同期・高精度SVGトレース変換
   useEffect(() => {
     if (!isOpen || !currentImage) {
       setSvgString('');
@@ -30,7 +30,7 @@ export const ExportVectorModal: React.FC = () => {
       } finally {
         setIsProcessing(false);
       }
-    }, 50);
+    }, 40);
 
     return () => clearTimeout(timer);
   }, [isOpen, currentImage, tolerance, ignoreWhite]);
@@ -64,37 +64,40 @@ export const ExportVectorModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[9999] p-4 select-none animate-in fade-in duration-150">
-      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 sm:p-6 select-none animate-in fade-in duration-150">
+      {/* 🌟 大型・ワイド画面モーダル (max-w-6xl h-[85vh]) */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] overflow-hidden flex flex-col">
         {/* ヘッダー */}
-        <div className="h-10 bg-slate-100 dark:bg-slate-800/80 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2 font-bold text-xs text-slate-800 dark:text-slate-100">
+        <div className="h-11 bg-slate-100 dark:bg-slate-800/90 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
+          <div className="flex items-center gap-2 font-bold text-sm text-slate-800 dark:text-slate-100">
             <FileCode className="w-4 h-4 text-blue-500" />
-            <span>ベクター出力 (SVGトレース) - {fileName}.svg</span>
+            <span>ベクター出力 (3次ベジェSVGトレース) - {fileName}.svg</span>
           </div>
           <button
             onClick={() => setActiveModal(null)}
             className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* コンテンツメイン */}
-        <div className="p-4 flex flex-col md:flex-row gap-4 overflow-hidden">
+        <div className="flex-1 p-4 flex flex-col md:flex-row gap-5 overflow-hidden">
           {/* 左側: 設定・パラメーター */}
-          <div className="w-full md:w-64 flex flex-col gap-4 text-xs">
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
-                <Sliders className="w-3.5 h-3.5 text-blue-500" />
+          <div className="w-full md:w-72 flex flex-col gap-4 text-xs flex-shrink-0">
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs">
+              <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
+                <Sliders className="w-4 h-4 text-blue-500" />
                 <span>トレース設定 (Vector Options)</span>
               </div>
 
               {/* スムージング Tolerance */}
               <div>
-                <div className="flex justify-between items-center mb-1 text-[11px]">
-                  <span className="text-slate-600 dark:text-slate-400">スムージング (Tolerance):</span>
-                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{tolerance.toFixed(1)}</span>
+                <div className="flex justify-between items-center mb-1.5 text-xs font-medium">
+                  <span className="text-slate-700 dark:text-slate-300">スムージング (Tolerance):</span>
+                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
+                    {tolerance.toFixed(1)}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -103,16 +106,16 @@ export const ExportVectorModal: React.FC = () => {
                   step="0.1"
                   value={tolerance}
                   onChange={(e) => setTolerance(Number(e.target.value))}
-                  className="w-full accent-blue-600 cursor-pointer"
+                  className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
                 />
-                <div className="flex justify-between text-[9px] text-slate-400 mt-0.5">
-                  <span>高精細 (0.1)</span>
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-semibold">
+                  <span>極高精細 (0.1)</span>
                   <span>滑らか (5.0)</span>
                 </div>
               </div>
 
               {/* 背景の透過 */}
-              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-semibold pt-1">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold pt-1 select-none">
                 <input
                   type="checkbox"
                   checked={ignoreWhite}
@@ -124,29 +127,38 @@ export const ExportVectorModal: React.FC = () => {
             </div>
 
             {/* 情報カード */}
-            <div className="bg-blue-50 dark:bg-blue-950/40 p-3 rounded-lg border border-blue-200 dark:border-blue-800 text-[10px] text-blue-800 dark:text-blue-300 space-y-1">
-              <div className="font-bold">✨ スケーラブルベクターの特徴</div>
-              <p className="leading-relaxed opacity-90">
-                4K/8K解像度へ拡大してもピクセルのジャギーが出ず、容量を最適化した軽量ベクターアセットとしてWebアニメ等でそのまま利用できます。
+            <div className="bg-blue-50 dark:bg-blue-950/40 p-4 rounded-lg border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-200 space-y-2 flex-1">
+              <div className="font-bold text-sm flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
+                <Maximize2 className="w-4 h-4" />
+                <span>3次ベジェ (Cubic Bezier)</span>
+              </div>
+              <p className="leading-relaxed text-[11px] opacity-90">
+                アニメセルの線画とカラー領域を解像度非依存の3次ベジェ曲線へ変換します。4K/8Kへ拡張しても綺麗な輪郭を維持します。
               </p>
-              <div className="pt-1 font-mono text-[9px] text-blue-600 dark:text-blue-400 font-bold">
+              <div className="pt-2 border-t border-blue-200/60 dark:border-blue-800/60 font-mono text-xs text-blue-600 dark:text-blue-400 font-bold">
                 SVG容量: {formattedSize} KB
               </div>
             </div>
           </div>
 
-          {/* 右側: リアルタイムSVGプレビュー */}
-          <div className="flex-1 flex flex-col gap-2 min-h-[220px]">
-            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">SVG ベクタープレビュー:</span>
-            <div className="flex-1 bg-slate-200 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 flex items-center justify-center overflow-hidden relative min-h-[200px]">
+          {/* 右側: 大画面リアルタイムSVGプレビュー */}
+          <div className="flex-1 flex flex-col gap-2 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">大画面 SVG ベクタープレビュー:</span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {currentImage ? `${currentImage.width} × ${currentImage.height} px` : ''}
+              </span>
+            </div>
+
+            <div className="flex-1 bg-slate-200 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-4 flex items-center justify-center overflow-hidden relative shadow-inner">
               {isProcessing ? (
-                <div className="flex flex-col items-center gap-2 text-blue-500 text-xs font-semibold">
-                  <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                  <span>ベクトルトレース生成中...</span>
+                <div className="flex flex-col items-center gap-2 text-blue-500 text-xs font-bold">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                  <span>高精度ベクトルトレース生成中...</span>
                 </div>
               ) : svgString ? (
                 <div
-                  className="w-full h-full max-h-[240px] flex items-center justify-center"
+                  className="w-full h-full flex items-center justify-center [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:w-auto [&>svg]:h-auto [&>svg]:object-contain shadow-lg"
                   dangerouslySetInnerHTML={{ __html: svgString }}
                 />
               ) : (
@@ -157,27 +169,28 @@ export const ExportVectorModal: React.FC = () => {
         </div>
 
         {/* フッターアクション */}
-        <div className="h-12 bg-slate-50 dark:bg-slate-800/80 px-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div className="h-14 bg-slate-50 dark:bg-slate-800/90 px-5 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between flex-shrink-0">
           <button
             onClick={handleCopySVG}
             disabled={!svgString || isProcessing}
-            className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
+            className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
           >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <FileCode className="w-3.5 h-3.5" />}
+            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <FileCode className="w-4 h-4" />}
             <span>{copied ? 'コピー完了' : 'SVGコードをコピー'}</span>
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setActiveModal(null)}
-              className="px-3 py-1.5 rounded text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
             >
               キャンセル
             </button>
+
             <button
               onClick={handleDownloadSVG}
               disabled={!svgString || isProcessing}
-              className="px-4 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white flex items-center gap-1.5 shadow-md transition-colors"
+              className="px-5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white flex items-center gap-2 shadow-md transition-colors"
             >
               <Download className="w-4 h-4" />
               <span>SVGファイルを保存</span>
