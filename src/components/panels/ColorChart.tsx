@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { Download, Upload, Plus, Trash2, Maximize2, Minimize2, Pin } from 'lucide-react';
+import { useFastDraggable } from '../../hooks/useFastDraggable';
 
 export const ColorChart: React.FC = () => {
   const {
@@ -27,6 +28,13 @@ export const ColorChart: React.FC = () => {
   const [newColorName, setNewColorName] = useState('');
   const [newColorHex, setNewColorHex] = useState('#FF0000');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // ⚡ 画像previewウィンドウと同仕様の超高速 Direct DOM GPU ドラッグフック
+  const { targetRef, dragHandlers } = useFastDraggable<HTMLDivElement>({
+    initialX: Math.max(20, window.innerWidth - 360),
+    initialY: 120,
+    enabled: isColorChartFloating,
+  });
 
   // 参照画像からのドラッグ＆ドロップ色登録ハンドラー
   const handleDropRegister = (e: React.SyntheticEvent, targetTab?: 'normal' | 'shadow' | 'highlight', targetIndex?: number) => {
@@ -55,44 +63,6 @@ export const ColorChart: React.FC = () => {
     if (tooltipElem) {
       tooltipElem.style.display = 'none';
     }
-  };
-
-  // フローティング用 Direct DOM GPU 高速ドラッグ
-  const windowRef = useRef<HTMLDivElement | null>(null);
-  const posRef = useRef<{ x: number; y: number }>({ x: Math.max(20, window.innerWidth - 360), y: 120 });
-  const isDraggingRef = useRef(false);
-  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (!isColorChartFloating) return;
-    e.preventDefault();
-    isDraggingRef.current = true;
-    dragOffsetRef.current = {
-      x: e.clientX - posRef.current.x,
-      y: e.clientY - posRef.current.y,
-    };
-
-    const handlePointerMove = (moveEvt: PointerEvent) => {
-      if (!isDraggingRef.current) return;
-      const newX = moveEvt.clientX - dragOffsetRef.current.x;
-      const newY = moveEvt.clientY - dragOffsetRef.current.y;
-      posRef.current = { x: newX, y: newY };
-
-      if (windowRef.current) {
-        windowRef.current.style.transform = `translate3d(${newX}px, ${newY}px, 0)`;
-      }
-    };
-
-    const handlePointerUp = () => {
-      isDraggingRef.current = false;
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
-    };
-
-    window.addEventListener('pointermove', handlePointerMove, { passive: true });
-    window.addEventListener('pointerup', handlePointerUp, { capture: true });
-    window.addEventListener('pointercancel', handlePointerUp, { capture: true });
   };
 
   const handleExport = () => {
@@ -155,17 +125,15 @@ export const ColorChart: React.FC = () => {
 
   return (
     <div
-      ref={windowRef}
+      ref={targetRef}
       style={
         isColorChartFloating
           ? {
               position: 'fixed',
               left: 0,
               top: 0,
-              transform: `translate3d(${posRef.current.x}px, ${posRef.current.y}px, 0)`,
               zIndex: 45,
               width: '320px',
-              willChange: 'transform',
             }
           : undefined
       }
@@ -179,9 +147,9 @@ export const ColorChart: React.FC = () => {
       } select-none ${activeDragColor ? 'ring-2 ring-emerald-500/80 bg-emerald-50/20' : ''}`}
     >
       <div
-        onPointerDown={handlePointerDown}
+        {...(isColorChartFloating ? dragHandlers : {})}
         className={`text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between ${
-          isColorChartFloating ? 'cursor-move bg-slate-100 dark:bg-slate-800 -mx-2 -mt-2 p-2 rounded-t-md touch-none' : ''
+          isColorChartFloating ? 'cursor-move bg-slate-100 dark:bg-slate-800 -mx-2 -mt-2 p-2 rounded-t-md touch-none select-none' : ''
         }`}
       >
         <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト" className="flex items-center gap-1">
