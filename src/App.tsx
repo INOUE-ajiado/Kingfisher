@@ -27,6 +27,8 @@ export const App: React.FC = () => {
     redo,
     setActiveTool,
     setActivePaletteTab,
+    isRightSidebarOpen,
+    toggleRightSidebarOpen,
   } = usePaintStore();
 
   useEffect(() => {
@@ -37,9 +39,16 @@ export const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // グローバルショートカット (PageDown/Up, Undo/Redo, 1/2/3キーでのパレットタブ切替)
+  // グローバルショートカット (PageDown/Up, Undo/Redo, Ctrl+Alt/Ctrl+Cmdで右パネル開閉, 1/2/3キーでのパレットタブ切替)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 🌟 Windows「Ctrl+Alt」 / Mac「Ctrl+Cmd」で右サイドパネル一括開閉
+      if (e.ctrlKey && (e.altKey || e.metaKey)) {
+        e.preventDefault();
+        toggleRightSidebarOpen();
+        return;
+      }
+
       // テキスト入力中は短縮キーをスルー
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
         return;
@@ -182,82 +191,84 @@ export const App: React.FC = () => {
           {panelVisibility.lightTable && <LightTable />}
         </div>
 
-          {/* Right Docking Panels Column (Fixed File Tree at Top, Independent Lower Scroll) */}
-          <div
-            style={{ width: `${rightSidebarWidth}px` }}
-            className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
-          >
-            {/* 左端ドラッグリサイズハンドルバー (横幅調整) */}
+          {/* Right Docking Panels Column (Toggleable via Ctrl+Alt / Ctrl+Cmd) */}
+          {isRightSidebarOpen && (
             <div
-              onPointerDown={handleRightResizeDown}
-              onPointerMove={handleRightResizeMove}
-              onPointerUp={handleRightResizeUp}
-              onPointerCancel={handleRightResizeUp}
-              title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
-              className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
-            />
+              style={{ width: `${rightSidebarWidth}px` }}
+              className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
+            >
+              {/* 左端ドラッグリサイズハンドルバー (横幅調整) */}
+              <div
+                onPointerDown={handleRightResizeDown}
+                onPointerMove={handleRightResizeMove}
+                onPointerUp={handleRightResizeUp}
+                onPointerCancel={handleRightResizeUp}
+                title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
+                className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
+              />
 
-            {/* 1. 最上位固定: ファイルツリー (File Browser) */}
-            {panelVisibility.fileBrowser && (
-              <React.Fragment>
-                <div
-                  style={{ height: `${panelHeights.fileBrowser || 240}px` }}
-                  className="flex flex-col overflow-hidden flex-shrink-0"
-                >
-                  <FileBrowser />
-                </div>
+              {/* 1. 最上位固定: ファイルツリー (File Browser) */}
+              {panelVisibility.fileBrowser && (
+                <React.Fragment>
+                  <div
+                    style={{ height: `${panelHeights.fileBrowser || 240}px` }}
+                    className="flex flex-col overflow-hidden flex-shrink-0"
+                  >
+                    <FileBrowser />
+                  </div>
 
-                {/* ファイルツリーと下部パネルとの間のドラッグリサイズハンドル */}
-                <div
-                  onPointerDown={(e) => handleRowResizeDown('fileBrowser', panelHeights.fileBrowser || 240, e)}
-                  onPointerMove={(e) => handleRowResizeMove('fileBrowser', e)}
-                  onPointerUp={(e) => handleRowResizeUp('fileBrowser', e)}
-                  onPointerCancel={(e) => handleRowResizeUp('fileBrowser', e)}
-                  title="ドラッグでファイルツリーの縦幅を調整"
-                  className="h-1.5 cursor-row-resize hover:bg-blue-500/80 active:bg-blue-600 bg-slate-300 dark:bg-slate-800 transition-colors z-20 touch-none flex-shrink-0 border-y border-slate-300/50 dark:border-slate-700/50"
-                />
-              </React.Fragment>
-            )}
+                  {/* ファイルツリーと下部パネルとの間のドラッグリサイズハンドル */}
+                  <div
+                    onPointerDown={(e) => handleRowResizeDown('fileBrowser', panelHeights.fileBrowser || 240, e)}
+                    onPointerMove={(e) => handleRowResizeMove('fileBrowser', e)}
+                    onPointerUp={(e) => handleRowResizeUp('fileBrowser', e)}
+                    onPointerCancel={(e) => handleRowResizeUp('fileBrowser', e)}
+                    title="ドラッグでファイルツリーの縦幅を調整"
+                    className="h-1.5 cursor-row-resize hover:bg-blue-500/80 active:bg-blue-600 bg-slate-300 dark:bg-slate-800 transition-colors z-20 touch-none flex-shrink-0 border-y border-slate-300/50 dark:border-slate-700/50"
+                  />
+                </React.Fragment>
+              )}
 
-            {/* 2. 下部パネル群エリア (ツールオプション / ColorChart / レイヤー / 履歴): スクロールバー非表示で独立縦スクロール */}
-            <div className="flex-1 flex flex-col gap-0 overflow-y-auto no-scrollbar">
-              {(() => {
-                const lowerPanels = [
-                  { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
-                  { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
-                  { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
-                  { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
-                ].filter((p) => p.visible);
+              {/* 2. 下部パネル群エリア (ツールオプション / ColorChart / レイヤー / 履歴): スクロールバー非表示で独立縦スクロール */}
+              <div className="flex-1 flex flex-col gap-0 overflow-y-auto no-scrollbar">
+                {(() => {
+                  const lowerPanels = [
+                    { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
+                    { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
+                    { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
+                    { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
+                  ].filter((p) => p.visible);
 
-                return lowerPanels.map((panel, idx) => {
-                  const isLast = idx === lowerPanels.length - 1;
-                  const h = panelHeights[panel.key] || 200;
+                  return lowerPanels.map((panel, idx) => {
+                    const isLast = idx === lowerPanels.length - 1;
+                    const h = panelHeights[panel.key] || 200;
 
-                  return (
-                    <React.Fragment key={panel.key}>
-                      <div
-                        style={isLast ? undefined : { height: `${h}px` }}
-                        className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 min-h-[60px]' : 'flex-shrink-0'}`}
-                      >
-                        {panel.component}
-                      </div>
-
-                      {!isLast && (
+                    return (
+                      <React.Fragment key={panel.key}>
                         <div
-                          onPointerDown={(e) => handleRowResizeDown(panel.key, h, e)}
-                          onPointerMove={(e) => handleRowResizeMove(panel.key, e)}
-                          onPointerUp={(e) => handleRowResizeUp(panel.key, e)}
-                          onPointerCancel={(e) => handleRowResizeUp(panel.key, e)}
-                          title="ドラッグで上下パネルの縦幅を調整"
-                          className="h-1.5 cursor-row-resize hover:bg-blue-500/80 active:bg-blue-600 bg-slate-300 dark:bg-slate-800 transition-colors z-20 touch-none flex-shrink-0 border-y border-slate-300/50 dark:border-slate-700/50"
-                        />
-                      )}
-                    </React.Fragment>
-                  );
-                });
-              })()}
+                          style={isLast ? undefined : { height: `${h}px` }}
+                          className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 min-h-[60px]' : 'flex-shrink-0'}`}
+                        >
+                          {panel.component}
+                        </div>
+
+                        {!isLast && (
+                          <div
+                            onPointerDown={(e) => handleRowResizeDown(panel.key, h, e)}
+                            onPointerMove={(e) => handleRowResizeMove(panel.key, e)}
+                            onPointerUp={(e) => handleRowResizeUp(panel.key, e)}
+                            onPointerCancel={(e) => handleRowResizeUp(panel.key, e)}
+                            title="ドラッグで上下パネルの縦幅を調整"
+                            className="h-1.5 cursor-row-resize hover:bg-blue-500/80 active:bg-blue-600 bg-slate-300 dark:bg-slate-800 transition-colors z-20 touch-none flex-shrink-0 border-y border-slate-300/50 dark:border-slate-700/50"
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  });
+                })()}
+              </div>
             </div>
-          </div>
+          )}
       </div>
 
       {/* Modals & Guards */}

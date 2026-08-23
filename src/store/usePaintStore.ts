@@ -157,9 +157,11 @@ export function buildMergedFrameData(
 }
 
 export interface PaintStore {
-  // --- テーマ ＆ キャンバス背景マット ---
+  // --- テーマ ＆ キャンバス背景マット ＆ 右サイドパネル開閉 ---
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+  isRightSidebarOpen: boolean;
+  toggleRightSidebarOpen: () => void;
   canvasBgMatteMode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom';
   canvasCustomBgColor: string;
   setCanvasBgMatteMode: (mode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom') => void;
@@ -395,6 +397,8 @@ const defaultColors: PaletteItem[] = [
 export const usePaintStore = create<PaintStore>((set, get) => ({
   isDarkMode: false,
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
+  isRightSidebarOpen: true,
+  toggleRightSidebarOpen: () => set((state) => ({ isRightSidebarOpen: !state.isRightSidebarOpen })),
   canvasBgMatteMode: 'checkerboard',
   canvasCustomBgColor: '#00ff00',
   setCanvasBgMatteMode: (mode) => set({ canvasBgMatteMode: mode }),

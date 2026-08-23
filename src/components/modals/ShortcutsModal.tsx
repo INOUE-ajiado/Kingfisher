@@ -20,6 +20,7 @@ export const ShortcutsModal: React.FC = () => {
     { key: 'E', desc: '消しゴム ツール' },
     { key: 'T', desc: '含み塗り (Include Trace Lines) ON/OFF トグル' },
     { key: '[ / ]', desc: '隙間閉じ (Gap Close) ピクセルレベル減増' },
+    { key: 'Ctrl + Alt (Win) / Ctrl + Cmd (Mac)', desc: '右サイドパネル一括開閉 (キャンバス全幅トグル)' },
     { key: 'Space + Drag', desc: 'キャンバスのパン (手のひら移動)' },
     { key: 'F5 〜 F9', desc: '各種パネルの表示/非表示トグル' },
   ];
