@@ -459,7 +459,14 @@ export const CellWindow: React.FC = () => {
     closeReferenceWindow,
     colorSpecLayoutMode,
     setColorSpecLayoutMode,
+    isWinAFloating,
+    isWinBFloating,
+    toggleWinAFloating,
+    toggleWinBFloating,
   } = usePaintStore();
+
+  const winADrag = useFastDraggable({ initialX: 60, initialY: 60, enabled: isWinAFloating });
+  const winBDrag = useFastDraggable({ initialX: 200, initialY: 80, enabled: isWinBFloating });
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -467,6 +474,90 @@ export const CellWindow: React.FC = () => {
   const [isLassoing, setIsLassoing] = useState(false);
   const [isBrushing, setIsBrushing] = useState(false);
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
+
+  // ⚠️ メインウィンドウ全般 (Win A / Win B) 共通引きはがし (Tear-off) ＆ ドッキングポインターハンドラー
+  const isDraggingGenericHeader = useRef(false);
+  const genericDragOffset = useRef({ x: 160, y: 12 });
+
+  const handleGenericHeaderPointerDown = (
+    e: React.PointerEvent,
+    winId: 'winA' | 'winB',
+    isFloating: boolean,
+    currentPos: React.MutableRefObject<{ x: number; y: number }>,
+    setPosition: (x: number, y: number) => void
+  ) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+
+    isDraggingGenericHeader.current = true;
+
+    if (isFloating && currentPos && currentPos.current) {
+      genericDragOffset.current = {
+        x: e.clientX - currentPos.current.x,
+        y: e.clientY - currentPos.current.y,
+      };
+    } else {
+      genericDragOffset.current = { x: 160, y: 12 };
+    }
+
+    const toggleFloating = winId === 'winA' ? toggleWinAFloating : toggleWinBFloating;
+    const tabId = winId === 'winA' ? 'docked-winA-tab' : 'docked-winB-tab';
+
+    const onWindowPointerMove = (moveEvent: PointerEvent) => {
+      if (!isDraggingGenericHeader.current) return;
+
+      const state = usePaintStore.getState();
+      const currentIsFloating = winId === 'winA' ? state.isWinAFloating : state.isWinBFloating;
+
+      if (!currentIsFloating) {
+        const dist = Math.hypot(moveEvent.clientX - e.clientX, moveEvent.clientY - e.clientY);
+        if (dist > 6) {
+          const spawnX = Math.max(10, moveEvent.clientX - genericDragOffset.current.x);
+          const spawnY = Math.max(10, moveEvent.clientY - genericDragOffset.current.y);
+          setPosition(spawnX, spawnY);
+          toggleFloating();
+        }
+      } else {
+        const newX = Math.max(0, moveEvent.clientX - genericDragOffset.current.x);
+        const newY = Math.max(0, moveEvent.clientY - genericDragOffset.current.y);
+        setPosition(newX, newY);
+      }
+    };
+
+    const onWindowPointerUp = (upEvent: PointerEvent) => {
+      isDraggingGenericHeader.current = false;
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+
+      const state = usePaintStore.getState();
+      const currentIsFloating = winId === 'winA' ? state.isWinAFloating : state.isWinBFloating;
+
+      if (currentIsFloating) {
+        const targetElem = document.getElementById(tabId);
+        if (targetElem && targetElem.offsetParent !== null) {
+          const rect = targetElem.getBoundingClientRect();
+          const padding = 25;
+          const isOver =
+            upEvent.clientX >= rect.left - padding &&
+            upEvent.clientX <= rect.right + padding &&
+            upEvent.clientY >= rect.top - padding &&
+            upEvent.clientY <= rect.bottom + padding;
+
+          if (isOver) {
+            toggleFloating();
+            return;
+          }
+        }
+
+        const finalX = Math.max(0, upEvent.clientX - genericDragOffset.current.x);
+        const finalY = Math.max(0, upEvent.clientY - genericDragOffset.current.y);
+        setPosition(finalX, finalY);
+      }
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
+  };
 
   const [splitImage, setSplitImage] = useState<any>(null);
   const [onionFramesMap, setOnionFramesMap] = useState<Map<number, any>>(new Map());
@@ -1190,16 +1281,27 @@ export const CellWindow: React.FC = () => {
 
       {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
       <div className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}>
-        {/* メイン編集エリア (1画面または2画面) */}
-        <div className="flex-1 flex overflow-hidden gap-0.5">
-          {/* 左ビュー (Dir A) */}
+        {/* メイン編集エリア (Win A / Win B 独立フローティング対応) */}
+        <div className="flex-1 flex overflow-hidden gap-0.5 relative">
+          {/* 左ビュー (Win A / Dir A) */}
           <div
+            ref={winADrag.targetRef}
+            style={isWinAFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
             onClick={() => setActiveViewIndex(0)}
-            className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
-              activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+            className={`flex flex-col overflow-hidden border-2 ${
+              isWinAFloating
+                ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
+                : `flex-1 relative rounded ${
+                    activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+                  }`
             }`}
           >
-            <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between">
+            {/* Win A タイトルバー (Tear-off & Docking 対応) */}
+            <div
+              id={isWinAFloating ? undefined : 'docked-winA-tab'}
+              onPointerDown={(e) => handleGenericHeaderPointerDown(e, 'winA', isWinAFloating, winADrag.currentPos, winADrag.setPosition)}
+              className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
+            >
               <span className="font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1.5">
                 <span>Win A ({folderNameA || 'Orig'}): {unifiedFileList[currentFileIndex] || '0001.tga'}</span>
                 {currentImage?.isReadOnly && (
@@ -1208,11 +1310,24 @@ export const CellWindow: React.FC = () => {
                   </span>
                 )}
               </span>
-              {!currentImage && (
-                <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> NO DATA
-                </span>
-              )}
+
+              <div className="flex items-center gap-1">
+                {!currentImage && (
+                  <span className="text-[9px] text-red-500 font-bold flex items-center gap-1 mr-1">
+                    <AlertTriangle className="w-3 h-3" /> NO DATA
+                  </span>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleWinAFloating();
+                  }}
+                  title={isWinAFloating ? 'ドッキングに戻す' : '切り離して独立表示 (Tear-off)'}
+                  className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-600 dark:text-slate-300"
+                >
+                  {isWinAFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                </button>
+              </div>
             </div>
 
             {showRuler && currentImage && (
@@ -1263,15 +1378,26 @@ export const CellWindow: React.FC = () => {
             </div>
           </div>
 
-          {/* 右ビュー (Dir B / Split View 有効時) */}
+          {/* 右ビュー (Win B / Dir B / Split View 有効時) */}
           {isSplitView && (
             <div
+              ref={winBDrag.targetRef}
+              style={isWinBFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
               onClick={() => setActiveViewIndex(1)}
-              className={`flex-1 flex flex-col relative overflow-hidden border-2 rounded ${
-                activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+              className={`flex flex-col overflow-hidden border-2 ${
+                isWinBFloating
+                  ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
+                  : `flex-1 relative rounded ${
+                      activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+                    }`
               }`}
             >
-              <div className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px]">
+              {/* Win B タイトルバー (Tear-off & Docking 対応) */}
+              <div
+                id={isWinBFloating ? undefined : 'docked-winB-tab'}
+                onPointerDown={(e) => handleGenericHeaderPointerDown(e, 'winB', isWinBFloating, winBDrag.currentPos, winBDrag.setPosition)}
+                className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] select-none touch-none cursor-grab active:cursor-grabbing"
+              >
                 <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
                   <span>Win B ({folderNameB || 'Retake'}): {unifiedFileList[splitFileIndex] || '0001.tga'}</span>
                   {splitImage?.isReadOnly && (
@@ -1280,11 +1406,24 @@ export const CellWindow: React.FC = () => {
                     </span>
                   )}
                 </span>
-                {!splitImage && (
-                  <span className="text-[9px] text-red-500 font-bold flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" /> NO DATA
-                  </span>
-                )}
+
+                <div className="flex items-center gap-1">
+                  {!splitImage && (
+                    <span className="text-[9px] text-red-500 font-bold flex items-center gap-1 mr-1">
+                      <AlertTriangle className="w-3 h-3" /> NO DATA
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleWinBFloating();
+                    }}
+                    title={isWinBFloating ? 'ドッキングに戻す' : '切り離して独立表示 (Tear-off)'}
+                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-600 dark:text-slate-300"
+                  >
+                    {isWinBFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                  </button>
+                </div>
               </div>
 
               {showRuler && splitImage && (

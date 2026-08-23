@@ -161,9 +161,13 @@ export interface PaintStore {
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 
-  // --- 色指定参照ウィンドウ (Color Spec Reference Window) ---
+  // --- 色指定参照 ＆ メインセルビュー フローティング ---
   referenceCanvas: ReferenceCanvasState;
   colorSpecLayoutMode: 'single' | 'split-vertical' | 'split-horizontal';
+  isWinAFloating: boolean;
+  isWinBFloating: boolean;
+  toggleWinAFloating: () => void;
+  toggleWinBFloating: () => void;
   openReferenceImage: (fileHandle?: any, fileName?: string, image?: TGAImage) => void;
   closeReferenceWindow: () => void;
   toggleReferenceFloating: () => void;
@@ -412,6 +416,11 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
     set((state) => ({
       referenceCanvas: { ...state.referenceCanvas, isOpen: false },
     })),
+
+  isWinAFloating: false,
+  isWinBFloating: false,
+  toggleWinAFloating: () => set((state) => ({ isWinAFloating: !state.isWinAFloating })),
+  toggleWinBFloating: () => set((state) => ({ isWinBFloating: !state.isWinBFloating })),
 
   toggleReferenceFloating: () =>
     set((state) => ({
