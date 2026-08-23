@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { encodeTGA, decodeTGA } from '../../engine/tga';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Columns, Link, Link2Off, Pipette } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -415,7 +415,47 @@ export const MenuBar: React.FC = () => {
         })}
       </div>
 
-      <div className="ml-auto flex items-center gap-4">
+      <div className="ml-auto flex items-center gap-2">
+        {/* 統合アクションボタン群 (左右比較・左右連動・参照画像) */}
+        <div className="flex items-center gap-1 border-r border-slate-200 dark:border-slate-800 pr-2">
+          <button
+            onClick={toggleIsSplitView}
+            title="画面を左右2分割してセルを並べて比較 (Win A / Win B)"
+            className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+              isSplitView
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5" />
+            <span>左右に並べる</span>
+          </button>
+
+          {isSplitView && (
+            <button
+              onClick={toggleSyncMode}
+              title="左右ウィンドウのコマ送りを完全同調・連動"
+              className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+                syncMode
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700'
+              }`}
+            >
+              {syncMode ? <Link className="w-3.5 h-3.5" /> : <Link2Off className="w-3.5 h-3.5" />}
+              <span>左右連動</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleOpenReference}
+            title="作画比較用の参照画像 (TGA/PNG/JPG) を開く"
+            className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-colors"
+          >
+            <Pipette className="w-3.5 h-3.5" />
+            <span>参照画像を開く</span>
+          </button>
+        </div>
+
         {/* Dark/Light mode toggle */}
         <button
           onClick={toggleDarkMode}
@@ -426,7 +466,7 @@ export const MenuBar: React.FC = () => {
           <span>{isDarkMode ? 'Dark' : 'Light'}</span>
         </button>
 
-        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono hidden md:inline">
           Ver 2.0 (Studio)
         </span>
       </div>

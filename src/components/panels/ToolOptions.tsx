@@ -22,6 +22,7 @@ export const ToolOptions: React.FC = () => {
     togglePegGuide,
     referenceCanvas,
     setAutoRevertTool,
+    resetCanvasTransform,
   } = usePaintStore();
 
   return (
@@ -295,8 +296,16 @@ export const ToolOptions: React.FC = () => {
       </div>
 
       <button
+        onClick={resetCanvasTransform}
+        title="PC画面の高さに合わせて用紙フレームを上下ぴったり初期化 (Fit Height)"
+        className="ml-auto px-2 py-1 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans text-[10px] font-semibold border border-slate-300 dark:border-slate-700 transition-colors flex-shrink-0"
+      >
+        画面高さにフィット
+      </button>
+
+      <button
         onClick={nextCell}
-        className="ml-auto bg-orange-500 hover:bg-orange-600 text-white font-bold py-1 px-3 rounded text-[11px] flex items-center gap-1.5 transition-colors shadow-sm flex-shrink-0"
+        className="bg-orange-500 hover:bg-orange-600 text-white font-bold py-1 px-3 rounded text-[11px] flex items-center gap-1.5 transition-colors shadow-sm flex-shrink-0"
       >
         <span>Next Cell (PgDn)</span>
         <SkipForward className="w-3.5 h-3.5" />

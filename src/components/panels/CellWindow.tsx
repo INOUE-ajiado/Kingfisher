@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
 import { decodeTGA } from '../../engine/tga';
-import { Columns2, Link, Link2Off, AlertTriangle, X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
+import { AlertTriangle, X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
 import { useFastDraggable } from '../../hooks/useFastDraggable';
 
 function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
@@ -428,9 +428,7 @@ export const CellWindow: React.FC = () => {
     currentFileIndex,
     splitFileIndex,
     isSplitView,
-    toggleIsSplitView,
     syncMode,
-    toggleSyncMode,
     activeViewIndex,
     setActiveViewIndex,
     activeTool,
@@ -463,10 +461,7 @@ export const CellWindow: React.FC = () => {
     showUnpaintedFlash,
     pegStabilizer,
     referenceCanvas,
-    openReferenceImage,
-    closeReferenceWindow,
     colorSpecLayoutMode,
-    setColorSpecLayoutMode,
     isWinAFloating,
     isWinBFloating,
     toggleWinAFloating,
@@ -1314,82 +1309,8 @@ export const CellWindow: React.FC = () => {
 
   return (
     <div ref={containerRef} id="main-workspace-area" className="flex-1 bg-slate-300 dark:bg-slate-950 flex flex-col relative overflow-hidden select-none">
-      {/* 画面分割・連動・参照コントロール ヘッダーバー */}
-      <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs z-10">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={toggleIsSplitView}
-            title="1画面と左右分割比較（スプリットビュー ◫）をワンクリックで切替"
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
-              isSplitView
-                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-blue-500'
-            }`}
-          >
-            <Columns2 className="w-3.5 h-3.5 text-blue-400" />
-            <span>◫ {isSplitView ? '2画面分割比較中' : '左右並べる (Split)'}</span>
-          </button>
-
-          {isSplitView && (
-            <button
-              onClick={toggleSyncMode}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
-                syncMode
-                  ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                  : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400'
-              }`}
-            >
-              {syncMode ? <Link className="w-3.5 h-3.5" /> : <Link2Off className="w-3.5 h-3.5" />}
-              <span>{syncMode ? '左右連動 (ON)' : '連動OFF'}</span>
-            </button>
-          )}
-
-          <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 mx-0.5" />
-
-          {/* 色指定参照ウィンドウ ボタン ＆ タブエリア */}
-          <div id="docked-reference-tab" className="inline-flex items-center gap-1">
-            <button
-              onClick={() => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage())}
-              className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
-                referenceCanvas.isOpen
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                  : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-500'
-              }`}
-            >
-              <Pipette className="w-3.5 h-3.5" />
-              <span>{referenceCanvas.isOpen ? '参照画像 ON' : '参照画像を開く'}</span>
-            </button>
-
-            {referenceCanvas.isOpen && !referenceCanvas.isFloating && (
-              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
-                <button
-                  onClick={() => setColorSpecLayoutMode('split-vertical')}
-                  className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-vertical' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-                >
-                  垂直分割
-                </button>
-                <button
-                  onClick={() => setColorSpecLayoutMode('split-horizontal')}
-                  className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-horizontal' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-                >
-                  水平分割
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-slate-400">
-          <span>Zoom: {Math.round(canvasTransform.scale * 100)}%</span>
-          <button
-            onClick={fitToScreenHeight}
-            title="PC画面の高さに合わせて用紙フレームを上下ぴったり初期化 (Fit Height)"
-            className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-sans text-[10px] border border-slate-300 dark:border-slate-700 transition-colors"
-          >
-            画面高さにフィット
-          </button>
-        </div>
-      </div>
+      {/* 隠しドッキング復帰吸着アンカー (参照画像ドッキング復帰用) */}
+      <div id="docked-reference-tab" className="hidden" />
 
       {/* フローティング参照ウィンドウ */}
       {referenceCanvas.isOpen && referenceCanvas.isFloating && <ReferenceCanvasView isFloating={true} />}
