@@ -219,6 +219,7 @@ export const MenuBar: React.FC = () => {
         { label: '上書き保存', shortcut: 'Ctrl+S', action: handleSave },
         { label: '名前を付けて保存', shortcut: 'Ctrl+Shift+S', action: handleSave },
         { type: 'divider' },
+        { label: 'ベクター出力 (SVG)...', shortcut: '', action: () => setActiveModal('exportVector') },
         { label: '環境設定 & 画像補正', shortcut: 'Ctrl+K', action: () => setActiveModal('preferences') },
       ],
     },
