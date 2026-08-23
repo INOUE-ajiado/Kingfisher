@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { convertImageToSVG } from '../../engine/vectorTrace';
+import { useVectorTraceWorker } from '../../hooks/useVectorTraceWorker';
 import { X, Download, Sliders, FileCode, Check, Loader2, Maximize2 } from 'lucide-react';
 
 export const ExportVectorModal: React.FC = () => {
@@ -8,32 +8,17 @@ export const ExportVectorModal: React.FC = () => {
   const [tolerance, setTolerance] = useState<number>(1.0);
   const [ignoreWhite, setIgnoreWhite] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
-  const [svgString, setSvgString] = useState<string>('');
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+
+  const { svgString, isProcessing, requestTrace } = useVectorTraceWorker();
 
   const isOpen = activeModal === 'exportVector';
 
-  // 非同期・高精度SVGトレース変換
+  // Web Worker によるゼロコピー非同期ベクタートレース
   useEffect(() => {
-    if (!isOpen || !currentImage) {
-      setSvgString('');
-      return;
+    if (isOpen && currentImage) {
+      requestTrace(currentImage, { tolerance, ignoreWhite });
     }
-
-    setIsProcessing(true);
-    const timer = setTimeout(() => {
-      try {
-        const svg = convertImageToSVG(currentImage, { tolerance, ignoreWhite });
-        setSvgString(svg);
-      } catch (err) {
-        console.error('Failed to trace vector SVG:', err);
-      } finally {
-        setIsProcessing(false);
-      }
-    }, 40);
-
-    return () => clearTimeout(timer);
-  }, [isOpen, currentImage, tolerance, ignoreWhite]);
+  }, [isOpen, currentImage, tolerance, ignoreWhite, requestTrace]);
 
   if (!isOpen) return null;
 
