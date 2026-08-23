@@ -36,7 +36,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
-  const { targetRef, dragHandlers } = useFastDraggable({
+  const { targetRef, dragHandlers, setPosition } = useFastDraggable({
     initialX: 120,
     initialY: 80,
     enabled: isFloating,
@@ -172,6 +172,10 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       // 1. ドッキング状態の時: タブを外へ一定距離 (8px以上) ドラッグしたら独立ウィンドウ化 (Tear-off)
       const dist = Math.hypot(e.clientX - dragStartPos.current.x, e.clientY - dragStartPos.current.y);
       if (dist > 8) {
+        // 引きはがした瞬間のマウス位置へ即座に配置展開
+        const spawnX = Math.max(10, e.clientX - 160);
+        const spawnY = Math.max(10, e.clientY - 12);
+        setPosition(spawnX, spawnY);
         toggleReferenceFloating();
         isDraggingHeader.current = false;
         try {

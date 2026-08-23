@@ -75,6 +75,13 @@ export function useFastDraggable<T extends HTMLElement = HTMLDivElement>(
     []
   );
 
+  const setPosition = useCallback((x: number, y: number) => {
+    currentPos.current = { x, y };
+    if (targetRef.current) {
+      targetRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    }
+  }, []);
+
   return {
     targetRef,
     dragHandlers: {
@@ -84,5 +91,6 @@ export function useFastDraggable<T extends HTMLElement = HTMLDivElement>(
       onPointerCancel: onPointerUp,
     },
     currentPos,
+    setPosition,
   };
 }
