@@ -15,7 +15,8 @@ import {
   Sparkles,
   ArrowLeftRight,
   RefreshCw,
-  Blend
+  Blend,
+  Wrench
 } from 'lucide-react';
 
 interface ToolItem {
@@ -28,12 +29,12 @@ interface ToolItem {
 export const ToolPalette: React.FC = () => {
   const { activeTool, setActiveTool, currentColor, backgroundColor, swapColors, setActiveModal } = usePaintStore();
   
-  // デフォルト 1列 (36px)、ドラッグで最大2列 (68px)
+  // デフォルト 1列 (40px)、ドラッグで最大2列 (74px)
   const [cols, setCols] = useState<1 | 2>(1);
-  const [width, setWidth] = useState<number>(36);
+  const [width, setWidth] = useState<number>(40);
   const isResizing = useRef(false);
   const startX = useRef(0);
-  const startWidth = useRef(36);
+  const startWidth = useRef(40);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -67,11 +68,11 @@ export const ToolPalette: React.FC = () => {
       }
     } catch (err) {}
 
-    if (width >= 52) {
-      setWidth(68);
+    if (width >= 56) {
+      setWidth(74);
       setCols(2);
     } else {
-      setWidth(36);
+      setWidth(40);
       setCols(1);
     }
   };
@@ -79,10 +80,10 @@ export const ToolPalette: React.FC = () => {
   const toggleCols = () => {
     if (cols === 1) {
       setCols(2);
-      setWidth(68);
+      setWidth(74);
     } else {
       setCols(1);
-      setWidth(36);
+      setWidth(40);
     }
   };
 
@@ -118,9 +119,19 @@ export const ToolPalette: React.FC = () => {
         className="absolute top-0 right-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
       />
 
-      {/* ツールパレット ヘッダー */}
-      <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-1 text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-        <span className="truncate">{cols === 2 ? 'ツール' : '具'}</span>
+      {/* ツールパレット ヘッダー (見切れゼロ最適化) */}
+      <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-1 text-[10px] font-bold text-slate-700 dark:text-slate-300 overflow-hidden">
+        {cols === 2 ? (
+          <div className="flex items-center gap-1">
+            <Wrench className="w-3 h-3 text-blue-500 flex-shrink-0" />
+            <span className="text-[11px] font-bold">ツール</span>
+          </div>
+        ) : (
+          <span className="w-full text-center text-[10px] font-bold tracking-tighter text-blue-600 dark:text-blue-400">
+            ツール
+          </span>
+        )}
+
         {cols === 2 && (
           <button
             onClick={() => setActiveModal('replaceColor')}
