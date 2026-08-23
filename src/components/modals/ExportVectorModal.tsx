@@ -6,6 +6,8 @@ import { X, Download, Sliders, FileCode, Check, Loader2, Terminal, Cpu } from 'l
 export const ExportVectorModal: React.FC = () => {
   const { activeModal, setActiveModal, currentImage, unifiedFileList, currentFileIndex } = usePaintStore();
   const [tolerance, setTolerance] = useState<number>(1.0);
+  const [colorMerging, setColorMerging] = useState<number>(25); // 減色マージ閾値 (0〜100)
+  const [despeckle, setDespeckle] = useState<number>(5); // ゴミ除去最小面積 (0〜50px)
   const [ignoreWhite, setIgnoreWhite] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
   const logTerminalRef = useRef<HTMLDivElement>(null);
@@ -17,9 +19,9 @@ export const ExportVectorModal: React.FC = () => {
   // Web Worker によるゼロコピー非同期ベクタートレース
   useEffect(() => {
     if (isOpen && currentImage) {
-      requestTrace(currentImage, { tolerance, ignoreWhite });
+      requestTrace(currentImage, { tolerance, ignoreWhite, colorMerging, despeckle });
     }
-  }, [isOpen, currentImage, tolerance, ignoreWhite, requestTrace]);
+  }, [isOpen, currentImage, tolerance, ignoreWhite, colorMerging, despeckle, requestTrace]);
 
   // ターミナルログ追加時の自動最下部スクロール
   useEffect(() => {
@@ -64,7 +66,7 @@ export const ExportVectorModal: React.FC = () => {
         <div className="h-11 bg-slate-100 dark:bg-slate-800/90 px-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
           <div className="flex items-center gap-2 font-bold text-sm text-slate-800 dark:text-slate-100">
             <FileCode className="w-4 h-4 text-blue-500" />
-            <span>ベクター出力 (並列3次ベジェSVGトレース) - {fileName}.svg</span>
+            <span>ベクター出力 (減色 ＆ ノイズ除去SVGトレース) - {fileName}.svg</span>
           </div>
           <button
             onClick={() => setActiveModal(null)}
@@ -88,15 +90,61 @@ export const ExportVectorModal: React.FC = () => {
         <div className="flex-1 p-4 flex flex-col md:flex-row gap-5 overflow-hidden">
           {/* 左側: 設定・パラメーター ＆ ログビューア */}
           <div className="w-full md:w-80 flex flex-col gap-3 text-xs flex-shrink-0 overflow-hidden">
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-4 shadow-xs flex-shrink-0">
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800 space-y-3.5 shadow-xs flex-shrink-0">
               <div className="flex items-center gap-1.5 font-bold text-sm text-slate-800 dark:text-slate-200 border-b border-slate-200 dark:border-slate-700 pb-2">
                 <Sliders className="w-4 h-4 text-blue-500" />
                 <span>トレース設定 (Vector Options)</span>
               </div>
 
+              {/* 減色しきい値 Color Merging */}
+              <div>
+                <div className="flex justify-between items-center mb-1 text-xs font-medium">
+                  <span className="text-slate-700 dark:text-slate-300 font-bold">減色しきい値 (Color Merging):</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                    {colorMerging}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={colorMerging}
+                  onChange={(e) => setColorMerging(Number(e.target.value))}
+                  className="w-full accent-emerald-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                />
+                <div className="flex justify-between text-[9px] text-slate-400 mt-0.5 font-semibold">
+                  <span>完全分離 (0)</span>
+                  <span>セルアニメマージ (100)</span>
+                </div>
+              </div>
+
+              {/* ノイズ除去 Despeckle / Area Threshold */}
+              <div>
+                <div className="flex justify-between items-center mb-1 text-xs font-medium">
+                  <span className="text-slate-700 dark:text-slate-300 font-bold">ノイズ除去 (Despeckle):</span>
+                  <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-1.5 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                    {despeckle} px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  step="1"
+                  value={despeckle}
+                  onChange={(e) => setDespeckle(Number(e.target.value))}
+                  className="w-full accent-indigo-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
+                />
+                <div className="flex justify-between text-[9px] text-slate-400 mt-0.5 font-semibold">
+                  <span>全残し (0)</span>
+                  <span>ゴミ破棄 (50px)</span>
+                </div>
+              </div>
+
               {/* スムージング Tolerance */}
               <div>
-                <div className="flex justify-between items-center mb-1.5 text-xs font-medium">
+                <div className="flex justify-between items-center mb-1 text-xs font-medium">
                   <span className="text-slate-700 dark:text-slate-300">スムージング (Tolerance):</span>
                   <span className="font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded border border-blue-200 dark:border-blue-800">
                     {tolerance.toFixed(1)}
@@ -111,14 +159,14 @@ export const ExportVectorModal: React.FC = () => {
                   onChange={(e) => setTolerance(Number(e.target.value))}
                   className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 dark:bg-slate-700 rounded-lg"
                 />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-semibold">
-                  <span>極高精細 (0.1)</span>
+                <div className="flex justify-between text-[9px] text-slate-400 mt-0.5 font-semibold">
+                  <span>高精細 (0.1)</span>
                   <span>滑らか (5.0)</span>
                 </div>
               </div>
 
               {/* 背景の透過 */}
-              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold pt-1 select-none">
+              <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-bold pt-0.5 select-none">
                 <input
                   type="checkbox"
                   checked={ignoreWhite}
@@ -147,7 +195,7 @@ export const ExportVectorModal: React.FC = () => {
               </div>
             </div>
 
-            {/* 🌟 ターミナル型デバッグログビューア (自動最下部スクロール対応) */}
+            {/* 🌟 ターミナル型デバッグログビューア */}
             <div className="flex-1 bg-slate-950 border border-slate-800 rounded-lg p-2.5 flex flex-col overflow-hidden text-[10px] font-mono text-emerald-400">
               <div className="flex items-center gap-1 text-slate-400 border-b border-slate-800 pb-1 mb-1.5 font-bold flex-shrink-0">
                 <Terminal className="w-3 h-3 text-emerald-500" />

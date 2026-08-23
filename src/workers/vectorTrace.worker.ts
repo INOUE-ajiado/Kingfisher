@@ -1,4 +1,4 @@
-// 🌟 Kingfisher Web Worker: 堅牢非同期ベクタートレース Worker (進捗 ＆ ターミナルログ対応)
+// 🌟 Kingfisher Web Worker: 高精度ベクター変換 パス爆発防止・減色パイプライン (Color Quantization & Despeckle)
 export interface WorkerTraceInput {
   requestId: number;
   width: number;
@@ -6,6 +6,8 @@ export interface WorkerTraceInput {
   buffer: ArrayBuffer;
   tolerance: number;
   ignoreWhite: boolean;
+  colorMerging: number; // 0 〜 100
+  despeckle: number; // 0 〜 50 px
 }
 
 export type WorkerMessageOut =
@@ -81,7 +83,7 @@ function fitCubicBezierPath(points: Point[], smoothness: number): string {
     const tension = Math.min(0.4, 0.25 * smoothness);
 
     const cp1x = p1.x + (p2.x - p0.x) * tension * (d2 / (d1 + d2 || 1));
-    const cp1y = p1.y + (p2.y - p0.y) * tension * (d2 / (d1 + d2 || 1));
+    const cp1y = p1.y + (p2.y - p0.y) * tension * (d2 / (d2 + d3 || 1));
 
     const cp2x = p2.x - (p3.x - p1.x) * tension * (d2 / (d2 + d3 || 1));
     const cp2y = p2.y - (p3.y - p1.y) * tension * (d2 / (d2 + d3 || 1));
@@ -91,6 +93,26 @@ function fitCubicBezierPath(points: Point[], smoothness: number): string {
 
   d += ' Z';
   return d;
+}
+
+// ポリゴン面積計算 (Shoelace formula)
+function polygonArea(points: Point[]): number {
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+// ユークリッド色距離 (0〜441.67)
+function colorDistanceSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  return dr * dr + dg * dg + db * db;
 }
 
 function notifyProgress(requestId: number, percent: number, message: string, detail?: string) {
@@ -107,10 +129,10 @@ function notifyProgress(requestId: number, percent: number, message: string, det
 }
 
 self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
-  const { requestId, width, height, buffer, tolerance, ignoreWhite } = e.data;
+  const { requestId, width, height, buffer, tolerance, ignoreWhite, colorMerging, despeckle } = e.data;
 
   try {
-    notifyProgress(requestId, 5, '並列ベクター変換パイプライン初期化...', 'Worker initialized. Reading buffer data.');
+    notifyProgress(requestId, 5, '減色トレースパイプライン初期化...', 'Starting Color Quantization & Despeckle Pipeline.');
 
     const data = new Uint8ClampedArray(buffer);
     if (!data || width <= 0 || height <= 0) {
@@ -118,19 +140,17 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       return;
     }
 
-    // フェーズ 1: カラークラスタリング (0% 〜 20%)
-    notifyProgress(requestId, 10, 'カラークラスタリング実行中...', `Processing color clustering for ${width}x${height} px.`);
-
-    const sqTolerance = Math.max(0.1, tolerance) * Math.max(0.1, tolerance) * 0.8;
     const totalPixels = width * height;
-
     const pixelColors = new Int32Array(totalPixels);
     pixelColors.fill(-1);
 
-    const palette: string[] = [];
-    const colorToPaletteId = new Map<string, number>();
+    // 🌟 Step 1 & 2: ユークリッドカラー減色・クラスタリング (Color Quantization)
+    notifyProgress(requestId, 15, 'ユークリッド減色・似た色マージ中...', `Color Merging Threshold: ${colorMerging}`);
 
-    const qStep = tolerance > 2.0 ? 4 : tolerance > 1.0 ? 2 : 1;
+    // ユークリッド距離の閾値 (0 〜 100 -> 距離 0 〜 250)
+    const colorDistThresholdSq = Math.pow((colorMerging / 100) * 250, 2);
+
+    const palette: { r: number; g: number; b: number; hex: string }[] = [];
 
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -141,41 +161,56 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       if (a < 10) continue;
       if (ignoreWhite && r >= 250 && g >= 250 && b >= 250) continue;
 
-      const qr = Math.round(r / qStep) * qStep;
-      const qg = Math.round(g / qStep) * qStep;
-      const qb = Math.round(b / qStep) * qStep;
-      const colorKey = `${qr},${qg},${qb}`;
+      let matchedId = -1;
 
-      let paletteId = colorToPaletteId.get(colorKey);
-      if (paletteId === undefined) {
-        if (palette.length >= 1024) {
-          paletteId = 0;
-        } else {
-          paletteId = palette.length;
-          const hex = `#${((1 << 24) + (qr << 16) + (qg << 8) + qb).toString(16).slice(1)}`;
-          palette.push(hex);
-          colorToPaletteId.set(colorKey, paletteId);
+      // 既存のパレットとのユークリッド距離を検索
+      if (colorDistThresholdSq > 0) {
+        for (let pid = 0; pid < palette.length; pid++) {
+          const p = palette[pid];
+          if (colorDistanceSq(r, g, b, p.r, p.g, p.b) <= colorDistThresholdSq) {
+            matchedId = pid;
+            break;
+          }
         }
       }
-      pixelColors[i / 4] = paletteId;
+
+      // 新しい色クラスターの追加
+      if (matchedId === -1) {
+        if (palette.length >= 256) {
+          matchedId = 0; // マップ上限超過時は最も近い色へ
+        } else {
+          matchedId = palette.length;
+          const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+          palette.push({ r, g, b, hex });
+        }
+      }
+
+      pixelColors[i / 4] = matchedId;
     }
 
-    notifyProgress(requestId, 20, 'カラー分離完了', `Extracted ${palette.length} unique color clusters.`);
+    notifyProgress(
+      requestId,
+      25,
+      `減色完了 (${palette.length}色クラスター)`,
+      `Compressed image colors into ${palette.length} distinct vector color regions.`
+    );
 
-    // フェーズ 2: 輪郭抽出 / Marching Squares (20% 〜 60%) ＆ フェーズ 3: 3次ベジェ変換 (60% 〜 95%)
+    // 🌟 Step 3: 輪郭抽出 (Marching Squares) ＋ 面積フィルタ (Despeckle / Area Threshold)
     const visited = new Uint8Array(totalPixels);
     const svgPaths: string[] = [];
+    const sqTolerance = Math.max(0.1, tolerance) * Math.max(0.1, tolerance) * 0.8;
+    const minArea = Math.max(0, despeckle); // 破棄する最小ピクセル面積
 
-    const totalRows = height;
+    let ignoredSpeckleCount = 0;
 
     for (let y = 0; y < height; y++) {
       if (y % Math.max(1, Math.floor(height / 10)) === 0) {
-        const progress = 20 + (y / totalRows) * 45; // 20% to 65%
+        const progress = 25 + (y / height) * 45; // 25% to 70%
         notifyProgress(
           requestId,
           progress,
-          `輪郭解析・Marching Squares 中 (${Math.round((y / totalRows) * 100)}%)...`,
-          `Scanning row ${y}/${height} for boundary contours.`
+          `輪郭解析・Despeckle 処理中 (${Math.round((y / height) * 100)}%)...`,
+          `Filtering speckle noise (Min Area: ${minArea} px). Row ${y}/${height}.`
         );
       }
 
@@ -226,9 +261,17 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
           }
 
           if (outlinePoints.length >= 3) {
+            // 面積計算と Despeckle 破棄チェック
+            const area = polygonArea(outlinePoints);
+            if (area < minArea) {
+              ignoredSpeckleCount++;
+              continue; // 小さすぎるゴミポリゴンは完全に破棄
+            }
+
+            // 🌟 Step 4: RDP 頂点削減 ＆ 3次ベジェ曲線フィッティング
             const simplified = ramerDouglasPeucker(outlinePoints, sqTolerance);
             if (simplified.length >= 3) {
-              const hexColor = palette[targetColorId] || '#000000';
+              const hexColor = palette[targetColorId]?.hex || '#000000';
               const bezierD = fitCubicBezierPath(simplified, tolerance);
               if (bezierD) {
                 svgPaths.push(`<path d="${bezierD}" fill="${hexColor}" stroke="${hexColor}" stroke-width="0.3" stroke-linejoin="round" />`);
@@ -239,8 +282,15 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       }
     }
 
-    // フェーズ 4: SVG構築 (95% 〜 100%)
-    notifyProgress(requestId, 95, 'SVG DOM パス構文構築中...', `Constructing ${svgPaths.length} vector path nodes.`);
+    notifyProgress(
+      requestId,
+      90,
+      `ノイズ破棄完了 (${ignoredSpeckleCount}個のゴミ破棄)`,
+      `Despeckled ${ignoredSpeckleCount} tiny noise polygons.`
+    );
+
+    // SVG パス描画
+    notifyProgress(requestId, 95, '最適化 SVG 文字列の構築...', `Building final SVG with ${svgPaths.length} smooth bezier paths.`);
 
     const svgString = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <g shape-rendering="geometricPrecision">
@@ -253,7 +303,7 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       type: 'SUCCESS',
       requestId,
       svgString,
-      log: `[DEBUG] ${timeStr}: SVG vector trace completed successfully (${svgPaths.length} paths).`,
+      log: `[DEBUG] ${timeStr}: SVG trace complete! Created ${svgPaths.length} paths (Ignored ${ignoredSpeckleCount} noise dots).`,
     };
     self.postMessage(successOutput);
   } catch (err: any) {

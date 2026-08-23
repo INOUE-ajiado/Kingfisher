@@ -79,6 +79,8 @@ export function useVectorTraceWorker() {
       buffer: bufferCopy,
       tolerance: options.tolerance,
       ignoreWhite: options.ignoreWhite,
+      colorMerging: options.colorMerging,
+      despeckle: options.despeckle,
     };
 
     workerRef.current.postMessage(input, [input.buffer]);

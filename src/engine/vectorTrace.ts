@@ -3,6 +3,8 @@ import { TGAImage } from './tga';
 export interface VectorExportOptions {
   tolerance: number; // 0.1 〜 5.0 (曲線フィッティングの平滑化度)
   ignoreWhite: boolean; // 白背景を透過にするか
+  colorMerging: number; // 0 〜 100 (ユークリッド色マージ閾値)
+  despeckle: number; // 0 〜 50 px (ゴミ除去最小面積)
 }
 
 interface Point {
