@@ -12,6 +12,9 @@ export const ExportVectorModal: React.FC = () => {
   const [copied, setCopied] = useState<boolean>(false);
   const logTerminalRef = useRef<HTMLDivElement>(null);
 
+  const [bgMatteMode, setBgMatteMode] = useState<'checkerboard' | 'black' | 'white' | 'magenta' | 'custom'>('checkerboard');
+  const [customBgColor, setCustomBgColor] = useState<string>('#00ff00');
+
   const { svgString, isProcessing, progressPercent, statusMessage, debugLogs, requestTrace } = useVectorTraceWorker();
 
   const isOpen = activeModal === 'exportVector';
@@ -213,14 +216,94 @@ export const ExportVectorModal: React.FC = () => {
 
           {/* 右側: 大画面リアルタイムSVGプレビュー */}
           <div className="flex-1 flex flex-col gap-2 overflow-hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">大画面 SVG ベクタープレビュー:</span>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">大画面 SVG ベクタープレビュー:</span>
+
+                {/* 🌟 透過背景マット切替ボタン群 */}
+                <div className="inline-flex items-center gap-1 bg-slate-200 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700 text-[10px]">
+                  <button
+                    onClick={() => setBgMatteMode('checkerboard')}
+                    title="市松模様 (Checkerboard)"
+                    className={`px-2 py-0.5 rounded font-bold transition-all ${
+                      bgMatteMode === 'checkerboard' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    🏁 市松
+                  </button>
+                  <button
+                    onClick={() => setBgMatteMode('black')}
+                    title="純黒マット (#000000) - 白フリンジ・ドット抜け検知"
+                    className={`px-2 py-0.5 rounded font-bold transition-all ${
+                      bgMatteMode === 'black' ? 'bg-black text-white shadow-xs' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    ⬛ 黒
+                  </button>
+                  <button
+                    onClick={() => setBgMatteMode('white')}
+                    title="純白マット (#FFFFFF) - 暗部塗り漏れ検知"
+                    className={`px-2 py-0.5 rounded font-bold transition-all ${
+                      bgMatteMode === 'white' ? 'bg-white text-slate-900 border border-slate-300 shadow-xs' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    ⬜ 白
+                  </button>
+                  <button
+                    onClick={() => setBgMatteMode('magenta')}
+                    title="マゼンタマット (#FF00FF) - 補色コントラスト検知"
+                    className={`px-2 py-0.5 rounded font-bold transition-all ${
+                      bgMatteMode === 'magenta' ? 'bg-[#ff00ff] text-white shadow-xs' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    🟪 マゼンタ
+                  </button>
+                  <label
+                    title="カスタム背景色"
+                    className={`px-1.5 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                      bgMatteMode === 'custom' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="bgVectorMatte"
+                      checked={bgMatteMode === 'custom'}
+                      onChange={() => setBgMatteMode('custom')}
+                      className="hidden"
+                    />
+                    <span>🎨</span>
+                    <input
+                      type="color"
+                      value={customBgColor}
+                      onChange={(e) => {
+                        setCustomBgColor(e.target.value);
+                        setBgMatteMode('custom');
+                      }}
+                      className="w-3.5 h-3.5 rounded cursor-pointer border-0 p-0 bg-transparent"
+                    />
+                  </label>
+                </div>
+              </div>
+
               <span className="text-[10px] text-slate-400 font-mono">
                 {currentImage ? `${currentImage.width} × ${currentImage.height} px` : ''}
               </span>
             </div>
 
-            <div className="flex-1 bg-slate-200 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-xl p-4 flex items-center justify-center overflow-hidden relative shadow-inner">
+            <div
+              className={`flex-1 border border-slate-300 dark:border-slate-800 rounded-xl p-4 flex items-center justify-center overflow-hidden relative shadow-inner transition-colors ${
+                bgMatteMode === 'checkerboard'
+                  ? 'checkerboard-pattern bg-slate-200 dark:bg-slate-950'
+                  : bgMatteMode === 'black'
+                  ? 'bg-black'
+                  : bgMatteMode === 'white'
+                  ? 'bg-white'
+                  : bgMatteMode === 'magenta'
+                  ? 'bg-[#ff00ff]'
+                  : ''
+              }`}
+              style={bgMatteMode === 'custom' ? { backgroundColor: customBgColor } : undefined}
+            >
               {isProcessing ? (
                 <div className="flex flex-col items-center gap-3 text-blue-500 text-xs font-bold">
                   <Loader2 className="w-9 h-9 animate-spin text-blue-500" />
