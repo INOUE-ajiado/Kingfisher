@@ -30,7 +30,6 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     setReferenceTransform,
     pickColorFromReference,
     openReferenceImage,
-    activeTool,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
@@ -107,36 +106,38 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     return () => cancelAnimationFrame(animId);
   }, [refImage, isFloating, referenceCanvas.isOpen]);
 
+  const pickColorFromPos = (clientX: number, clientY: number) => {
+    if (!canvasRef.current || !refImage) return;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    const x = Math.floor((clientX - rect.left) * scaleX);
+    const y = Math.floor((clientY - rect.top) * scaleY);
+
+    if (x >= 0 && x < refImage.width && y >= 0 && y < refImage.height) {
+      const idx = (y * refImage.width + x) * 4;
+      const r = refImage.data[idx];
+      const g = refImage.data[idx + 1];
+      const b = refImage.data[idx + 2];
+      const a = refImage.data[idx + 3];
+      const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
+
+      pickColorFromReference({ r, g, b, a, hex });
+    }
+  };
+
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // ⚠️ 左クリック (0), 中ボタン (1), 右ボタン (2) すべてで自由パン移動
-    if (e.button === 0 || e.button === 1 || e.button === 2) {
-      // スポイト操作 (Alt キーまたはスポイトツール有効時) 以外は左ドラッグでパン移動
-      if (e.button === 0 && (e.altKey || activeTool === 'eyedropper')) {
-        // 色取得へパススルー
-      } else {
-        setIsPanning(true);
-        setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
-        return;
-      }
+    // 中ボタン (1) または 右ボタン (2): パン移動
+    if (e.button === 1 || e.button === 2) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
+      return;
     }
 
-    if (e.button === 0 && canvasRef.current && refImage) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const scaleX = canvasRef.current.width / rect.width;
-      const scaleY = canvasRef.current.height / rect.height;
-      const x = Math.floor((e.clientX - rect.left) * scaleX);
-      const y = Math.floor((e.clientY - rect.top) * scaleY);
-
-      if (x >= 0 && x < refImage.width && y >= 0 && y < refImage.height) {
-        const idx = (y * refImage.width + x) * 4;
-        const r = refImage.data[idx];
-        const g = refImage.data[idx + 1];
-        const b = refImage.data[idx + 2];
-        const a = refImage.data[idx + 3];
-        const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
-
-        pickColorFromReference({ r, g, b, a, hex });
-      }
+    // 🌟 左クリック (0): 参照画像からダイレクト色スポイト取得
+    if (e.button === 0) {
+      pickColorFromPos(e.clientX, e.clientY);
     }
   };
 
@@ -147,6 +148,9 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
         offsetX: e.clientX - panStart.x,
         offsetY: e.clientY - panStart.y,
       });
+    } else if (e.buttons === 1) {
+      // 左ボタンを押したままドラッグ中も連続で色を取得
+      pickColorFromPos(e.clientX, e.clientY);
     }
   };
 
