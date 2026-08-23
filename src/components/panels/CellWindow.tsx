@@ -353,6 +353,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
+                onContextMenu={(e) => e.preventDefault()}
                 className="block cursor-crosshair"
               />
             </div>
@@ -1488,6 +1489,7 @@ export const CellWindow: React.FC = () => {
                   onMouseDown={(e) => handleMouseDown(e, true)}
                   onMouseMove={(e) => handleMouseMove(e, true)}
                   onMouseUp={() => handleMouseUp(true)}
+                  onContextMenu={(e) => e.preventDefault()}
                   className="block"
                 />
 
@@ -1603,6 +1605,7 @@ export const CellWindow: React.FC = () => {
                     onMouseDown={(e) => handleMouseDown(e, false)}
                     onMouseMove={(e) => handleMouseMove(e, false)}
                     onMouseUp={() => handleMouseUp(false)}
+                    onContextMenu={(e) => e.preventDefault()}
                     className="block"
                   />
 
