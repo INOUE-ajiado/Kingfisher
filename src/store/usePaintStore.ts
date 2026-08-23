@@ -157,9 +157,13 @@ export function buildMergedFrameData(
 }
 
 export interface PaintStore {
-  // --- テーマ ---
+  // --- テーマ ＆ キャンバス背景マット ---
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+  canvasBgMatteMode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom';
+  canvasCustomBgColor: string;
+  setCanvasBgMatteMode: (mode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom') => void;
+  setCanvasCustomBgColor: (color: string) => void;
 
   // --- 色指定参照 ＆ メインセルビュー フローティング ---
   referenceCanvas: ReferenceCanvasState;
@@ -389,8 +393,12 @@ const defaultColors: PaletteItem[] = [
 ];
 
 export const usePaintStore = create<PaintStore>((set, get) => ({
-  isDarkMode: true,
+  isDarkMode: false,
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
+  canvasBgMatteMode: 'checkerboard',
+  canvasCustomBgColor: '#00ff00',
+  setCanvasBgMatteMode: (mode) => set({ canvasBgMatteMode: mode }),
+  setCanvasCustomBgColor: (color) => set({ canvasCustomBgColor: color }),
 
   // 色指定参照ウィンドウ (Color Spec Reference Window)
   referenceCanvas: {

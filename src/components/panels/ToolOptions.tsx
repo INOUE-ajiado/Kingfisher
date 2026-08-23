@@ -23,6 +23,10 @@ export const ToolOptions: React.FC = () => {
     referenceCanvas,
     setAutoRevertTool,
     resetCanvasTransform,
+    canvasBgMatteMode,
+    setCanvasBgMatteMode,
+    canvasCustomBgColor,
+    setCanvasCustomBgColor,
   } = usePaintStore();
 
   return (
@@ -293,6 +297,75 @@ export const ToolOptions: React.FC = () => {
         <label htmlFor="autoRevertTool" className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer text-[11px]">
           自動ツール復帰
         </label>
+      </div>
+
+      <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 flex-shrink-0" />
+
+      {/* 🌟 メインキャンバス背景マット切替 (セルバレ・ドット抜け検知用) */}
+      <div className="flex items-center gap-1 flex-shrink-0" title="キャンバス背景マットを切替 (ドット抜け・白フリンジ・セルバレを検出)">
+        <span className="text-slate-600 dark:text-slate-400 font-semibold text-[10px]">背景:</span>
+        <div className="inline-flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 p-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
+          <button
+            onClick={() => setCanvasBgMatteMode('checkerboard')}
+            title="市松模様 (Checkerboard)"
+            className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+              canvasBgMatteMode === 'checkerboard' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-xs' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            🏁 市松
+          </button>
+          <button
+            onClick={() => setCanvasBgMatteMode('black')}
+            title="純黒マット (#000000) - 白フリンジ・ドット抜け検出"
+            className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+              canvasBgMatteMode === 'black' ? 'bg-black text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            ⬛ 黒
+          </button>
+          <button
+            onClick={() => setCanvasBgMatteMode('white')}
+            title="純白マット (#FFFFFF) - 暗部塗り漏れ検出"
+            className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+              canvasBgMatteMode === 'white' ? 'bg-white text-slate-900 border border-slate-300 shadow-xs' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            ⬜ 白
+          </button>
+          <button
+            onClick={() => setCanvasBgMatteMode('magenta')}
+            title="マゼンタマット (#FF00FF) - 補色コントラスト検出"
+            className={`px-1.5 py-0.5 rounded font-bold transition-all ${
+              canvasBgMatteMode === 'magenta' ? 'bg-[#ff00ff] text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            🟪
+          </button>
+          <label
+            title="カスタム背景色"
+            className={`px-1 py-0.5 rounded font-bold transition-all flex items-center gap-0.5 cursor-pointer ${
+              canvasBgMatteMode === 'custom' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 dark:text-slate-400'
+            }`}
+          >
+            <input
+              type="radio"
+              name="canvasBgMatte"
+              checked={canvasBgMatteMode === 'custom'}
+              onChange={() => setCanvasBgMatteMode('custom')}
+              className="hidden"
+            />
+            <span>🎨</span>
+            <input
+              type="color"
+              value={canvasCustomBgColor}
+              onChange={(e) => {
+                setCanvasCustomBgColor(e.target.value);
+                setCanvasBgMatteMode('custom');
+              }}
+              className="w-3 h-3 rounded cursor-pointer border-0 p-0 bg-transparent"
+            />
+          </label>
+        </div>
       </div>
 
       <button

@@ -468,6 +468,8 @@ export const CellWindow: React.FC = () => {
     toggleWinBFloating,
     setCustomDropFolderA,
     setCustomDropFolderB,
+    canvasBgMatteMode,
+    canvasCustomBgColor,
   } = usePaintStore();
 
   const winADrag = useFastDraggable({ initialX: 60, initialY: 60, enabled: isWinAFloating });
@@ -1308,7 +1310,22 @@ export const CellWindow: React.FC = () => {
   const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
 
   return (
-    <div ref={containerRef} id="main-workspace-area" className="flex-1 bg-slate-300 dark:bg-slate-950 flex flex-col relative overflow-hidden select-none">
+    <div
+      ref={containerRef}
+      id="main-workspace-area"
+      className={`flex-1 flex flex-col relative overflow-hidden select-none transition-colors ${
+        canvasBgMatteMode === 'checkerboard'
+          ? 'checkerboard-pattern bg-slate-300 dark:bg-slate-950'
+          : canvasBgMatteMode === 'black'
+          ? 'bg-black'
+          : canvasBgMatteMode === 'white'
+          ? 'bg-white'
+          : canvasBgMatteMode === 'magenta'
+          ? 'bg-[#ff00ff]'
+          : ''
+      }`}
+      style={canvasBgMatteMode === 'custom' ? { backgroundColor: canvasCustomBgColor } : undefined}
+    >
       {/* 隠しドッキング復帰吸着アンカー (参照画像ドッキング復帰用) */}
       <div id="docked-reference-tab" className="hidden" />
 
