@@ -104,7 +104,7 @@ export const App: React.FC = () => {
   // パネル個別の縦幅 (高さ px) ステート
   const [panelHeights, setPanelHeights] = React.useState<Record<string, number>>({
     toolOptions: 100,
-    fileBrowser: 260,
+    fileBrowser: 480,
     colorChart: 260,
     layerPanel: 180,
     historyPanel: 160,
@@ -212,7 +212,7 @@ export const App: React.FC = () => {
               {panelVisibility.fileBrowser && (
                 <React.Fragment>
                   <div
-                    style={{ height: `${panelHeights.fileBrowser || 240}px` }}
+                    style={{ height: `${panelHeights.fileBrowser || 480}px` }}
                     className="flex flex-col overflow-hidden flex-shrink-0"
                   >
                     <FileBrowser />
@@ -220,7 +220,7 @@ export const App: React.FC = () => {
 
                   {/* ファイルツリーと下部パネルとの間のドラッグリサイズハンドル */}
                   <div
-                    onPointerDown={(e) => handleRowResizeDown('fileBrowser', panelHeights.fileBrowser || 240, e)}
+                    onPointerDown={(e) => handleRowResizeDown('fileBrowser', panelHeights.fileBrowser || 480, e)}
                     onPointerMove={(e) => handleRowResizeMove('fileBrowser', e)}
                     onPointerUp={(e) => handleRowResizeUp('fileBrowser', e)}
                     onPointerCancel={(e) => handleRowResizeUp('fileBrowser', e)}
