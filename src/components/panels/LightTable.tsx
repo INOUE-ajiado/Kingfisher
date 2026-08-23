@@ -18,8 +18,6 @@ export const LightTable: React.FC = () => {
     removeLightTableSubItem,
     updateLightTableSubItemTransform,
     toggleLightTableSubItemVisible,
-    fileList,
-    currentFileIndex,
     isPlaying,
     setIsPlaying,
     fps,
@@ -27,10 +25,6 @@ export const LightTable: React.FC = () => {
     toolOptions,
     setFrameHold,
   } = usePaintStore();
-
-  const prevFrameName = currentFileIndex > 0 ? fileList[currentFileIndex - 1] : null;
-  const currentFrameName = fileList[currentFileIndex] || 'No Cell';
-  const nextFrameName = currentFileIndex < fileList.length - 1 ? fileList[currentFileIndex + 1] : null;
 
   const handleAddSubItemFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -63,33 +57,6 @@ export const LightTable: React.FC = () => {
             />
             <span>オニオンスキン</span>
           </label>
-
-          {/* 前後フレーム状況 */}
-          <div className="flex items-center gap-1 ml-0.5 flex-shrink-0">
-            {prevFrameName ? (
-              <div className="px-1.5 h-5 border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/50 text-red-600 dark:text-red-400 font-medium rounded flex items-center justify-center text-[9px] whitespace-nowrap">
-                前: {prevFrameName.replace('.tga', '')}
-              </div>
-            ) : (
-              <div className="px-1.5 h-5 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[9px] text-slate-400 whitespace-nowrap">
-                前: なし
-              </div>
-            )}
-
-            <div className="px-2 h-5 border border-blue-600 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold rounded flex items-center justify-center text-[10px] whitespace-nowrap">
-              現: {currentFrameName.replace('.tga', '')}
-            </div>
-
-            {nextFrameName ? (
-              <div className="px-1.5 h-5 border border-blue-300 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-medium rounded flex items-center justify-center text-[9px] whitespace-nowrap">
-                後: {nextFrameName.replace('.tga', '')}
-              </div>
-            ) : (
-              <div className="px-1.5 h-5 border border-dashed border-slate-200 dark:border-slate-700 rounded flex items-center justify-center text-[9px] text-slate-400 whitespace-nowrap">
-                後: なし
-              </div>
-            )}
-          </div>
 
           {/* 前後表示枚数 */}
           <div className="flex items-center gap-1 text-[10px] ml-1 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 flex-shrink-0 whitespace-nowrap">
