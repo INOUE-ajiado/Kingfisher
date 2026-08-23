@@ -36,7 +36,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
   // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
-  const { targetRef, dragHandlers, setPosition } = useFastDraggable({
+  const { targetRef, currentPos, setPosition } = useFastDraggable({
     initialX: 120,
     initialY: 80,
     enabled: isFloating,
@@ -146,84 +146,103 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     setReferenceTransform({ ...referenceCanvas.transform, scale: newScale });
   };
 
-  // ⚠️ タブ引きちぎり独立化 (Tear-off) ＆ ドッキング復帰 (Docking) ポインターハンドラー
+  // ⚠️ 完全シームレスな引きはがし (Tear-off) ＆ 独立ウィンドウ自由移動ハンドラー
   const isDraggingHeader = useRef(false);
-  const dragStartPos = useRef({ x: 0, y: 0 });
+  const dragOffset = useRef({ x: 160, y: 12 });
   const [isNearDockArea, setIsNearDockArea] = useState(false);
 
   const handleHeaderPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    e.stopPropagation();
+
     isDraggingHeader.current = true;
-    dragStartPos.current = { x: e.clientX, y: e.clientY };
 
-    if (isFloating) {
-      dragHandlers.onPointerDown(e);
+    if (isFloating && currentPos.current) {
+      dragOffset.current = {
+        x: e.clientX - currentPos.current.x,
+        y: e.clientY - currentPos.current.y,
+      };
     } else {
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch (err) {}
+      dragOffset.current = { x: 160, y: 12 };
     }
-  };
 
-  const handleHeaderPointerMove = (e: React.PointerEvent) => {
-    if (!isDraggingHeader.current && !isFloating) return;
+    const onWindowPointerMove = (moveEvent: PointerEvent) => {
+      if (!isDraggingHeader.current) return;
 
-    if (!isFloating) {
-      // 1. ドッキング状態の時: タブを外へ一定距離 (8px以上) ドラッグしたら独立ウィンドウ化 (Tear-off)
-      const dist = Math.hypot(e.clientX - dragStartPos.current.x, e.clientY - dragStartPos.current.y);
-      if (dist > 8) {
-        // 引きはがした瞬間のマウス位置へ即座に配置展開
-        const spawnX = Math.max(10, e.clientX - 160);
-        const spawnY = Math.max(10, e.clientY - 12);
-        setPosition(spawnX, spawnY);
-        toggleReferenceFloating();
-        isDraggingHeader.current = false;
-        try {
-          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-            e.currentTarget.releasePointerCapture(e.pointerId);
-          }
-        } catch (err) {}
-      }
-    } else {
-      // 2. フローティング状態の時: 高速移動 & タブ部分領域への接近チェック（※タブ部分のみに厳格限定）
-      dragHandlers.onPointerMove(e);
+      const currentFloating = usePaintStore.getState().referenceCanvas.isFloating;
 
-      const tabElem1 = document.getElementById('docked-reference-tab');
-      const tabElem2 = document.getElementById('docked-reference-tab-bar');
-      const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
-
-      if (targetElem) {
-        const rect = targetElem.getBoundingClientRect();
-        const padding = 25; // タブ周辺 25px のみの判定領域
-        const isOver =
-          e.clientX >= rect.left - padding &&
-          e.clientX <= rect.right + padding &&
-          e.clientY >= rect.top - padding &&
-          e.clientY <= rect.bottom + padding;
-
-        setIsNearDockArea(isOver);
-      } else {
-        setIsNearDockArea(false);
-      }
-    }
-  };
-
-  const handleHeaderPointerUp = (e: React.PointerEvent) => {
-    if (isFloating) {
-      dragHandlers.onPointerUp(e);
-      // ドッキング領域上でドロップされたらドッキング復帰 (Docking)
-      if (isNearDockArea) {
-        setIsNearDockArea(false);
-        toggleReferenceFloating();
-      }
-    } else {
-      try {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
+      if (!currentFloating) {
+        // 1. 固定ウィンドウからの引きはがし判定
+        const dist = Math.hypot(moveEvent.clientX - e.clientX, moveEvent.clientY - e.clientY);
+        if (dist > 6) {
+          const spawnX = Math.max(10, moveEvent.clientX - dragOffset.current.x);
+          const spawnY = Math.max(10, moveEvent.clientY - dragOffset.current.y);
+          setPosition(spawnX, spawnY);
+          toggleReferenceFloating();
         }
-      } catch (err) {}
-    }
-    isDraggingHeader.current = false;
+      } else {
+        // 2. 独立ウィンドウ時: 画面上どこへでも自由に即時移動
+        const newX = Math.max(0, moveEvent.clientX - dragOffset.current.x);
+        const newY = Math.max(0, moveEvent.clientY - dragOffset.current.y);
+        setPosition(newX, newY);
+
+        // タブドッキング判定（※タブ部分のみ）
+        const tabElem1 = document.getElementById('docked-reference-tab');
+        const tabElem2 = document.getElementById('docked-reference-tab-bar');
+        const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
+
+        if (targetElem) {
+          const rect = targetElem.getBoundingClientRect();
+          const padding = 25;
+          const isOver =
+            moveEvent.clientX >= rect.left - padding &&
+            moveEvent.clientX <= rect.right + padding &&
+            moveEvent.clientY >= rect.top - padding &&
+            moveEvent.clientY <= rect.bottom + padding;
+
+          setIsNearDockArea(isOver);
+        } else {
+          setIsNearDockArea(false);
+        }
+      }
+    };
+
+    const onWindowPointerUp = (upEvent: PointerEvent) => {
+      isDraggingHeader.current = false;
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+
+      const currentFloating = usePaintStore.getState().referenceCanvas.isFloating;
+      if (currentFloating) {
+        const tabElem1 = document.getElementById('docked-reference-tab');
+        const tabElem2 = document.getElementById('docked-reference-tab-bar');
+        const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
+
+        if (targetElem) {
+          const rect = targetElem.getBoundingClientRect();
+          const padding = 25;
+          const isOver =
+            upEvent.clientX >= rect.left - padding &&
+            upEvent.clientX <= rect.right + padding &&
+            upEvent.clientY >= rect.top - padding &&
+            upEvent.clientY <= rect.bottom + padding;
+
+          if (isOver) {
+            setIsNearDockArea(false);
+            toggleReferenceFloating();
+            return;
+          }
+        }
+
+        // ドッキング外で離した場合: クリックを離した場所へ確定展開
+        const finalX = Math.max(0, upEvent.clientX - dragOffset.current.x);
+        const finalY = Math.max(0, upEvent.clientY - dragOffset.current.y);
+        setPosition(finalX, finalY);
+      }
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
   };
 
   return (
@@ -264,9 +283,6 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       <div
         id={isFloating ? undefined : 'docked-reference-tab-bar'}
         onPointerDown={handleHeaderPointerDown}
-        onPointerMove={handleHeaderPointerMove}
-        onPointerUp={handleHeaderPointerUp}
-        onPointerCancel={handleHeaderPointerUp}
         className="h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing"
       >
         <div className="flex items-center gap-1.5 truncate">
