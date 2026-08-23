@@ -146,6 +146,93 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     setReferenceTransform({ ...referenceCanvas.transform, scale: newScale });
   };
 
+  // ⚠️ タブ引きちぎり独立化 (Tear-off) ＆ ドッキング復帰 (Docking) ポインターハンドラー
+  const isDraggingHeader = useRef(false);
+  const dragStartPos = useRef({ x: 0, y: 0 });
+  const [isNearDockArea, setIsNearDockArea] = useState(false);
+
+  const handleHeaderPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    isDraggingHeader.current = true;
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
+
+    if (isFloating) {
+      dragHandlers.onPointerDown(e);
+    } else {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (err) {}
+    }
+  };
+
+  const handleHeaderPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingHeader.current && !isFloating) return;
+
+    if (!isFloating) {
+      // 1. ドッキング状態の時: タブを外へ一定距離 (8px以上) ドラッグしたら独立ウィンドウ化 (Tear-off)
+      const dist = Math.hypot(e.clientX - dragStartPos.current.x, e.clientY - dragStartPos.current.y);
+      if (dist > 8) {
+        toggleReferenceFloating();
+        isDraggingHeader.current = false;
+        try {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {}
+      }
+    } else {
+      // 2. フローティング状態の時: 高速移動 & ドッキング領域接近チェック
+      dragHandlers.onPointerMove(e);
+
+      const dockElem = document.getElementById('docked-reference-area');
+      let rect: { left: number; right: number; top: number; bottom: number } | null = null;
+
+      if (dockElem && dockElem.offsetParent !== null) {
+        rect = dockElem.getBoundingClientRect();
+      } else {
+        const mainElem = document.getElementById('main-workspace-area');
+        if (mainElem) {
+          const mainRect = mainElem.getBoundingClientRect();
+          rect = {
+            left: mainRect.left + mainRect.width * 0.4,
+            right: mainRect.right,
+            top: mainRect.top,
+            bottom: mainRect.bottom,
+          };
+        }
+      }
+
+      if (rect) {
+        const padding = 50;
+        const isOver =
+          e.clientX >= rect.left - padding &&
+          e.clientX <= rect.right + padding &&
+          e.clientY >= rect.top - padding &&
+          e.clientY <= rect.bottom + padding;
+
+        setIsNearDockArea(isOver);
+      }
+    }
+  };
+
+  const handleHeaderPointerUp = (e: React.PointerEvent) => {
+    if (isFloating) {
+      dragHandlers.onPointerUp(e);
+      // ドッキング領域上でドロップされたらドッキング復帰 (Docking)
+      if (isNearDockArea) {
+        setIsNearDockArea(false);
+        toggleReferenceFloating();
+      }
+    } else {
+      try {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+          e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+      } catch (err) {}
+    }
+    isDraggingHeader.current = false;
+  };
+
   return (
     <div
       ref={targetRef}
@@ -154,7 +241,11 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 ${
-        isDragOver ? 'border-amber-400 ring-4 ring-amber-400/50' : 'border-emerald-600'
+        isNearDockArea
+          ? 'border-blue-500 ring-4 ring-blue-500/50'
+          : isDragOver
+          ? 'border-amber-400 ring-4 ring-amber-400/50'
+          : 'border-emerald-600'
       } rounded overflow-hidden shadow-2xl relative ${
         isFloating ? 'w-80 h-96' : 'flex-1'
       }`}
@@ -168,28 +259,46 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
         </div>
       )}
 
-      {/* ⚠️ 最適化仕様書準拠: Pointer Events API & PointerCapture による超高速ドラッグ対応タイトルバー */}
+      {/* ドッキング復帰ガイドオーバーレイ */}
+      {isFloating && isNearDockArea && (
+        <div className="absolute inset-0 bg-blue-950/80 backdrop-blur-xs border-2 border-dashed border-blue-400 rounded flex flex-col items-center justify-center text-blue-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
+          <Minimize2 className="w-8 h-8 mb-2 animate-pulse text-blue-400" />
+          <span className="font-bold text-xs">ドロップしてタブ表示に戻す (Docking)</span>
+        </div>
+      )}
+
+      {/* ⚠️ タブ（タイトルバー）: Drag to tear off (独立化) & Drag to dock (復帰) */}
       <div
-        {...(isFloating ? dragHandlers : {})}
-        className={`h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none ${
-          isFloating ? 'cursor-grab active:cursor-grabbing' : ''
-        }`}
+        onPointerDown={handleHeaderPointerDown}
+        onPointerMove={handleHeaderPointerMove}
+        onPointerUp={handleHeaderPointerUp}
+        onPointerCancel={handleHeaderPointerUp}
+        className="h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing"
       >
         <div className="flex items-center gap-1.5 truncate">
           <Pipette className="w-3.5 h-3.5 text-emerald-300" />
           <span>【参照】 {referenceCanvas.fileName}</span>
+          <span className="text-[9px] opacity-75 font-normal ml-1 hidden sm:inline">
+            ({isFloating ? 'ドラッグでドッキング領域へドロップ' : 'タブをドラッグで独立ウィンドウ化'})
+          </span>
         </div>
 
         <div className="flex items-center gap-1">
           <button
-            onClick={toggleReferenceFloating}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleReferenceFloating();
+            }}
             title={referenceCanvas.isFloating ? 'ドッキングに戻す' : '切り離してフローティング表示'}
             className="p-0.5 hover:bg-emerald-700/80 rounded transition-colors"
           >
             {referenceCanvas.isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
           </button>
           <button
-            onClick={closeReferenceWindow}
+            onClick={(e) => {
+              e.stopPropagation();
+              closeReferenceWindow();
+            }}
             title="参照ウィンドウを閉じる"
             className="p-0.5 hover:bg-red-600 rounded transition-colors"
           >
@@ -980,7 +1089,7 @@ export const CellWindow: React.FC = () => {
   const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
 
   return (
-    <div ref={containerRef} className="flex-1 bg-slate-300 dark:bg-slate-950 flex flex-col relative overflow-hidden select-none">
+    <div ref={containerRef} id="main-workspace-area" className="flex-1 bg-slate-300 dark:bg-slate-950 flex flex-col relative overflow-hidden select-none">
       {/* 画面分割・連動・参照コントロール ヘッダーバー */}
       <div className="h-7 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-xs z-10">
         <div className="flex items-center gap-2">
@@ -1208,8 +1317,15 @@ export const CellWindow: React.FC = () => {
           )}
         </div>
 
-        {/* ドッキング参照ウィンドウ (分割表示時) */}
-        {isDockedReference && <ReferenceCanvasView isFloating={false} />}
+        {/* ドッキング参照ウィンドウ (分割表示時) ＆ ドッキングターゲット領域 */}
+        {referenceCanvas.isOpen && (
+          <div
+            id="docked-reference-area"
+            className={referenceCanvas.isFloating ? 'hidden' : 'flex-1 flex flex-col min-w-[240px]'}
+          >
+            <ReferenceCanvasView isFloating={false} />
+          </div>
+        )}
       </div>
     </div>
   );
