@@ -124,7 +124,7 @@ export const ToolOptionsPanel: React.FC = () => {
               max="20"
               value={toolOptions.gapCloseLevel}
               onChange={(e) => setGapCloseLevel(Number(e.target.value))}
-              className="w-full accent-blue-600 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-700 rounded"
+              className="w-full accent-blue-600 cursor-pointer bg-slate-200 dark:bg-slate-700 my-1"
             />
           </div>
 
@@ -198,7 +198,7 @@ export const ToolOptionsPanel: React.FC = () => {
                 max="10"
                 value={toolOptions.expandContract}
                 onChange={(e) => setExpandContract(Number(e.target.value))}
-                className="w-full accent-blue-600 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-700 rounded"
+                className="w-full accent-blue-600 cursor-pointer bg-slate-200 dark:bg-slate-700 my-1"
               />
             </div>
 
@@ -230,7 +230,7 @@ export const ToolOptionsPanel: React.FC = () => {
               max="100"
               value={toolOptions.brushSize}
               onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="w-full accent-blue-600 cursor-pointer h-1.5 bg-slate-200 dark:bg-slate-700 rounded"
+              className="w-full accent-blue-600 cursor-pointer bg-slate-200 dark:bg-slate-700 my-1"
             />
           </div>
         </div>

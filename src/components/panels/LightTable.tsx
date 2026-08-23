@@ -145,7 +145,7 @@ export const LightTable: React.FC = () => {
               max="100"
               value={lightTable.startOpacity}
               onChange={(e) => setLightTableOpacity(Number(e.target.value))}
-              className="w-14 accent-blue-600 cursor-pointer"
+              className="w-20 sm:w-28 accent-blue-600 cursor-pointer"
             />
             <span className="w-7 text-slate-700 dark:text-slate-300 font-mono text-[10px]">{lightTable.startOpacity}%</span>
           </div>

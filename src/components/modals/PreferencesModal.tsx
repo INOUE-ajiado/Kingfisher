@@ -80,19 +80,19 @@ export const PreferencesModal: React.FC = () => {
               <Wand2 className="w-3.5 h-3.5 text-blue-500" />
               <span>線画の二値化 (Binarize)</span>
             </div>
-            <div className="flex items-center justify-between">
-              <label className="text-slate-600 dark:text-slate-400">閾値 (Threshold):</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="50"
-                  max="240"
-                  value={threshold}
-                  onChange={(e) => setThreshold(Number(e.target.value))}
-                  className="w-24 accent-blue-600 cursor-pointer"
-                />
-                <span className="w-8 font-mono">{threshold}</span>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-xs">
+                <label className="text-slate-600 dark:text-slate-400 font-medium">閾値 (Threshold):</label>
+                <span className="w-8 text-right font-mono font-bold text-blue-600 dark:text-blue-400">{threshold}</span>
               </div>
+              <input
+                type="range"
+                min="50"
+                max="240"
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="w-full accent-blue-600 cursor-pointer"
+              />
             </div>
             <button
               onClick={handleBinarize}
@@ -108,19 +108,19 @@ export const PreferencesModal: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>自動ゴミ取り (Noise Removal)</span>
             </div>
-            <div className="flex items-center justify-between">
-              <label className="text-slate-600 dark:text-slate-400">最大ゴミサイズ (px):</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="range"
-                  min="1"
-                  max="20"
-                  value={maxNoiseSize}
-                  onChange={(e) => setMaxNoiseSize(Number(e.target.value))}
-                  className="w-24 accent-amber-600 cursor-pointer"
-                />
-                <span className="w-8 font-mono">{maxNoiseSize}px</span>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center text-xs">
+                <label className="text-slate-600 dark:text-slate-400 font-medium">最大ゴミサイズ (px):</label>
+                <span className="w-10 text-right font-mono font-bold text-amber-600 dark:text-amber-400">{maxNoiseSize}px</span>
               </div>
+              <input
+                type="range"
+                min="1"
+                max="20"
+                value={maxNoiseSize}
+                onChange={(e) => setMaxNoiseSize(Number(e.target.value))}
+                className="w-full accent-amber-600 cursor-pointer"
+              />
             </div>
             <button
               onClick={handleRemoveNoise}
