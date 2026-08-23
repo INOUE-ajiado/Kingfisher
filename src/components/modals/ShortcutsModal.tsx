@@ -15,7 +15,7 @@ export const ShortcutsModal: React.FC = () => {
 
   const categories: ShortcutCategory[] = [
     {
-      title: '🛠️ ツール選択 (Tools)',
+      title: 'ツール選択 (Tools)',
       icon: <Wrench className="w-4 h-4 text-blue-500" />,
       items: [
         { key: 'P', desc: '鉛筆 (ドット2値線)' },
@@ -34,7 +34,7 @@ export const ShortcutsModal: React.FC = () => {
       ],
     },
     {
-      title: '🎬 コマ送り ＆ ファイル操作',
+      title: 'コマ送り ＆ ファイル操作',
       icon: <Film className="w-4 h-4 text-emerald-500" />,
       items: [
         { key: 'PageDown / ↓ / テンキー3', desc: '次のセルへ移動 (Next Cell)' },
@@ -44,7 +44,7 @@ export const ShortcutsModal: React.FC = () => {
       ],
     },
     {
-      title: '🎨 パレット ＆ 色操作',
+      title: 'パレット ＆ 色操作',
       icon: <Palette className="w-4 h-4 text-amber-500" />,
       items: [
         { key: '1', desc: 'Normal (ノーマル描画色) パレット' },
@@ -55,7 +55,7 @@ export const ShortcutsModal: React.FC = () => {
       ],
     },
     {
-      title: '✏️ 編集 ＆ オプション設定',
+      title: '編集 ＆ オプション設定',
       icon: <Edit3 className="w-4 h-4 text-purple-500" />,
       items: [
         { key: 'Ctrl + Z', desc: '元に戻す (Undo)' },
@@ -65,7 +65,7 @@ export const ShortcutsModal: React.FC = () => {
       ],
     },
     {
-      title: '🖥️ 画面 ＆ パネル表示操作',
+      title: '画面 ＆ パネル表示操作',
       icon: <Monitor className="w-4 h-4 text-indigo-500" />,
       items: [
         { key: 'Ctrl + Alt (Win) / Ctrl + Cmd (Mac)', desc: '右サイドパネル一括開閉 (全幅切替)' },
