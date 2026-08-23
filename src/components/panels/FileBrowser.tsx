@@ -1,10 +1,115 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { usePaintStore, SubDirectoryItem } from '../../store/usePaintStore';
-import { FolderOpen, Link, Link2Off, AlertTriangle } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network } from 'lucide-react';
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  isFolder: boolean;
+  fileIndex?: number;
+  children?: FileTreeNode[];
+}
+
+function buildTreeFromPaths(paths: string[]): FileTreeNode[] {
+  const root: FileTreeNode[] = [];
+
+  paths.forEach((fullPath, originalIdx) => {
+    const parts = fullPath.split(/[/\\]/);
+    let currentLevel = root;
+
+    parts.forEach((part, index) => {
+      const isLast = index === parts.length - 1;
+      let existingNode = currentLevel.find((node) => node.name === part);
+
+      if (!existingNode) {
+        existingNode = {
+          name: part,
+          path: parts.slice(0, index + 1).join('/'),
+          isFolder: !isLast,
+          fileIndex: isLast ? originalIdx : undefined,
+          children: isLast ? undefined : [],
+        };
+        currentLevel.push(existingNode);
+      }
+
+      if (!isLast && existingNode.children) {
+        currentLevel = existingNode.children;
+      }
+    });
+  });
+
+  return root;
+}
+
+const TreeItemNode: React.FC<{
+  node: FileTreeNode;
+  depth: number;
+  expandedPaths: Set<string>;
+  togglePath: (path: string) => void;
+  onSelectFile: (idx: number) => void;
+  currentIdx: number;
+}> = ({ node, depth, expandedPaths, togglePath, onSelectFile, currentIdx }) => {
+  const isExpanded = expandedPaths.has(node.path);
+  const isSelected = !node.isFolder && node.fileIndex === currentIdx;
+
+  if (node.isFolder) {
+    return (
+      <div>
+        <div
+          onClick={() => togglePath(node.path)}
+          style={{ paddingLeft: `${depth * 12 + 4}px` }}
+          className="flex items-center gap-1.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300 transition-colors select-none"
+        >
+          {isExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+          )}
+          <Folder className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <span className="truncate">{node.name}</span>
+        </div>
+
+        {isExpanded && node.children && (
+          <div>
+            {node.children.map((child) => (
+              <TreeItemNode
+                key={child.path}
+                node={child}
+                depth={depth + 1}
+                expandedPaths={expandedPaths}
+                togglePath={togglePath}
+                onSelectFile={onSelectFile}
+                currentIdx={currentIdx}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={() => node.fileIndex !== undefined && onSelectFile(node.fileIndex)}
+      style={{ paddingLeft: `${depth * 12 + 16}px` }}
+      className={`flex items-center gap-1.5 py-1 px-1 cursor-pointer text-[11px] transition-colors select-none ${
+        isSelected
+          ? 'bg-blue-600 text-white font-bold rounded shadow-xs'
+          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+      }`}
+    >
+      <FileImage className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? 'text-white' : 'text-blue-400'}`} />
+      <span className="truncate">{node.name}</span>
+    </div>
+  );
+};
 
 export const FileBrowser: React.FC = () => {
   const fileInputRefA = useRef<HTMLInputElement | null>(null);
   const fileInputRefB = useRef<HTMLInputElement | null>(null);
+
+  const [viewMode, setViewMode] = useState<'tree' | 'merge'>('tree');
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
   const {
     rootFolderName,
@@ -32,6 +137,27 @@ export const FileBrowser: React.FC = () => {
     syncMode,
     toggleSyncMode,
   } = usePaintStore();
+
+  const togglePath = (path: string) => {
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  // ファイルリストから階層ツリー構造を動的作成
+  const fileTreeNodes = useMemo(() => {
+    const tree = buildTreeFromPaths(unifiedFileList);
+    // デフォルトで第1階層のフォルダを自動開く
+    const defaultExpanded = new Set<string>();
+    tree.forEach((node) => {
+      if (node.isFolder) defaultExpanded.add(node.path);
+    });
+    setExpandedPaths((prev) => (prev.size === 0 ? defaultExpanded : prev));
+    return tree;
+  }, [unifiedFileList]);
 
   // カットフォルダ（ルート）一括読み込み
   const handleOpenCutRootFolder = async () => {
@@ -79,7 +205,6 @@ export const FileBrowser: React.FC = () => {
         }
       }
 
-      // サブフォルダをプレフィックス順（_ 始まり優先）にソート
       subDirs.sort((a, b) => {
         if (a.name.startsWith('_') && !b.name.startsWith('_')) return -1;
         if (!a.name.startsWith('_') && b.name.startsWith('_')) return 1;
@@ -89,7 +214,6 @@ export const FileBrowser: React.FC = () => {
       if (subDirs.length > 0) {
         setCutRootFolder(rootHandle, rootHandle.name, subDirs);
       } else {
-        // 直下に直接TGA/JPGファイルがある場合
         const filesMap = new Map<string, File>();
         const fileList: string[] = [];
         for await (const fileEntry of rootHandle.values()) {
@@ -218,7 +342,6 @@ export const FileBrowser: React.FC = () => {
     }
   };
 
-  // 連番フレーム行クリック時の連動・個別のルーティング挙動
   const handleSelectFrame = (idx: number) => {
     setCurrentFileIndex(idx);
     if (syncMode) {
@@ -242,21 +365,46 @@ export const FileBrowser: React.FC = () => {
       <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
         <div className="flex items-center gap-1.5 truncate">
           <FolderOpen className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-          <span className="truncate">統合ファイルブラウザ</span>
+          <span className="truncate">ファイルツリー</span>
         </div>
-        {/* 連動トグル */}
-        <button
-          onClick={toggleSyncMode}
-          title={syncMode ? '左右連動中 (クリックで独立モードへ)' : '独立モード (クリックで連動モードへ)'}
-          className={`px-2 py-0.5 rounded text-[10px] flex items-center gap-1 font-bold border transition-colors ${
-            syncMode
-              ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-              : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'
-          }`}
-        >
-          {syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
-          <span>{syncMode ? '連動 ON' : '独立'}</span>
-        </button>
+
+        {/* ツリー表示 / リスト表示 切替 ＆ 連動 */}
+        <div className="flex items-center gap-1">
+          <div className="flex items-center bg-slate-200 dark:bg-slate-700 p-0.5 rounded border border-slate-300 dark:border-slate-600">
+            <button
+              onClick={() => setViewMode('tree')}
+              title="フォルダツリー構造で表示"
+              className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold ${
+                viewMode === 'tree' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <Network className="w-3 h-3" />
+              <span>ツリー</span>
+            </button>
+            <button
+              onClick={() => setViewMode('merge')}
+              title="2画面連番マージリスト表示"
+              className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold ${
+                viewMode === 'merge' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              <List className="w-3 h-3" />
+              <span>連番表</span>
+            </button>
+          </div>
+
+          <button
+            onClick={toggleSyncMode}
+            title={syncMode ? '左右連動中' : '独立モード'}
+            className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold border transition-colors ${
+              syncMode
+                ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            {syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
+          </button>
+        </div>
       </div>
 
       {/* 2. カット袋 (ルートフォルダ) 表示 & 一括選択 */}
@@ -330,16 +478,32 @@ export const FileBrowser: React.FC = () => {
         </div>
       </div>
 
-      {/* 4. 異名連番マージリスト (Win A 素材 | 連番フレーム | Win B 素材) */}
+      {/* 4. メインツリー / 連番マージビュー */}
       <div className="flex-1 overflow-y-auto p-1">
-        {mergedFrameNumbers.length === 0 && unifiedFileList.length === 0 ? (
+        {unifiedFileList.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-3 text-slate-400">
-            <span className="text-[11px] font-medium mb-1">カットが読み込まれていません</span>
+            <span className="text-[11px] font-medium mb-1">フォルダが読み込まれていません</span>
             <span className="text-[9px] text-slate-400 leading-relaxed">
-              [カットを開く] から ATO_07_213_r などのカットフォルダを選択してください
+              エクスプローラーからフォルダをドロップするか、[カットを開く] を押してください
             </span>
           </div>
+        ) : viewMode === 'tree' ? (
+          /* 📁 フォルダ階層ツリービュー (Tree View) */
+          <div className="space-y-0.5">
+            {fileTreeNodes.map((node) => (
+              <TreeItemNode
+                key={node.path}
+                node={node}
+                depth={0}
+                expandedPaths={expandedPaths}
+                togglePath={togglePath}
+                onSelectFile={handleSelectFrame}
+                currentIdx={currentFileIndex}
+              />
+            ))}
+          </div>
         ) : (
+          /* 📊 連番マージ表ビュー (Merge Table View) */
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="text-[9px] text-slate-400 dark:text-slate-500 border-b border-slate-200 dark:border-slate-800 select-none">
@@ -360,7 +524,6 @@ export const FileBrowser: React.FC = () => {
 
                     return (
                       <tr key={frameNum} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                        {/* 左カラム: Win A 対応ファイル */}
                         <td
                           onClick={() => fileA && handleSelectWinAOnly(index)}
                           className="py-1 px-0.5 cursor-pointer text-left"
@@ -381,7 +544,6 @@ export const FileBrowser: React.FC = () => {
                           )}
                         </td>
 
-                        {/* 中央カラム: 4桁連番フレーム番号 */}
                         <td
                           onClick={() => handleSelectFrame(index)}
                           className={`py-1 text-center font-mono text-[11px] cursor-pointer truncate px-1 ${
@@ -393,7 +555,6 @@ export const FileBrowser: React.FC = () => {
                           {frameNum}
                         </td>
 
-                        {/* 右カラム: Win B 対応ファイル */}
                         <td
                           onClick={() => fileB && handleSelectWinBOnly(index)}
                           className="py-1 px-0.5 cursor-pointer text-right"
