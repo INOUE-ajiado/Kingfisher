@@ -17,20 +17,18 @@ import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
 import { ExportVectorModal } from './components/modals/ExportVectorModal';
 import { ExportTraceModal } from './components/modals/ExportTraceModal';
 import { MobileGuard } from './components/common/MobileGuard';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 
 export const App: React.FC = () => {
   const {
     isDarkMode,
     panelVisibility,
-    nextCell,
-    prevCell,
-    undo,
-    redo,
-    setActiveTool,
-    setActivePaletteTab,
     isRightSidebarOpen,
     toggleRightSidebarOpen,
   } = usePaintStore();
+
+  // ⚡ 仕様書 (Kingfisher_Shortcut_Override_Specification.md) 準拠のグローバルオーバーライドフック
+  useGlobalShortcuts();
 
   useEffect(() => {
     if (isDarkMode) {
@@ -40,61 +38,17 @@ export const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // グローバルショートカット (PageDown/Up, Undo/Redo, Ctrl+Alt/Ctrl+Cmdで右パネル開閉, 1/2/3キーでのパレットタブ切替)
+  // Ctrl+Alt (Win) / Ctrl+Cmd (Mac) で右パネル一括開閉のショートカット
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // 🌟 Windows「Ctrl+Alt」 / Mac「Ctrl+Cmd」で右サイドパネル一括開閉
-      if (e.ctrlKey && (e.altKey || e.metaKey)) {
+    const handleRightPanelShortcut = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.altKey) {
         e.preventDefault();
         toggleRightSidebarOpen();
-        return;
-      }
-
-      // テキスト入力中は短縮キーをスルー
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
-        return;
-      }
-
-      if (e.key === 'F1') {
-        e.preventDefault();
-        window.open('/Kingfisher_Manual.html', '_blank');
-      } else if (e.key === 'PageDown' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        nextCell();
-      } else if (e.key === 'PageUp' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        prevCell();
-      } else if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-      } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
-        e.preventDefault();
-        redo();
-      } else if (e.key === '1') {
-        setActivePaletteTab('normal');
-      } else if (e.key === '2') {
-        setActivePaletteTab('shadow');
-      } else if (e.key === '3') {
-        setActivePaletteTab('highlight');
-      } else if (e.key.toLowerCase() === 'f') {
-        setActiveTool('fill');
-      } else if (e.key.toLowerCase() === 'g') {
-        setActiveTool('gradient');
-      } else if (e.key.toLowerCase() === 'b') {
-        setActiveTool('brush');
-      } else if (e.key.toLowerCase() === 'p') {
-        setActiveTool('pencil');
-      } else if (e.key.toLowerCase() === 'e') {
-        setActiveTool('eraser');
-      } else if (e.key.toLowerCase() === 'n') {
-        setActiveTool('noiseEraser');
       }
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [nextCell, prevCell, undo, redo, setActiveTool, setActivePaletteTab]);
+    window.addEventListener('keydown', handleRightPanelShortcut);
+    return () => window.removeEventListener('keydown', handleRightPanelShortcut);
+  }, [toggleRightSidebarOpen]);
 
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState<number>(320);
   const isRightResizing = React.useRef(false);
