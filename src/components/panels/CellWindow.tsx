@@ -181,29 +181,16 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
         } catch (err) {}
       }
     } else {
-      // 2. フローティング状態の時: 高速移動 & ドッキング領域接近チェック
+      // 2. フローティング状態の時: 高速移動 & タブ部分領域への接近チェック（※タブ部分のみに厳格限定）
       dragHandlers.onPointerMove(e);
 
-      const dockElem = document.getElementById('docked-reference-area');
-      let rect: { left: number; right: number; top: number; bottom: number } | null = null;
+      const tabElem1 = document.getElementById('docked-reference-tab');
+      const tabElem2 = document.getElementById('docked-reference-tab-bar');
+      const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
 
-      if (dockElem && dockElem.offsetParent !== null) {
-        rect = dockElem.getBoundingClientRect();
-      } else {
-        const mainElem = document.getElementById('main-workspace-area');
-        if (mainElem) {
-          const mainRect = mainElem.getBoundingClientRect();
-          rect = {
-            left: mainRect.left + mainRect.width * 0.4,
-            right: mainRect.right,
-            top: mainRect.top,
-            bottom: mainRect.bottom,
-          };
-        }
-      }
-
-      if (rect) {
-        const padding = 50;
+      if (targetElem) {
+        const rect = targetElem.getBoundingClientRect();
+        const padding = 25; // タブ周辺 25px のみの判定領域
         const isOver =
           e.clientX >= rect.left - padding &&
           e.clientX <= rect.right + padding &&
@@ -211,6 +198,8 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
           e.clientY <= rect.bottom + padding;
 
         setIsNearDockArea(isOver);
+      } else {
+        setIsNearDockArea(false);
       }
     }
   };
@@ -269,6 +258,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
 
       {/* ⚠️ タブ（タイトルバー）: Drag to tear off (独立化) & Drag to dock (復帰) */}
       <div
+        id={isFloating ? undefined : 'docked-reference-tab-bar'}
         onPointerDown={handleHeaderPointerDown}
         onPointerMove={handleHeaderPointerMove}
         onPointerUp={handleHeaderPointerUp}
@@ -1122,35 +1112,37 @@ export const CellWindow: React.FC = () => {
 
           <div className="w-[1px] h-4 bg-slate-300 dark:bg-slate-700 mx-0.5" />
 
-          {/* 色指定参照ウィンドウ ボタン */}
-          <button
-            onClick={() => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage())}
-            className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
-              referenceCanvas.isOpen
-                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-500'
-            }`}
-          >
-            <Pipette className="w-3.5 h-3.5" />
-            <span>{referenceCanvas.isOpen ? '参照画像 ON' : '参照画像を開く'}</span>
-          </button>
+          {/* 色指定参照ウィンドウ ボタン ＆ タブエリア */}
+          <div id="docked-reference-tab" className="inline-flex items-center gap-1">
+            <button
+              onClick={() => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage())}
+              className={`px-2 py-0.5 rounded text-[11px] font-semibold border flex items-center gap-1 transition-colors ${
+                referenceCanvas.isOpen
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-emerald-500'
+              }`}
+            >
+              <Pipette className="w-3.5 h-3.5" />
+              <span>{referenceCanvas.isOpen ? '参照画像 ON' : '参照画像を開く'}</span>
+            </button>
 
-          {referenceCanvas.isOpen && !referenceCanvas.isFloating && (
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
-              <button
-                onClick={() => setColorSpecLayoutMode('split-vertical')}
-                className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-vertical' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-              >
-                垂直分割
-              </button>
-              <button
-                onClick={() => setColorSpecLayoutMode('split-horizontal')}
-                className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-horizontal' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
-              >
-                水平分割
-              </button>
-            </div>
-          )}
+            {referenceCanvas.isOpen && !referenceCanvas.isFloating && (
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-0.5 rounded border border-slate-300 dark:border-slate-700 text-[10px]">
+                <button
+                  onClick={() => setColorSpecLayoutMode('split-vertical')}
+                  className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-vertical' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                >
+                  垂直分割
+                </button>
+                <button
+                  onClick={() => setColorSpecLayoutMode('split-horizontal')}
+                  className={`px-1.5 py-0.5 rounded ${colorSpecLayoutMode === 'split-horizontal' ? 'bg-emerald-600 text-white font-bold' : 'text-slate-600 dark:text-slate-400'}`}
+                >
+                  水平分割
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-slate-400">
