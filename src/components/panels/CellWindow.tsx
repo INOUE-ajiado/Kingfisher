@@ -30,10 +30,12 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
     setReferenceTransform,
     pickColorFromReference,
     openReferenceImage,
+    setActiveDragColor,
   } = usePaintStore();
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [dragCursorPos, setDragCursorPos] = useState<{ x: number; y: number } | null>(null);
 
   // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
   const { targetRef, currentPos, setPosition } = useFastDraggable({
@@ -123,7 +125,10 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       const a = refImage.data[idx + 3];
       const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
 
-      pickColorFromReference({ r, g, b, a, hex });
+      const colorObj = { r, g, b, a, hex };
+      pickColorFromReference(colorObj);
+      setActiveDragColor(colorObj);
+      setDragCursorPos({ x: clientX, y: clientY });
     }
   };
 
@@ -135,9 +140,16 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       return;
     }
 
-    // 🌟 左クリック (0): 参照画像からダイレクト色スポイト取得
+    // 🌟 左クリック (0): 参照画像からダイレクト色スポイト ＆ ドロップドラッグ準備
     if (e.button === 0) {
       pickColorFromPos(e.clientX, e.clientY);
+
+      const onGlobalPointerUp = () => {
+        window.removeEventListener('pointerup', onGlobalPointerUp);
+        setActiveDragColor(null);
+        setDragCursorPos(null);
+      };
+      window.addEventListener('pointerup', onGlobalPointerUp);
     }
   };
 
@@ -149,7 +161,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
         offsetY: e.clientY - panStart.y,
       });
     } else if (e.buttons === 1) {
-      // 左ボタンを押したままドラッグ中も連続で色を取得
+      // 左ボタンを押したままドラッグ中も連続で色を取得＆カーソルチップ更新
       pickColorFromPos(e.clientX, e.clientY);
     }
   };
@@ -364,8 +376,24 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
 
             {/* ワイヤーフレーム準拠のアクション案内ラベル */}
             <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow whitespace-nowrap">
-              クリックで色を取得 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
+              ドラッグ＆ドロップでColorChartへ色登録 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
             </div>
+
+            {/* 🌟 ドラッグ中カーソル追従カラープレビューチップ */}
+            {dragCursorPos && (
+              <div
+                style={{ left: `${dragCursorPos.x + 12}px`, top: `${dragCursorPos.y + 12}px` }}
+                className="fixed z-[9999] pointer-events-none flex items-center gap-1.5 bg-slate-900/90 text-white px-2 py-1 rounded-full shadow-2xl border border-white/40 animate-in fade-in duration-75"
+              >
+                <div
+                  className="w-4 h-4 rounded-full border border-white shadow-xs"
+                  style={{ backgroundColor: usePaintStore.getState().activeDragColor?.hex || '#ffffff' }}
+                />
+                <span className="text-[10px] font-mono font-bold">
+                  {usePaintStore.getState().activeDragColor?.hex} (ColorChartへドロップ)
+                </span>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center p-5 text-center bg-white/90 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-lg backdrop-blur m-4 select-none">

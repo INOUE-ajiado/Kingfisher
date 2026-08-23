@@ -167,6 +167,10 @@ export interface PaintStore {
   setCanvasBgMatteMode: (mode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom') => void;
   setCanvasCustomBgColor: (color: string) => void;
 
+  // --- ドラッグ中スポイトカラー (ColorChartへのドロップ色登録用) ---
+  activeDragColor: RGBA | null;
+  setActiveDragColor: (color: RGBA | null) => void;
+
   // --- 色指定参照 ＆ メインセルビュー フローティング ---
   referenceCanvas: ReferenceCanvasState;
   colorSpecLayoutMode: 'single' | 'split-vertical' | 'split-horizontal';
@@ -403,6 +407,8 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
   canvasCustomBgColor: '#00ff00',
   setCanvasBgMatteMode: (mode) => set({ canvasBgMatteMode: mode }),
   setCanvasCustomBgColor: (color) => set({ canvasCustomBgColor: color }),
+  activeDragColor: null,
+  setActiveDragColor: (color) => set({ activeDragColor: color }),
 
   // 色指定参照ウィンドウ (Color Spec Reference Window)
   referenceCanvas: {

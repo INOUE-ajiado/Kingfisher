@@ -17,6 +17,8 @@ export const ColorChart: React.FC = () => {
     deletePaletteColor,
     isColorChartFloating,
     toggleColorChartFloating,
+    activeDragColor,
+    setActiveDragColor,
   } = usePaintStore();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -25,6 +27,29 @@ export const ColorChart: React.FC = () => {
   const [newColorName, setNewColorName] = useState('');
   const [newColorHex, setNewColorHex] = useState('#FF0000');
   const [showAddForm, setShowAddForm] = useState(false);
+
+  // 参照画像からのドラッグ＆ドロップ色登録ハンドラー
+  const handleDropRegister = (e: React.MouseEvent, targetTab?: 'normal' | 'shadow' | 'highlight', targetIndex?: number) => {
+    const dragColor = usePaintStore.getState().activeDragColor;
+    if (!dragColor) return;
+    e.stopPropagation();
+
+    if (targetTab && targetTab !== activePaletteTab) {
+      setActivePaletteTab(targetTab);
+    }
+
+    if (targetIndex !== undefined) {
+      const item = palettes[targetTab || activePaletteTab][targetIndex];
+      if (item) {
+        item.color = { ...dragColor };
+        usePaintStore.setState((state) => ({ ...state }));
+      }
+    } else {
+      addPaletteColor(`Ref_${dragColor.hex.slice(1, 5)}`, dragColor.hex);
+    }
+
+    setActiveDragColor(null);
+  };
 
   // フローティング用ドラッグ状態
   const [floatPos, setFloatPos] = useState({ x: window.innerWidth - 360, y: 120 });
@@ -112,12 +137,15 @@ export const ColorChart: React.FC = () => {
           : undefined
       }
       onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onMouseUp={(e) => {
+        handleMouseUp();
+        handleDropRegister(e);
+      }}
       className={`${
         isColorChartFloating
           ? 'bg-white dark:bg-slate-900 border-2 border-blue-500 shadow-2xl rounded-lg p-2 animate-in fade-in duration-100'
           : 'flex-[1.5] bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col p-1.5 min-h-[200px]'
-      } select-none`}
+      } select-none ${activeDragColor ? 'ring-2 ring-emerald-500/80 bg-emerald-50/20' : ''}`}
     >
       <div
         onMouseDown={handleMouseDown}
@@ -127,7 +155,7 @@ export const ColorChart: React.FC = () => {
       >
         <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト" className="flex items-center gap-1">
           {isColorChartFloating && <Pin className="w-3 h-3 text-amber-500" />}
-          <span>Color Chart (1/2/3 Tab)</span>
+          <span>Color Chart (1/2/3 Tab) {activeDragColor && <span className="text-emerald-500 font-bold animate-pulse ml-1">※ ドロップで色登録</span>}</span>
         </span>
         <div className="flex items-center gap-1">
           <button
@@ -196,7 +224,7 @@ export const ColorChart: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs (1, 2, 3 キーショートカット連携) */}
+      {/* Tabs (1, 2, 3 キーショートカット連携 ＆ ドロップで各タブへ色登録) */}
       <div className="flex gap-1 mb-3">
         {(['normal', 'shadow', 'highlight'] as const).map((tab, i) => {
           const isActive = activePaletteTab === tab;
@@ -204,12 +232,13 @@ export const ColorChart: React.FC = () => {
             <button
               key={tab}
               onClick={() => setActivePaletteTab(tab)}
-              title={`キー [${i + 1}] で切り替え`}
-              className={`text-[11px] px-2.5 py-0.5 rounded-full capitalize transition-colors ${
+              onMouseUp={(e) => handleDropRegister(e, tab)}
+              title={`キー [${i + 1}] で切り替え (参照画像からドロップして ${tab} へ色追加)`}
+              className={`text-[11px] px-2.5 py-0.5 rounded-full capitalize transition-all ${
                 isActive
-                  ? 'bg-teal-600 text-white font-medium'
+                  ? 'bg-teal-600 text-white font-medium shadow-xs'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
+              } ${activeDragColor ? 'hover:scale-110 hover:ring-2 hover:ring-teal-400' : ''}`}
             >
               [{i + 1}] {tab}
             </button>
@@ -217,7 +246,7 @@ export const ColorChart: React.FC = () => {
         })}
       </div>
 
-      {/* Color Grid (右クリックで現在色をセル保存) */}
+      {/* Color Grid (右クリックで上書き、ドラッグ＆ドロップでスロット上書き色登録) */}
       <div className="grid grid-cols-6 gap-1.5 overflow-y-auto max-h-[120px] p-0.5">
         {currentPalette.map((item, index) => {
           const isSelected = selectedColorIndex === index;
@@ -225,12 +254,13 @@ export const ColorChart: React.FC = () => {
             <div
               key={item.id}
               onClick={() => setSelectedColorIndex(index)}
+              onMouseUp={(e) => handleDropRegister(e, activePaletteTab, index)}
               onContextMenu={(e) => handleCellContextMenu(e, index)}
-              title={`${item.name} (右クリックで現在色を上書き登録)`}
+              title={`${item.name} (参照画像からドロップでこのスロットに色上書き)`}
               style={{ backgroundColor: item.color.hex }}
               className={`aspect-square rounded border border-slate-200 dark:border-slate-700 cursor-pointer relative transition-transform ${
                 isSelected ? 'ring-2 ring-orange-500 scale-110 z-10 shadow-sm' : 'hover:scale-105'
-              }`}
+              } ${activeDragColor ? 'hover:ring-2 hover:ring-emerald-400 hover:scale-115' : ''}`}
             />
           );
         })}
