@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { usePaintStore } from './store/usePaintStore';
 import { MenuBar } from './components/layout/MenuBar';
 import { ToolPalette } from './components/panels/ToolPalette';
-import { ToolOptions } from './components/panels/ToolOptions';
+import { ToolOptionsPanel } from './components/panels/ToolOptionsPanel';
 import { CellWindow } from './components/panels/CellWindow';
 import { ColorChart } from './components/panels/ColorChart';
 import { LightTable } from './components/panels/LightTable';
@@ -93,6 +93,7 @@ export const App: React.FC = () => {
 
   // パネル個別の縦幅 (高さ px) ステート
   const [panelHeights, setPanelHeights] = React.useState<Record<string, number>>({
+    toolOptions: 100,
     fileBrowser: 260,
     colorChart: 260,
     layerPanel: 180,
@@ -174,9 +175,6 @@ export const App: React.FC = () => {
 
         {/* Center Main Column */}
         <div className="flex-1 flex flex-col gap-0 overflow-hidden">
-          {/* Top: Tool Options Bar */}
-          {panelVisibility.toolOptions && <ToolOptions />}
-
           {/* Canvas Window Area */}
           <CellWindow />
 
@@ -201,6 +199,7 @@ export const App: React.FC = () => {
 
             {(() => {
               const panels = [
+                { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
                 { key: 'fileBrowser', visible: panelVisibility.fileBrowser, component: <FileBrowser /> },
                 { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
                 { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
