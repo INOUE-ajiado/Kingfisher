@@ -35,7 +35,11 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-  const [dragCursorPos, setDragCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+  // ⚡ 超高速 GPU コンポジタ追従用 Direct DOM Ref
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
+  const tooltipBoxRef = useRef<HTMLDivElement | null>(null);
+  const tooltipTextRef = useRef<HTMLSpanElement | null>(null);
 
   // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
   const { targetRef, currentPos, setPosition } = useFastDraggable({
@@ -138,26 +142,41 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       return;
     }
 
-    // 🌟 左クリック (0): 最初のクリック色を完全に固定（Initial Color Lock）しドラッグ開始
+    // 🌟 左クリック (0): 最初のクリック色を完全に固定（Initial Color Lock）し超高速GPUドラッグ開始
     if (e.button === 0) {
       const colorObj = getPixelColorAt(e.clientX, e.clientY);
       if (colorObj) {
         pickColorFromReference(colorObj);
         setActiveDragColor(colorObj); // 最初のクリック色を固定ロック
-        setDragCursorPos({ x: e.clientX, y: e.clientY });
 
-        // 全画面領域でのドラッグ位置追跡（色は初回クリック色を絶対維持）
+        // DOM 要素の初期位置 ＆ 表示設定
+        if (tooltipRef.current) {
+          tooltipRef.current.style.transform = `translate3d(${e.clientX + 14}px, ${e.clientY + 14}px, 0)`;
+          tooltipRef.current.style.display = 'flex';
+        }
+        if (tooltipBoxRef.current) {
+          tooltipBoxRef.current.style.backgroundColor = colorObj.hex;
+        }
+        if (tooltipTextRef.current) {
+          tooltipTextRef.current.innerText = `${colorObj.hex} (ColorChartへドロップ)`;
+        }
+
+        // ⚡ Direct DOM 全画面コンポジタドラッグ追従（ヌルヌル完全同期）
         const onGlobalPointerMove = (moveEvt: PointerEvent) => {
-          setDragCursorPos({ x: moveEvt.clientX, y: moveEvt.clientY });
+          if (tooltipRef.current) {
+            tooltipRef.current.style.transform = `translate3d(${moveEvt.clientX + 14}px, ${moveEvt.clientY + 14}px, 0)`;
+          }
         };
 
         const onGlobalPointerUp = () => {
           window.removeEventListener('pointermove', onGlobalPointerMove);
           window.removeEventListener('pointerup', onGlobalPointerUp);
+          if (tooltipRef.current) {
+            tooltipRef.current.style.display = 'none';
+          }
           // ColorChart 側のドロップ完了を待ってクリア
           setTimeout(() => {
             setActiveDragColor(null);
-            setDragCursorPos(null);
           }, 100);
         };
 
@@ -390,21 +409,27 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
               ドラッグ＆ドロップでColorChartへ色登録 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
             </div>
 
-            {/* 🌟 ドラッグ中カーソル追従カラープレビューチップ */}
-            {dragCursorPos && (
+            {/* ⚡ 超高速 Direct DOM GPU コンポジタ描画カーソル追従カラーチップ */}
+            <div
+              ref={tooltipRef}
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                display: 'none',
+                willChange: 'transform',
+                zIndex: 9999,
+              }}
+              className="pointer-events-none items-center gap-1.5 bg-slate-900/90 text-white px-2.5 py-1 rounded-full shadow-2xl border border-white/40 select-none"
+            >
               <div
-                style={{ left: `${dragCursorPos.x + 12}px`, top: `${dragCursorPos.y + 12}px` }}
-                className="fixed z-[9999] pointer-events-none flex items-center gap-1.5 bg-slate-900/90 text-white px-2 py-1 rounded-full shadow-2xl border border-white/40 animate-in fade-in duration-75"
-              >
-                <div
-                  className="w-4 h-4 rounded-full border border-white shadow-xs"
-                  style={{ backgroundColor: usePaintStore.getState().activeDragColor?.hex || '#ffffff' }}
-                />
-                <span className="text-[10px] font-mono font-bold">
-                  {usePaintStore.getState().activeDragColor?.hex} (ColorChartへドロップ)
-                </span>
-              </div>
-            )}
+                ref={tooltipBoxRef}
+                className="w-4 h-4 rounded-full border border-white shadow-xs"
+              />
+              <span ref={tooltipTextRef} className="text-[10px] font-mono font-bold">
+                #FFFFFF (ColorChartへドロップ)
+              </span>
+            </div>
           </>
         ) : (
           <div className="flex flex-col items-center justify-center p-5 text-center bg-white/90 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-lg backdrop-blur m-4 select-none">
