@@ -1,4 +1,4 @@
-// 🌟 Kingfisher Web Worker: 堅牢非同期ベクタートレース Worker
+// 🌟 Kingfisher Web Worker: 堅牢非同期ベクタートレース Worker (進捗 ＆ ターミナルログ対応)
 export interface WorkerTraceInput {
   requestId: number;
   width: number;
@@ -8,11 +8,10 @@ export interface WorkerTraceInput {
   ignoreWhite: boolean;
 }
 
-export interface WorkerTraceOutput {
-  requestId: number;
-  svgString: string;
-  error?: string;
-}
+export type WorkerMessageOut =
+  | { type: 'PROGRESS'; requestId: number; percent: number; message: string; log: string }
+  | { type: 'SUCCESS'; requestId: number; svgString: string; log: string }
+  | { type: 'ERROR'; requestId: number; error: string; log: string };
 
 interface Point {
   x: number;
@@ -61,7 +60,7 @@ function ramerDouglasPeucker(points: Point[], sqTolerance: number): Point[] {
   }
 }
 
-// 3次ベジェ曲線 B(t) = (1-t)^3 P0 + 3(1-t)^2 t P1 + 3(1-t) t^2 P2 + t^3 P3 フィッティング
+// 3次ベジェ曲線フィッティング
 function fitCubicBezierPath(points: Point[], smoothness: number): string {
   const len = points.length;
   if (len < 2) return '';
@@ -94,15 +93,33 @@ function fitCubicBezierPath(points: Point[], smoothness: number): string {
   return d;
 }
 
+function notifyProgress(requestId: number, percent: number, message: string, detail?: string) {
+  const timeStr = new Date().toLocaleTimeString('ja-JP');
+  const log = detail ? `[DEBUG] ${timeStr}: ${detail}` : `[DEBUG] ${timeStr}: ${message}`;
+  const out: WorkerMessageOut = {
+    type: 'PROGRESS',
+    requestId,
+    percent: Math.min(100, Math.max(0, Math.round(percent))),
+    message,
+    log,
+  };
+  self.postMessage(out);
+}
+
 self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
   const { requestId, width, height, buffer, tolerance, ignoreWhite } = e.data;
 
   try {
+    notifyProgress(requestId, 5, '並列ベクター変換パイプライン初期化...', 'Worker initialized. Reading buffer data.');
+
     const data = new Uint8ClampedArray(buffer);
     if (!data || width <= 0 || height <= 0) {
-      self.postMessage({ requestId, svgString: '' });
+      self.postMessage({ type: 'SUCCESS', requestId, svgString: '', log: '[DEBUG]: Image data is empty.' });
       return;
     }
+
+    // フェーズ 1: カラークラスタリング (0% 〜 20%)
+    notifyProgress(requestId, 10, 'カラークラスタリング実行中...', `Processing color clustering for ${width}x${height} px.`);
 
     const sqTolerance = Math.max(0.1, tolerance) * Math.max(0.1, tolerance) * 0.8;
     const totalPixels = width * height;
@@ -143,11 +160,25 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       pixelColors[i / 4] = paletteId;
     }
 
+    notifyProgress(requestId, 20, 'カラー分離完了', `Extracted ${palette.length} unique color clusters.`);
+
+    // フェーズ 2: 輪郭抽出 / Marching Squares (20% 〜 60%) ＆ フェーズ 3: 3次ベジェ変換 (60% 〜 95%)
     const visited = new Uint8Array(totalPixels);
     const svgPaths: string[] = [];
 
-    // Marching Squares & Contour tracing
+    const totalRows = height;
+
     for (let y = 0; y < height; y++) {
+      if (y % Math.max(1, Math.floor(height / 10)) === 0) {
+        const progress = 20 + (y / totalRows) * 45; // 20% to 65%
+        notifyProgress(
+          requestId,
+          progress,
+          `輪郭解析・Marching Squares 中 (${Math.round((y / totalRows) * 100)}%)...`,
+          `Scanning row ${y}/${height} for boundary contours.`
+        );
+      }
+
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
         const targetColorId = pixelColors[idx];
@@ -208,15 +239,31 @@ self.onmessage = (e: MessageEvent<WorkerTraceInput>) => {
       }
     }
 
+    // フェーズ 4: SVG構築 (95% 〜 100%)
+    notifyProgress(requestId, 95, 'SVG DOM パス構文構築中...', `Constructing ${svgPaths.length} vector path nodes.`);
+
     const svgString = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <g shape-rendering="geometricPrecision">
     ${svgPaths.join('\n    ')}
   </g>
 </svg>`;
 
-    const output: WorkerTraceOutput = { requestId, svgString };
-    self.postMessage(output);
+    const timeStr = new Date().toLocaleTimeString('ja-JP');
+    const successOutput: WorkerMessageOut = {
+      type: 'SUCCESS',
+      requestId,
+      svgString,
+      log: `[DEBUG] ${timeStr}: SVG vector trace completed successfully (${svgPaths.length} paths).`,
+    };
+    self.postMessage(successOutput);
   } catch (err: any) {
-    self.postMessage({ requestId, svgString: '', error: err.message || 'Worker processing error' });
+    const timeStr = new Date().toLocaleTimeString('ja-JP');
+    const errorOutput: WorkerMessageOut = {
+      type: 'ERROR',
+      requestId,
+      error: err.message || 'Worker processing error',
+      log: `[ERROR] ${timeStr}: ${err.message || 'Worker processing error'}`,
+    };
+    self.postMessage(errorOutput);
   }
 };
