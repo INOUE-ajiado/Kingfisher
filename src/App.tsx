@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { usePaintStore } from './store/usePaintStore';
 import { MenuBar } from './components/layout/MenuBar';
 import { ToolPalette } from './components/panels/ToolPalette';
@@ -279,6 +280,17 @@ export const App: React.FC = () => {
       <ExportVectorModal />
       <ExportTraceModal />
       <MobileGuard />
+
+      {/* 🌟 右サイドパネル非表示時のみ表示される極細コンパクト再展開ボタン */}
+      {!isRightSidebarOpen && (
+        <button
+          onClick={toggleRightSidebarOpen}
+          title="右サイドパネルを展開 (Ctrl+Alt / Ctrl+Cmd)"
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 bg-slate-800/90 hover:bg-blue-600 text-slate-200 hover:text-white px-0.5 py-4 rounded-l-md border-l border-t border-b border-slate-700/80 shadow-lg transition-all duration-150 group flex items-center justify-center cursor-pointer"
+        >
+          <ChevronLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
+        </button>
+      )}
     </div>
   );
 };
