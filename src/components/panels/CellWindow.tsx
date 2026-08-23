@@ -84,19 +84,27 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   };
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !refImage) return;
+    const renderCanvas = () => {
+      const canvas = canvasRef.current;
+      if (!canvas || !refImage) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    canvas.width = refImage.width;
-    canvas.height = refImage.height;
+      if (canvas.width !== refImage.width || canvas.height !== refImage.height) {
+        canvas.width = refImage.width;
+        canvas.height = refImage.height;
+      }
 
-    const imgData = ctx.createImageData(refImage.width, refImage.height);
-    imgData.data.set(refImage.data);
-    ctx.putImageData(imgData, 0, 0);
-  }, [refImage]);
+      const imgData = ctx.createImageData(refImage.width, refImage.height);
+      imgData.data.set(refImage.data);
+      ctx.putImageData(imgData, 0, 0);
+    };
+
+    renderCanvas();
+    const animId = requestAnimationFrame(renderCanvas);
+    return () => cancelAnimationFrame(animId);
+  }, [refImage, isFloating, referenceCanvas.isOpen]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button === 2 || e.button === 1) {
