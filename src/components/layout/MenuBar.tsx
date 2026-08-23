@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { encodeTGA, decodeTGA } from '../../engine/tga';
-import { Moon, Sun, Columns, Link, Link2Off, Pipette } from 'lucide-react';
+import { Columns, Link, Link2Off, Pipette } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -459,16 +459,6 @@ export const MenuBar: React.FC = () => {
             <span>参照画像を開く</span>
           </button>
         </div>
-
-        {/* Dark/Light mode toggle */}
-        <button
-          onClick={toggleDarkMode}
-          title={isDarkMode ? 'Light Mode に切り替え' : 'Dark Mode に切り替え'}
-          className="p-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500 transition-colors flex items-center gap-1 text-[10px] font-medium border border-slate-300 dark:border-slate-700"
-        >
-          {isDarkMode ? <Sun className="w-3 h-3 text-amber-400" /> : <Moon className="w-3 h-3 text-slate-600" />}
-          <span>{isDarkMode ? 'Dark' : 'Light'}</span>
-        </button>
       </div>
 
       <input
