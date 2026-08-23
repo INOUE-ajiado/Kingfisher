@@ -14,6 +14,7 @@ import { PreferencesModal } from './components/modals/PreferencesModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
 import { ExportVectorModal } from './components/modals/ExportVectorModal';
+import { ExportTraceModal } from './components/modals/ExportTraceModal';
 import { MobileGuard } from './components/common/MobileGuard';
 
 export const App: React.FC = () => {
@@ -242,6 +243,7 @@ export const App: React.FC = () => {
       <ShortcutsModal />
       <ReplaceColorModal />
       <ExportVectorModal />
+      <ExportTraceModal />
       <MobileGuard />
     </div>
   );

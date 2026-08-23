@@ -277,8 +277,8 @@ export interface PaintStore {
   toggleShowUnpaintedFlash: () => void;
 
   // --- モーダル ---
-  activeModal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | null;
-  setActiveModal: (modal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | null) => void;
+  activeModal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | null;
+  setActiveModal: (modal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | null) => void;
 
   // --- カラー・パレット編集 ---
   activePaletteTab: 'normal' | 'shadow' | 'highlight';
