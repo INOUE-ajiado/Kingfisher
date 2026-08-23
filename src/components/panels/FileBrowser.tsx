@@ -41,24 +41,59 @@ function buildTreeFromPaths(paths: string[]): FileTreeNode[] {
   return root;
 }
 
+export interface FlatNodeItem {
+  node: FileTreeNode;
+  depth: number;
+  parentPath: string | null;
+}
+
+function getFlatVisibleNodes(
+  nodes: FileTreeNode[],
+  expandedPaths: Set<string>,
+  depth = 0,
+  parentPath: string | null = null
+): FlatNodeItem[] {
+  let result: FlatNodeItem[] = [];
+
+  for (const node of nodes) {
+    result.push({ node, depth, parentPath });
+
+    if (node.isFolder && expandedPaths.has(node.path) && node.children) {
+      result.push(...getFlatVisibleNodes(node.children, expandedPaths, depth + 1, node.path));
+    }
+  }
+
+  return result;
+}
+
 const TreeItemNode: React.FC<{
   node: FileTreeNode;
   depth: number;
   expandedPaths: Set<string>;
-  togglePath: (path: string) => void;
+  focusedPath: string | null;
+  togglePath: (path: string, forceState?: boolean) => void;
   onSelectFile: (idx: number) => void;
+  onFocusNode: (path: string) => void;
   currentIdx: number;
-}> = ({ node, depth, expandedPaths, togglePath, onSelectFile, currentIdx }) => {
+}> = ({ node, depth, expandedPaths, focusedPath, togglePath, onSelectFile, onFocusNode, currentIdx }) => {
   const isExpanded = expandedPaths.has(node.path);
+  const isFocused = focusedPath === node.path;
   const isSelected = !node.isFolder && node.fileIndex === currentIdx;
 
   if (node.isFolder) {
     return (
       <div>
         <div
-          onClick={() => togglePath(node.path)}
+          onClick={() => {
+            onFocusNode(node.path);
+            togglePath(node.path);
+          }}
           style={{ paddingLeft: `${depth * 12 + 4}px` }}
-          className="flex items-center gap-1.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer text-[11px] font-semibold text-slate-700 dark:text-slate-300 transition-colors select-none"
+          className={`flex items-center gap-1.5 py-1 hover:bg-slate-100 dark:hover:bg-slate-800/60 cursor-pointer text-[11px] font-semibold transition-colors select-none ${
+            isFocused
+              ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-400/50 rounded-xs'
+              : 'text-slate-700 dark:text-slate-300'
+          }`}
         >
           {isExpanded ? (
             <ChevronDown className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
@@ -77,8 +112,10 @@ const TreeItemNode: React.FC<{
                 node={child}
                 depth={depth + 1}
                 expandedPaths={expandedPaths}
+                focusedPath={focusedPath}
                 togglePath={togglePath}
                 onSelectFile={onSelectFile}
+                onFocusNode={onFocusNode}
                 currentIdx={currentIdx}
               />
             ))}
@@ -90,11 +127,16 @@ const TreeItemNode: React.FC<{
 
   return (
     <div
-      onClick={() => node.fileIndex !== undefined && onSelectFile(node.fileIndex)}
+      onClick={() => {
+        onFocusNode(node.path);
+        if (node.fileIndex !== undefined) onSelectFile(node.fileIndex);
+      }}
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
       className={`flex items-center gap-1.5 py-1 px-1 cursor-pointer text-[11px] transition-colors select-none ${
         isSelected
           ? 'bg-blue-600 text-white font-bold rounded shadow-xs'
+          : isFocused
+          ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-400/50 rounded-xs'
           : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
       }`}
     >
@@ -110,6 +152,7 @@ export const FileBrowser: React.FC = () => {
 
   const [viewMode, setViewMode] = useState<'tree' | 'merge'>('tree');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [focusedPath, setFocusedPath] = useState<string | null>(null);
 
   const {
     rootFolderName,
@@ -138,11 +181,16 @@ export const FileBrowser: React.FC = () => {
     toggleSyncMode,
   } = usePaintStore();
 
-  const togglePath = (path: string) => {
+  const togglePath = (path: string, forceState?: boolean) => {
     setExpandedPaths((prev) => {
       const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
+      if (forceState !== undefined) {
+        if (forceState) next.add(path);
+        else next.delete(path);
+      } else {
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+      }
       return next;
     });
   };
@@ -150,7 +198,6 @@ export const FileBrowser: React.FC = () => {
   // ファイルリストから階層ツリー構造を動的作成
   const fileTreeNodes = useMemo(() => {
     const tree = buildTreeFromPaths(unifiedFileList);
-    // デフォルトで第1階層のフォルダを自動開く
     const defaultExpanded = new Set<string>();
     tree.forEach((node) => {
       if (node.isFolder) defaultExpanded.add(node.path);
@@ -158,6 +205,76 @@ export const FileBrowser: React.FC = () => {
     setExpandedPaths((prev) => (prev.size === 0 ? defaultExpanded : prev));
     return tree;
   }, [unifiedFileList]);
+
+  // 可視ノードのフラット配列 (キーボード移動用)
+  const flatVisibleNodes = useMemo(() => {
+    return getFlatVisibleNodes(fileTreeNodes, expandedPaths);
+  }, [fileTreeNodes, expandedPaths]);
+
+  // 連番フレーム行クリック時の連動・個別のルーティング挙動
+  const handleSelectFrame = (idx: number) => {
+    setCurrentFileIndex(idx);
+    if (syncMode) {
+      setSplitFileIndex(idx);
+    }
+  };
+
+  // ⌨️ キーボード方向キー (↑ ↓ ← → Enter Space) ナビゲーション処理
+  const handleTreeKeyDown = (e: React.KeyboardEvent) => {
+    if (flatVisibleNodes.length === 0) return;
+
+    const currentFlatIdx = flatVisibleNodes.findIndex((item) => item.node.path === focusedPath);
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const nextIdx = Math.min(flatVisibleNodes.length - 1, currentFlatIdx < 0 ? 0 : currentFlatIdx + 1);
+      const nextNode = flatVisibleNodes[nextIdx].node;
+      setFocusedPath(nextNode.path);
+      if (!nextNode.isFolder && nextNode.fileIndex !== undefined) {
+        handleSelectFrame(nextNode.fileIndex);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prevIdx = Math.max(0, currentFlatIdx <= 0 ? 0 : currentFlatIdx - 1);
+      const prevNode = flatVisibleNodes[prevIdx].node;
+      setFocusedPath(prevNode.path);
+      if (!prevNode.isFolder && prevNode.fileIndex !== undefined) {
+        handleSelectFrame(prevNode.fileIndex);
+      }
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (currentFlatIdx >= 0) {
+        const { node } = flatVisibleNodes[currentFlatIdx];
+        if (node.isFolder) {
+          if (!expandedPaths.has(node.path)) {
+            togglePath(node.path, true);
+          } else if (node.children && node.children.length > 0) {
+            setFocusedPath(node.children[0].path);
+          }
+        }
+      }
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (currentFlatIdx >= 0) {
+        const { node, parentPath } = flatVisibleNodes[currentFlatIdx];
+        if (node.isFolder && expandedPaths.has(node.path)) {
+          togglePath(node.path, false);
+        } else if (parentPath) {
+          setFocusedPath(parentPath);
+        }
+      }
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (currentFlatIdx >= 0) {
+        const { node } = flatVisibleNodes[currentFlatIdx];
+        if (node.isFolder) {
+          togglePath(node.path);
+        } else if (node.fileIndex !== undefined) {
+          handleSelectFrame(node.fileIndex);
+        }
+      }
+    }
+  };
 
   // 再帰的ディレクトリ走査 (ネストされた階層パスを完全保持)
   const scanDirectoryRecursively = async (dirHandle: any, currentPath: string, filesMap: Map<string, File>, fileList: string[]) => {
@@ -348,13 +465,6 @@ export const FileBrowser: React.FC = () => {
     }
   };
 
-  const handleSelectFrame = (idx: number) => {
-    setCurrentFileIndex(idx);
-    if (syncMode) {
-      setSplitFileIndex(idx);
-    }
-  };
-
   const handleSelectWinAOnly = (idx: number) => {
     setCurrentFileIndex(idx);
     if (syncMode) setSplitFileIndex(idx);
@@ -494,16 +604,22 @@ export const FileBrowser: React.FC = () => {
             </span>
           </div>
         ) : viewMode === 'tree' ? (
-          /* 📁 フォルダ階層ツリービュー (Tree View) */
-          <div className="space-y-0.5">
+          /* 📁 フォルダ階層ツリービュー (キーボード ↑ ↓ ← → 操作対応) */
+          <div
+            tabIndex={0}
+            onKeyDown={handleTreeKeyDown}
+            className="space-y-0.5 outline-none focus:ring-1 focus:ring-blue-500/50 rounded-xs"
+          >
             {fileTreeNodes.map((node) => (
               <TreeItemNode
                 key={node.path}
                 node={node}
                 depth={0}
                 expandedPaths={expandedPaths}
+                focusedPath={focusedPath}
                 togglePath={togglePath}
                 onSelectFile={handleSelectFrame}
+                onFocusNode={setFocusedPath}
                 currentIdx={currentFileIndex}
               />
             ))}
