@@ -346,12 +346,12 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex flex-col bg-slate-200 dark:bg-slate-900 border-2 ${
+      className={`flex flex-col bg-white dark:bg-slate-900 border-2 ${
         isNearDockArea
           ? 'border-blue-500 ring-4 ring-blue-500/50'
           : isDragOver
           ? 'border-amber-400 ring-4 ring-amber-400/50'
-          : 'border-emerald-600'
+          : 'border-emerald-600 dark:border-emerald-700'
       } rounded shadow-2xl relative ${isFloating ? '' : 'flex-1'}`}
     >
       {/* ドラッグ＆ドロップ受領オーバーレイ */}
@@ -375,12 +375,12 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
       <div
         id={isFloating ? undefined : 'docked-reference-tab-bar'}
         onPointerDown={handleHeaderPointerDown}
-        className="h-6 bg-gradient-to-r from-emerald-800 to-emerald-600 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing"
+        className="h-6 bg-gradient-to-r from-emerald-600 to-emerald-500 dark:from-emerald-800 dark:to-emerald-700 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing shadow-xs"
       >
         <div className="flex items-center gap-1.5 truncate">
-          <Pipette className="w-3.5 h-3.5 text-emerald-300" />
+          <Pipette className="w-3.5 h-3.5 text-emerald-200" />
           <span>【参照】 {referenceCanvas.fileName}</span>
-          <span className="text-[9px] opacity-75 font-normal ml-1 hidden sm:inline">
+          <span className="text-[9px] opacity-80 font-normal ml-1 hidden sm:inline">
             ({isFloating ? 'ドラッグでドッキング領域へドロップ' : 'タブをドラッグで独立ウィンドウ化'})
           </span>
         </div>
@@ -411,7 +411,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
 
       {/* キャンバス領域 (Read-Only) */}
       <div
-        className="flex-1 bg-slate-800 relative flex items-center justify-center overflow-hidden cursor-crosshair"
+        className="flex-1 bg-slate-200 dark:bg-slate-900 relative flex items-center justify-center overflow-hidden cursor-crosshair"
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -423,7 +423,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
                 transformOrigin: 'center center',
                 transition: isPanning ? 'none' : 'transform 0.05s ease-out',
               }}
-              className="shadow-2xl border border-emerald-900/50 bg-white relative"
+              className="shadow-2xl border border-slate-300 dark:border-emerald-900/50 bg-white relative"
             >
               <canvas
                 ref={canvasRef}
@@ -436,7 +436,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
             </div>
 
             {/* ワイヤーフレーム準拠のアクション案内ラベル */}
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-black/80 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow whitespace-nowrap">
+            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/90 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow-md whitespace-nowrap">
               ドラッグ＆ドロップでColorChartへ色登録 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
             </div>
 
@@ -464,7 +464,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center p-5 text-center bg-white/90 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-lg backdrop-blur m-4 select-none">
+          <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-lg backdrop-blur m-4 select-none">
             <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-2 text-emerald-600 dark:text-emerald-400">
               <Pipette className="w-5 h-5" />
             </div>
