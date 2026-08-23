@@ -316,7 +316,24 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
   return (
     <div
       ref={targetRef}
-      style={isFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
+      style={
+        isFloating
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              zIndex: 50,
+              width: '360px',
+              height: '420px',
+              resize: 'both',
+              overflow: 'hidden',
+              minWidth: '240px',
+              minHeight: '200px',
+              maxWidth: '85vw',
+              maxHeight: '85vh',
+            }
+          : undefined
+      }
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -326,9 +343,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
           : isDragOver
           ? 'border-amber-400 ring-4 ring-amber-400/50'
           : 'border-emerald-600'
-      } rounded overflow-hidden shadow-2xl relative ${
-        isFloating ? 'w-80 h-96' : 'flex-1'
-      }`}
+      } rounded shadow-2xl relative ${isFloating ? '' : 'flex-1'}`}
     >
       {/* ドラッグ＆ドロップ受領オーバーレイ */}
       {isDragOver && (
@@ -1415,7 +1430,24 @@ export const CellWindow: React.FC = () => {
           {/* 左ビュー (Win A / Dir A) */}
           <div
             ref={winADrag.targetRef}
-            style={isWinAFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
+            style={
+              isWinAFloating
+                ? {
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    zIndex: 50,
+                    width: '680px',
+                    height: '520px',
+                    resize: 'both',
+                    overflow: 'hidden',
+                    minWidth: '320px',
+                    minHeight: '240px',
+                    maxWidth: '90vw',
+                    maxHeight: '90vh',
+                  }
+                : undefined
+            }
             onClick={() => setActiveViewIndex(0)}
             onDragOver={(e) => {
               e.preventDefault();
@@ -1423,12 +1455,12 @@ export const CellWindow: React.FC = () => {
             }}
             onDragLeave={() => setIsWinADragOver(false)}
             onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winA')}
-            className={`flex flex-col overflow-hidden border-2 ${
+            className={`flex flex-col border-2 ${
               isWinADragOver
                 ? 'border-blue-500 ring-4 ring-blue-500/50'
                 : isWinAFloating
-                ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
-                : `flex-1 relative rounded ${
+                ? 'bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
+                : `flex-1 relative rounded overflow-hidden ${
                     activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
                   }`
             }`}
@@ -1531,7 +1563,24 @@ export const CellWindow: React.FC = () => {
           {isSplitView && (
             <div
               ref={winBDrag.targetRef}
-              style={isWinBFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
+              style={
+                isWinBFloating
+                  ? {
+                      position: 'fixed',
+                      top: 0,
+                      left: 0,
+                      zIndex: 50,
+                      width: '680px',
+                      height: '520px',
+                      resize: 'both',
+                      overflow: 'hidden',
+                      minWidth: '320px',
+                      minHeight: '240px',
+                      maxWidth: '90vw',
+                      maxHeight: '90vh',
+                    }
+                  : undefined
+              }
               onClick={() => setActiveViewIndex(1)}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1539,12 +1588,12 @@ export const CellWindow: React.FC = () => {
               }}
               onDragLeave={() => setIsWinBDragOver(false)}
               onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
-              className={`flex flex-col overflow-hidden border-2 ${
+              className={`flex flex-col border-2 ${
                 isWinBDragOver
                   ? 'border-emerald-500 ring-4 ring-emerald-500/50'
                   : isWinBFloating
-                  ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
-                  : `flex-1 relative rounded ${
+                  ? 'bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
+                  : `flex-1 relative rounded overflow-hidden ${
                       activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
                     }`
               }`}

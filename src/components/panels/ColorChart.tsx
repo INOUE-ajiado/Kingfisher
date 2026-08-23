@@ -133,7 +133,14 @@ export const ColorChart: React.FC = () => {
               left: 0,
               top: 0,
               zIndex: 45,
-              width: '320px',
+              width: '340px',
+              height: '240px',
+              resize: 'both',
+              overflow: 'auto',
+              minWidth: '260px',
+              minHeight: '180px',
+              maxWidth: '85vw',
+              maxHeight: '85vh',
             }
           : undefined
       }
