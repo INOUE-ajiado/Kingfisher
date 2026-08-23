@@ -467,10 +467,6 @@ export const MenuBar: React.FC = () => {
           {isDarkMode ? <Sun className="w-3 h-3 text-amber-400" /> : <Moon className="w-3 h-3 text-slate-600" />}
           <span>{isDarkMode ? 'Dark' : 'Light'}</span>
         </button>
-
-        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono hidden md:inline">
-          Ver 2.0 (Studio)
-        </span>
       </div>
 
       <input
