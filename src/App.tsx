@@ -199,8 +199,8 @@ export const App: React.FC = () => {
 
             {(() => {
               const panels = [
-                { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
                 { key: 'fileBrowser', visible: panelVisibility.fileBrowser, component: <FileBrowser /> },
+                { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
                 { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
                 { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
                 { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
