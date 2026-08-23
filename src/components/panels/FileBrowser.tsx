@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { usePaintStore, SubDirectoryItem } from '../../store/usePaintStore';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network } from 'lucide-react';
 
@@ -76,14 +76,26 @@ const TreeItemNode: React.FC<{
   onFocusNode: (path: string) => void;
   currentIdx: number;
 }> = ({ node, depth, expandedPaths, focusedPath, togglePath, onSelectFile, onFocusNode, currentIdx }) => {
+  const itemRef = useRef<HTMLDivElement | null>(null);
   const isExpanded = expandedPaths.has(node.path);
   const isFocused = focusedPath === node.path;
   const isSelected = !node.isFolder && node.fileIndex === currentIdx;
+
+  // ⚠️ フォーカス/選択中アイテムがウィンドウ外へ出た場合、自動追従スクロール
+  useEffect(() => {
+    if ((isFocused || isSelected) && itemRef.current) {
+      itemRef.current.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      });
+    }
+  }, [isFocused, isSelected]);
 
   if (node.isFolder) {
     return (
       <div>
         <div
+          ref={itemRef}
           onClick={() => {
             onFocusNode(node.path);
             togglePath(node.path);
@@ -127,6 +139,7 @@ const TreeItemNode: React.FC<{
 
   return (
     <div
+      ref={itemRef}
       onClick={() => {
         onFocusNode(node.path);
         if (node.fileIndex !== undefined) onSelectFile(node.fileIndex);

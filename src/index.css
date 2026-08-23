@@ -78,3 +78,33 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* =========================================
+   Minimal Dark Scrollbar CSS
+========================================= */
+
+/* WebKit系ブラウザ (Chrome, Safari, Edgeなど) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+/* Firefox用標準仕様のフォールバック */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #555 #1e1e1e;
+}
