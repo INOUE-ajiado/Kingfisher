@@ -80,33 +80,54 @@ body {
 }
 
 /* =========================================
-   Minimal Dark Scrollbar CSS
+   Light / Dark Mode Adaptive Scrollbar CSS
 ========================================= */
 
-/* WebKit系ブラウザ (Chrome, Safari, Edgeなど) */
+/* --- Light Mode (Default) --- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: #f1f5f9;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #555;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #777;
+  background: #94a3b8;
 }
 
-/* Firefox用標準仕様のフォールバック */
+/* Firefox Light Mode */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #555 #1e1e1e;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+/* --- Dark Mode (.dark クラス連動) --- */
+.dark ::-webkit-scrollbar-track,
+.dark::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+.dark ::-webkit-scrollbar-thumb,
+.dark::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover,
+.dark::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Firefox Dark Mode */
+.dark * {
+  scrollbar-color: #334155 #0f172a;
 }
 
 /* =========================================
