@@ -254,7 +254,7 @@ export const ColorChart: React.FC = () => {
       </div>
 
       {/* Color Grid (右クリックで上書き、ドラッグ＆ドロップでスロット上書き色登録) */}
-      <div className="grid grid-cols-6 gap-1.5 overflow-y-auto max-h-[120px] p-0.5">
+      <div className="grid grid-cols-6 gap-2 overflow-y-auto max-h-[135px] p-2">
         {currentPalette.map((item, index) => {
           const isSelected = selectedColorIndex === index;
           return (
@@ -267,8 +267,8 @@ export const ColorChart: React.FC = () => {
               title={`${item.name} (参照画像からドロップでこのスロットに色上書き)`}
               style={{ backgroundColor: item.color.hex }}
               className={`aspect-square rounded border border-slate-200 dark:border-slate-700 cursor-pointer relative transition-transform ${
-                isSelected ? 'ring-2 ring-orange-500 scale-110 z-10 shadow-sm' : 'hover:scale-105'
-              } ${activeDragColor ? 'hover:ring-2 hover:ring-emerald-400 hover:scale-115' : ''}`}
+                isSelected ? 'ring-2 ring-amber-500 dark:ring-amber-400 scale-105 z-10 shadow-md border-amber-500' : 'hover:scale-105'
+              } ${activeDragColor ? 'hover:ring-2 hover:ring-emerald-400 hover:scale-110' : ''}`}
             />
           );
         })}
