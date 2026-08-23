@@ -311,12 +311,14 @@ export interface PaintStore {
   addLayer: (name: string) => void;
   deleteLayer: (id: string) => void;
 
-  // --- ファイル・ナビゲーション ---
+  // --- ファイル・ナビゲーション ＆ D&Dドロップフォルダ ---
   folderHandle: any | null;
   folderName: string | null;
   fileList: string[];
   currentFileIndex: number;
   setFolderHandle: (handle: any, name: string, files: string[]) => void;
+  setCustomDropFolderA: (folderName: string, fileMap: Map<string, File>, fileList: string[]) => void;
+  setCustomDropFolderB: (folderName: string, fileMap: Map<string, File>, fileList: string[]) => void;
   setCurrentFileIndex: (index: number) => void;
   nextCell: () => void;
   prevCell: () => void;
@@ -608,6 +610,38 @@ export const usePaintStore = create<PaintStore>((set, get) => ({
         selectedSubDirB: dirName,
         folderNameB: dirName || state.rootFolderName || '',
         folderHandleB: targetDir ? targetDir.handle : state.rootFolderHandle,
+        fileMapB: mapB,
+        fileListB: listB,
+        unifiedFileList: unifiedFiles,
+        fileList: unifiedFiles,
+        mergedFrameNumbers: frameNumbers,
+        mergedFrameMap: frameMap,
+        splitFileIndex: 0,
+      };
+    }),
+
+  setCustomDropFolderA: (folderName, mapA, listA) =>
+    set((state) => {
+      const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
+      return {
+        folderNameA: folderName,
+        folderHandleA: null,
+        fileMapA: mapA,
+        fileListA: listA,
+        unifiedFileList: unifiedFiles,
+        fileList: unifiedFiles,
+        mergedFrameNumbers: frameNumbers,
+        mergedFrameMap: frameMap,
+        currentFileIndex: 0,
+      };
+    }),
+
+  setCustomDropFolderB: (folderName, mapB, listB) =>
+    set((state) => {
+      const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
+      return {
+        folderNameB: folderName,
+        folderHandleB: null,
         fileMapB: mapB,
         fileListB: listB,
         unifiedFileList: unifiedFiles,

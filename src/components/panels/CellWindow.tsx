@@ -463,6 +463,8 @@ export const CellWindow: React.FC = () => {
     isWinBFloating,
     toggleWinAFloating,
     toggleWinBFloating,
+    setCustomDropFolderA,
+    setCustomDropFolderB,
   } = usePaintStore();
 
   const winADrag = useFastDraggable({ initialX: 60, initialY: 60, enabled: isWinAFloating });
@@ -474,6 +476,81 @@ export const CellWindow: React.FC = () => {
   const [isLassoing, setIsLassoing] = useState(false);
   const [isBrushing, setIsBrushing] = useState(false);
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
+
+  // エクスプローラーダイレクト D&D ドラッグオーバー・ステート
+  const [isWinADragOver, setIsWinADragOver] = useState(false);
+  const [isWinBDragOver, setIsWinBDragOver] = useState(false);
+
+  // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理
+  const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>) => {
+    const dirReader = dirEntry.createReader();
+    const entries: any[] = await new Promise((resolve) => {
+      dirReader.readEntries((results: any[]) => resolve(results));
+    });
+
+    for (const entry of entries) {
+      if (entry.isFile) {
+        const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
+        if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+          fileMap.set(file.name, file);
+        }
+      } else if (entry.isDirectory) {
+        await readDirectoryEntries(entry, fileMap);
+      }
+    }
+  };
+
+  const handleFolderOrFilesNativeDrop = async (e: React.DragEvent, targetWin: 'winA' | 'winB') => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (targetWin === 'winA') setIsWinADragOver(false);
+    else setIsWinBDragOver(false);
+
+    const items = e.dataTransfer.items;
+    const files = e.dataTransfer.files;
+    const fileMap = new Map<string, File>();
+    let detectedFolderName: string | null = null;
+
+    if (items && items.length > 0) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.webkitGetAsEntry) {
+          const entry = item.webkitGetAsEntry();
+          if (entry) {
+            if (entry.isDirectory) {
+              if (!detectedFolderName) detectedFolderName = entry.name;
+              await readDirectoryEntries(entry, fileMap);
+            } else if (entry.isFile) {
+              const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
+              if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+                fileMap.set(file.name, file);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (fileMap.size === 0 && files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (/\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+          fileMap.set(file.name, file);
+        }
+      }
+    }
+
+    if (fileMap.size > 0) {
+      const fileList = Array.from(fileMap.keys()).sort();
+      const folderTitle = detectedFolderName || (targetWin === 'winA' ? 'ドロップフォルダ A' : 'ドロップフォルダ B');
+      if (targetWin === 'winA') {
+        setCustomDropFolderA(folderTitle, fileMap, fileList);
+      } else {
+        setCustomDropFolderB(folderTitle, fileMap, fileList);
+      }
+    }
+  };
 
   // ⚠️ メインウィンドウ全般 (Win A / Win B) 共通引きはがし (Tear-off) ＆ ドッキングポインターハンドラー
   const isDraggingGenericHeader = useRef(false);
@@ -1288,14 +1365,31 @@ export const CellWindow: React.FC = () => {
             ref={winADrag.targetRef}
             style={isWinAFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
             onClick={() => setActiveViewIndex(0)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsWinADragOver(true);
+            }}
+            onDragLeave={() => setIsWinADragOver(false)}
+            onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winA')}
             className={`flex flex-col overflow-hidden border-2 ${
-              isWinAFloating
+              isWinADragOver
+                ? 'border-blue-500 ring-4 ring-blue-500/50'
+                : isWinAFloating
                 ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
                 : `flex-1 relative rounded ${
                     activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
                   }`
             }`}
           >
+            {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
+            {isWinADragOver && (
+              <div className="absolute inset-0 bg-blue-950/90 backdrop-blur-xs border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
+                <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-blue-400" />
+                <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win A で開く</span>
+                <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
+              </div>
+            )}
+
             {/* Win A タイトルバー (Tear-off & Docking 対応) */}
             <div
               id={isWinAFloating ? undefined : 'docked-winA-tab'}
@@ -1384,14 +1478,31 @@ export const CellWindow: React.FC = () => {
               ref={winBDrag.targetRef}
               style={isWinBFloating ? { position: 'fixed', top: 0, left: 0, zIndex: 50 } : undefined}
               onClick={() => setActiveViewIndex(1)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsWinBDragOver(true);
+              }}
+              onDragLeave={() => setIsWinBDragOver(false)}
+              onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
               className={`flex flex-col overflow-hidden border-2 ${
-                isWinBFloating
+                isWinBDragOver
+                  ? 'border-emerald-500 ring-4 ring-emerald-500/50'
+                  : isWinBFloating
                   ? 'w-[680px] h-[520px] bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
                   : `flex-1 relative rounded ${
                       activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
                     }`
               }`}
             >
+              {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
+              {isWinBDragOver && (
+                <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs border-2 border-dashed border-emerald-300 rounded flex flex-col items-center justify-center text-emerald-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
+                  <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-emerald-400" />
+                  <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win B で開く</span>
+                  <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
+                </div>
+              )}
+
               {/* Win B タイトルバー (Tear-off & Docking 対応) */}
               <div
                 id={isWinBFloating ? undefined : 'docked-winB-tab'}
