@@ -185,7 +185,7 @@ export const App: React.FC = () => {
           {/* Right Docking Panels Column (Resizable Width & Resizable Height Dividers) */}
           <div
             style={{ width: `${rightSidebarWidth}px` }}
-            className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
+            className="flex flex-col gap-0 overflow-y-auto no-scrollbar border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
           >
             {/* 左端ドラッグリサイズハンドルバー (横幅調整) */}
             <div
