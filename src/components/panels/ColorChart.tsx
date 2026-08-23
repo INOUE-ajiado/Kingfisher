@@ -49,6 +49,12 @@ export const ColorChart: React.FC = () => {
     }
 
     setActiveDragColor(null);
+
+    // ⚡ 二重ガード: ドロップ完了時にチップを即時強制非表示化
+    const tooltipElem = document.getElementById('eyedropper-drag-tooltip');
+    if (tooltipElem) {
+      tooltipElem.style.display = 'none';
+    }
   };
 
   // フローティング用ドラッグ状態

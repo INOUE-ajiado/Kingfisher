@@ -168,20 +168,27 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
           }
         };
 
-        const onGlobalPointerUp = () => {
-          window.removeEventListener('pointermove', onGlobalPointerMove);
-          window.removeEventListener('pointerup', onGlobalPointerUp);
+        const cleanupDrag = () => {
+          window.removeEventListener('pointermove', onGlobalPointerMove, true);
+          window.removeEventListener('pointerup', cleanupDrag, true);
+          window.removeEventListener('mouseup', cleanupDrag, true);
+          window.removeEventListener('pointercancel', cleanupDrag, true);
+          window.removeEventListener('blur', cleanupDrag);
+
           if (tooltipRef.current) {
             tooltipRef.current.style.display = 'none';
           }
-          // ColorChart 側のドロップ完了を待ってクリア
+
           setTimeout(() => {
             setActiveDragColor(null);
-          }, 100);
+          }, 50);
         };
 
-        window.addEventListener('pointermove', onGlobalPointerMove);
-        window.addEventListener('pointerup', onGlobalPointerUp);
+        window.addEventListener('pointermove', onGlobalPointerMove, true);
+        window.addEventListener('pointerup', cleanupDrag, true);
+        window.addEventListener('mouseup', cleanupDrag, true);
+        window.addEventListener('pointercancel', cleanupDrag, true);
+        window.addEventListener('blur', cleanupDrag);
       }
     }
   };
@@ -411,6 +418,7 @@ const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ is
 
             {/* ⚡ 超高速 Direct DOM GPU コンポジタ描画カーソル追従カラーチップ */}
             <div
+              id="eyedropper-drag-tooltip"
               ref={tooltipRef}
               style={{
                 position: 'fixed',
