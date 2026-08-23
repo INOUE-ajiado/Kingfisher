@@ -89,6 +89,49 @@ export const App: React.FC = () => {
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(320);
 
+  // パネル個別の縦幅 (高さ px) ステート
+  const [panelHeights, setPanelHeights] = React.useState<Record<string, number>>({
+    fileBrowser: 260,
+    colorChart: 260,
+    layerPanel: 180,
+    historyPanel: 160,
+  });
+
+  const activeResizingKeyRef = React.useRef<string | null>(null);
+  const startYRef = React.useRef(0);
+  const startHeightRef = React.useRef(0);
+
+  const handleRowResizeDown = (key: string, currentHeight: number, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    activeResizingKeyRef.current = key;
+    startYRef.current = e.clientY;
+    startHeightRef.current = currentHeight;
+
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {}
+  };
+
+  const handleRowResizeMove = (key: string, e: React.PointerEvent) => {
+    if (activeResizingKeyRef.current !== key) return;
+    const deltaY = e.clientY - startYRef.current;
+    const newHeight = Math.max(60, startHeightRef.current + deltaY);
+    setPanelHeights((prev) => ({
+      ...prev,
+      [key]: newHeight,
+    }));
+  };
+
+  const handleRowResizeUp = (key: string, e: React.PointerEvent) => {
+    if (activeResizingKeyRef.current !== key) return;
+    activeResizingKeyRef.current = null;
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch (err) {}
+  };
+
   const handleRightResizeDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     isRightResizing.current = true;
@@ -139,33 +182,57 @@ export const App: React.FC = () => {
           {panelVisibility.lightTable && <LightTable />}
         </div>
 
-        {/* Right Docking Panels Column (Resizable) */}
-        <div
-          style={{ width: `${rightSidebarWidth}px` }}
-          className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
-        >
-          {/* 左端ドラッグリサイズハンドルバー (境界線をつかんで幅調整) */}
+          {/* Right Docking Panels Column (Resizable Width & Resizable Height Dividers) */}
           <div
-            onPointerDown={handleRightResizeDown}
-            onPointerMove={handleRightResizeMove}
-            onPointerUp={handleRightResizeUp}
-            onPointerCancel={handleRightResizeUp}
-            title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
-            className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
-          />
+            style={{ width: `${rightSidebarWidth}px` }}
+            className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
+          >
+            {/* 左端ドラッグリサイズハンドルバー (横幅調整) */}
+            <div
+              onPointerDown={handleRightResizeDown}
+              onPointerMove={handleRightResizeMove}
+              onPointerUp={handleRightResizeUp}
+              onPointerCancel={handleRightResizeUp}
+              title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
+              className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
+            />
 
-          {/* File Browser */}
-          {panelVisibility.fileBrowser && <FileBrowser />}
+            {(() => {
+              const panels = [
+                { key: 'fileBrowser', visible: panelVisibility.fileBrowser, component: <FileBrowser /> },
+                { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
+                { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
+                { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
+              ].filter((p) => p.visible);
 
-          {/* Color Chart */}
-          {panelVisibility.colorChart && <ColorChart />}
+              return panels.map((panel, idx) => {
+                const isLast = idx === panels.length - 1;
+                const h = panelHeights[panel.key] || 200;
 
-          {/* Layer Panel */}
-          {panelVisibility.layerPanel && <LayerPanel />}
+                return (
+                  <React.Fragment key={panel.key}>
+                    <div
+                      style={isLast ? undefined : { height: `${h}px` }}
+                      className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 min-h-[60px]' : 'flex-shrink-0'}`}
+                    >
+                      {panel.component}
+                    </div>
 
-          {/* History Panel */}
-          {panelVisibility.historyPanel && <HistoryPanel />}
-        </div>
+                    {!isLast && (
+                      <div
+                        onPointerDown={(e) => handleRowResizeDown(panel.key, h, e)}
+                        onPointerMove={(e) => handleRowResizeMove(panel.key, e)}
+                        onPointerUp={(e) => handleRowResizeUp(panel.key, e)}
+                        onPointerCancel={(e) => handleRowResizeUp(panel.key, e)}
+                        title="ドラッグで上下パネルの縦幅を調整"
+                        className="h-1.5 cursor-row-resize hover:bg-blue-500/80 active:bg-blue-600 bg-slate-300 dark:bg-slate-800 transition-colors z-20 touch-none flex-shrink-0 border-y border-slate-300/50 dark:border-slate-700/50"
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              });
+            })()}
+          </div>
       </div>
 
       {/* Modals & Guards */}
