@@ -1,26 +1,44 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { convertImageToSVG } from '../../engine/vectorTrace';
-import { X, Download, Sliders, FileCode, Check } from 'lucide-react';
+import { X, Download, Sliders, FileCode, Check, Loader2 } from 'lucide-react';
 
 export const ExportVectorModal: React.FC = () => {
   const { activeModal, setActiveModal, currentImage, unifiedFileList, currentFileIndex } = usePaintStore();
   const [tolerance, setTolerance] = useState<number>(1.0);
   const [ignoreWhite, setIgnoreWhite] = useState<boolean>(true);
   const [copied, setCopied] = useState<boolean>(false);
+  const [svgString, setSvgString] = useState<string>('');
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   const isOpen = activeModal === 'exportVector';
 
-  // リアルタイムSVGトレース変換
-  const svgString = useMemo(() => {
-    if (!isOpen || !currentImage) return '';
-    return convertImageToSVG(currentImage, { tolerance, ignoreWhite });
+  // 非同期・メモリ安全なSVGトレース変換
+  useEffect(() => {
+    if (!isOpen || !currentImage) {
+      setSvgString('');
+      return;
+    }
+
+    setIsProcessing(true);
+    const timer = setTimeout(() => {
+      try {
+        const svg = convertImageToSVG(currentImage, { tolerance, ignoreWhite });
+        setSvgString(svg);
+      } catch (err) {
+        console.error('Failed to trace vector SVG:', err);
+      } finally {
+        setIsProcessing(false);
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [isOpen, currentImage, tolerance, ignoreWhite]);
 
   if (!isOpen) return null;
 
   const fileName = (unifiedFileList[currentFileIndex] || 'Cell_0001.tga').replace(/\.[^/.]+$/, '');
-  const svgByteSize = new Blob([svgString]).size;
+  const svgByteSize = svgString ? new Blob([svgString]).size : 0;
   const formattedSize = (svgByteSize / 1024).toFixed(1);
 
   // SVGファイルダウンロード保存
@@ -120,8 +138,13 @@ export const ExportVectorModal: React.FC = () => {
           {/* 右側: リアルタイムSVGプレビュー */}
           <div className="flex-1 flex flex-col gap-2 min-h-[220px]">
             <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">SVG ベクタープレビュー:</span>
-            <div className="flex-1 bg-slate-200 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 flex items-center justify-center overflow-hidden relative checkerboard-pattern min-h-[200px]">
-              {svgString ? (
+            <div className="flex-1 bg-slate-200 dark:bg-slate-950 border border-slate-300 dark:border-slate-800 rounded-lg p-2 flex items-center justify-center overflow-hidden relative min-h-[200px]">
+              {isProcessing ? (
+                <div className="flex flex-col items-center gap-2 text-blue-500 text-xs font-semibold">
+                  <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                  <span>ベクトルトレース生成中...</span>
+                </div>
+              ) : svgString ? (
                 <div
                   className="w-full h-full max-h-[240px] flex items-center justify-center"
                   dangerouslySetInnerHTML={{ __html: svgString }}
@@ -137,7 +160,8 @@ export const ExportVectorModal: React.FC = () => {
         <div className="h-12 bg-slate-50 dark:bg-slate-800/80 px-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <button
             onClick={handleCopySVG}
-            className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
+            disabled={!svgString || isProcessing}
+            className="px-3 py-1.5 rounded text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 transition-colors"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <FileCode className="w-3.5 h-3.5" />}
             <span>{copied ? 'コピー完了' : 'SVGコードをコピー'}</span>
@@ -152,7 +176,8 @@ export const ExportVectorModal: React.FC = () => {
             </button>
             <button
               onClick={handleDownloadSVG}
-              className="px-4 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 shadow-md transition-colors"
+              disabled={!svgString || isProcessing}
+              className="px-4 py-1.5 rounded text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white flex items-center gap-1.5 shadow-md transition-colors"
             >
               <Download className="w-4 h-4" />
               <span>SVGファイルを保存</span>

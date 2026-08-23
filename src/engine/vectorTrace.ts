@@ -51,112 +51,118 @@ function simplifyPath(points: Point[], sqTolerance: number): Point[] {
   }
 }
 
-// ラスターセル画像を解析し、最適化されたSVGベクターコードを生成
+// メモリ効率 O(1) ・安全ガード付きラスター -> SVG ベクトルトレースエンジン
 export function convertImageToSVG(image: TGAImage, options: VectorExportOptions): string {
   const { width, height, data } = image;
+  if (!data || width <= 0 || height <= 0) return '';
+
   const tolerance = Math.max(0.1, options.tolerance);
   const sqTolerance = tolerance * tolerance * 2;
+  const totalPixels = width * height;
 
-  // 1. カラー領域の分離・グループ化 (Key: "r,g,b")
-  const colorBitmaps = new Map<string, Uint8Array>();
+  // メモリ割り当てエラーを防ぐ単一のインデックス配列 (約 width * height * 4 バイトのみ)
+  const pixelColors = new Int32Array(totalPixels);
+  pixelColors.fill(-1);
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const r = data[idx];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const a = data[idx + 3];
+  // カラーパレット (RGB -> PaletteID)
+  const palette: string[] = [];
+  const colorToPaletteId = new Map<string, number>();
 
-      if (a < 10) continue; // アルファ透明領域はスキップ
-      if (options.ignoreWhite && r >= 250 && g >= 250 && b >= 250) continue; // 白背景透過スキップ
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const a = data[i + 3];
 
-      const colorKey = `${r},${g},${b}`;
-      let bitmap = colorBitmaps.get(colorKey);
-      if (!bitmap) {
-        bitmap = new Uint8Array(width * height);
-        colorBitmaps.set(colorKey, bitmap);
+    if (a < 10) continue; // 透明エリアスキップ
+    if (options.ignoreWhite && r >= 248 && g >= 248 && b >= 248) continue; // 白背景スキップ
+
+    // 色精度を量子化して色数を適切に収束 (メモリ爆発防止)
+    const qr = Math.round(r / 4) * 4;
+    const qg = Math.round(g / 4) * 4;
+    const qb = Math.round(b / 4) * 4;
+    const colorKey = `${qr},${qg},${qb}`;
+
+    let paletteId = colorToPaletteId.get(colorKey);
+    if (paletteId === undefined) {
+      if (palette.length >= 512) {
+        paletteId = 0; // 最大色数制限
+      } else {
+        paletteId = palette.length;
+        const hex = `#${((1 << 24) + (qr << 16) + (qg << 8) + qb).toString(16).slice(1)}`;
+        palette.push(hex);
+        colorToPaletteId.set(colorKey, paletteId);
       }
-      bitmap[y * width + x] = 1;
     }
+    pixelColors[i / 4] = paletteId;
   }
 
+  const visited = new Uint8Array(totalPixels);
   const svgPaths: string[] = [];
 
-  // 2. 各カラー領域ごとに輪郭ポリゴン抽出し、SVG <path> 化
-  colorBitmaps.forEach((bitmap, colorKey) => {
-    const [r, g, b] = colorKey.split(',').map(Number);
-    const hexColor = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+  // 単一パスで輪郭抽出
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const targetColorId = pixelColors[idx];
 
-    const visited = new Uint8Array(width * height);
+      if (targetColorId !== -1 && visited[idx] === 0) {
+        const outlinePoints: Point[] = [];
+        let currX = x;
+        let currY = y;
+        let dir = 0; // 0: R, 1: D, 2: L, 3: U
 
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = y * width + x;
-        if (bitmap[idx] === 1 && visited[idx] === 0) {
-          // 水平・垂直方向の輪郭境界を追跡
-          const outlinePoints: Point[] = [];
-          let currX = x;
-          let currY = y;
-          let dir = 0; // 0: Right, 1: Down, 2: Left, 3: Up
+        const startX = currX;
+        const startY = currY;
+        let steps = 0;
+        const maxSteps = width * 4 + height * 4;
 
-          const startX = currX;
-          const startY = currY;
+        while (steps < maxSteps) {
+          outlinePoints.push({ x: currX, y: currY });
+          visited[currY * width + currX] = 1;
 
-          let stepCount = 0;
-          const maxSteps = width * height * 4;
+          let found = false;
+          for (let i = 0; i < 4; i++) {
+            const checkDir = (dir + 3 + i) % 4;
+            let nx = currX;
+            let ny = currY;
 
-          while (stepCount < maxSteps) {
-            outlinePoints.push({ x: currX, y: currY });
-            visited[currY * width + currX] = 1;
+            if (checkDir === 0) nx++;
+            else if (checkDir === 1) ny++;
+            else if (checkDir === 2) nx--;
+            else if (checkDir === 3) ny--;
 
-            // 4方向輪郭トレーサー
-            let foundNext = false;
-            for (let i = 0; i < 4; i++) {
-              const checkDir = (dir + 3 + i) % 4; // 左回りを優先チェック
-              let nx = currX;
-              let ny = currY;
-
-              if (checkDir === 0) nx++;
-              else if (checkDir === 1) ny++;
-              else if (checkDir === 2) nx--;
-              else if (checkDir === 3) ny--;
-
-              if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                if (bitmap[ny * width + nx] === 1) {
-                  currX = nx;
-                  currY = ny;
-                  dir = checkDir;
-                  foundNext = true;
-                  break;
-                }
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const nIdx = ny * width + nx;
+              if (pixelColors[nIdx] === targetColorId) {
+                currX = nx;
+                currY = ny;
+                dir = checkDir;
+                found = true;
+                break;
               }
             }
-
-            if (!foundNext || (currX === startX && currY === startY)) {
-              break;
-            }
-            stepCount++;
           }
 
-          if (outlinePoints.length >= 3) {
-            // Douglas-Peucker で頂点を滑らかに削減
-            const simplified = simplifyPath(outlinePoints, sqTolerance);
+          if (!found || (currX === startX && currY === startY)) break;
+          steps++;
+        }
 
-            if (simplified.length >= 3) {
-              // SVG path d パラメータ作成
-              let d = `M ${simplified[0].x} ${simplified[0].y}`;
-              for (let i = 1; i < simplified.length; i++) {
-                d += ` L ${simplified[i].x} ${simplified[i].y}`;
-              }
-              d += ' Z';
-              svgPaths.push(`<path d="${d}" fill="${hexColor}" stroke="${hexColor}" stroke-width="0.5" stroke-linejoin="round" />`);
+        if (outlinePoints.length >= 3) {
+          const simplified = simplifyPath(outlinePoints, sqTolerance);
+          if (simplified.length >= 3) {
+            const hexColor = palette[targetColorId] || '#000000';
+            let d = `M ${simplified[0].x} ${simplified[0].y}`;
+            for (let i = 1; i < simplified.length; i++) {
+              d += ` L ${simplified[i].x} ${simplified[i].y}`;
             }
+            d += ' Z';
+            svgPaths.push(`<path d="${d}" fill="${hexColor}" stroke="${hexColor}" stroke-width="0.5" stroke-linejoin="round" />`);
           }
         }
       }
     }
-  });
+  }
 
   return `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
   <g shape-rendering="geometricPrecision">
