@@ -64,7 +64,7 @@ export const MenuBar: React.FC = () => {
   const handleOpenFolderDir = async () => {
     if ('showDirectoryPicker' in window) {
       try {
-        const rootHandle = await (window as any).showDirectoryPicker();
+        const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
         const rootName: string = rootHandle.name;
         const subDirs: any[] = [];
 

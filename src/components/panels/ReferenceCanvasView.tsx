@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { isSupportedImageFile } from '../../engine/fileSystemPath';
 import { decodeAnyImageFile } from '../../engine/imageDecode';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
@@ -88,7 +89,7 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
 
     const file = files[0];
     const lower = file.name.toLowerCase();
-    if (lower.endsWith('.tga') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
+    if (isSupportedImageFile(lower)) {
       try {
         const decoded = await decodeAnyImageFile(file);
         openReferenceImage(null, file.name, decoded);

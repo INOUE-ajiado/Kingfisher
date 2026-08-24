@@ -440,7 +440,7 @@ export const FileBrowser: React.FC = () => {
     }
 
     try {
-      const rootHandle = await (window as any).showDirectoryPicker();
+      const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
       const rootName: string = rootHandle.name;
       const subDirs: SubDirectoryItem[] = [];
 
@@ -506,7 +506,7 @@ export const FileBrowser: React.FC = () => {
 
     if ('showDirectoryPicker' in window) {
       try {
-        const handle = await (window as any).showDirectoryPicker();
+        const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
         const filesMap = new Map<string, File>();
         await collectImageFilesRecursively(handle, handle.name, filesMap);
 
