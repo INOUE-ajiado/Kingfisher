@@ -156,6 +156,18 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
       await writable.close();
 
       invalidateCachedImage(get().getImageCacheKey(view, fileName));
+
+      // ⚠️ 開いた時点の File スナップショット (fileMapA/B) を捨てる。
+      // 残しておくと、ハンドル経由の読み出しが失敗したときに
+      // フォールバックが保存前の内容を返し、保存したのに古い画像が出る。
+      // ここへ到達している = 書き込み可能なハンドルがある、なので消して安全。
+      const staleMap = view === 1 ? get().fileMapB : get().fileMapA;
+      if (staleMap.has(fileName)) {
+        const nextMap = new Map(staleMap);
+        nextMap.delete(fileName);
+        set(view === 1 ? { fileMapB: nextMap } : { fileMapA: nextMap });
+      }
+
       clearDirty(view);
 
       return { ok: true, message: `${label} の [${fileName}] を上書き保存しました。` };

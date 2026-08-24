@@ -358,6 +358,54 @@ describe('document スライス — 保存', () => {
   });
 });
 
+describe('file スライス — フォルダハンドルと実体の対応', () => {
+  it('filesMap を渡すとそのまま保持する', () => {
+    const map = new Map([['dirA/a_0001.tga', new File([], 'a_0001.tga')]]);
+    s().setFolderHandleA({ name: 'dirA' }, 'dirA', ['dirA/a_0001.tga'], map);
+
+    expect(s().fileMapA).toBe(map);
+  });
+
+  it('filesMap を渡さないと前のフォルダの残骸を消す', () => {
+    s().setCustomDropFolderA(
+      'dropped',
+      new Map([['dropped/x_0001.tga', new File([], 'x_0001.tga')]]),
+      ['dropped/x_0001.tga']
+    );
+    expect(s().fileMapA.size).toBe(1);
+
+    // 別フォルダを開き直したのに古い実体が残ると、
+    // ハンドル経由の読み出しが失敗したとき前のフォルダの画像が出てしまう
+    s().setFolderHandleA({ name: 'dirA' }, 'dirA', ['dirA/a_0001.tga']);
+    expect(s().fileMapA.size).toBe(0);
+  });
+});
+
+describe('document スライス — 保存後のスナップショット', () => {
+  it('保存に成功したら開いた時点の File を捨てる', async () => {
+    const map = new Map([['dirA/a_0001.tga', new File([], 'a_0001.tga')]]);
+    s().setFolderHandleA({ name: 'dirA' }, 'dirA', ['dirA/a_0001.tga'], map);
+
+    usePaintStore.setState({
+      folderHandleA: {
+        getDirectoryHandle: async () => { throw new Error('サブフォルダは無い'); },
+        getFileHandle: async () => ({
+          createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+        }),
+      },
+      currentImage: makeImage(7),
+      activeViewIndex: 0,
+      rootFolderName: 'dirA',
+    });
+
+    const result = await s().saveActiveCell();
+
+    expect(result.ok).toBe(true);
+    // 残すと、次の読み込みで保存前の内容が返ってしまう
+    expect(s().fileMapA.has('dirA/a_0001.tga')).toBe(false);
+  });
+});
+
 describe('document スライス — 画像キャッシュ', () => {
   it('キーにフォルダ名が含まれ、別フォルダの同名ファイルと衝突しない', () => {
     s().setFolderHandleA(null, 'cut_A', ['0001.tga']);
