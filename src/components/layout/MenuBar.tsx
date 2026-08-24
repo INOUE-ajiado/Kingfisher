@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
-import { Columns, Link, Link2Off, Pipette, Save } from 'lucide-react';
+import { Columns, Pipette, Save } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -409,7 +409,8 @@ export const MenuBar: React.FC = () => {
           </span>
         </button>
 
-        {/* 統合アクションボタン群 (左右比較・左右連動・参照画像) */}
+        {/* 統合アクションボタン群 (左右比較・見本ビューア) */}
+        {/* 左右連動はファイルブラウザ側に同じ操作があるため、ここには置かない */}
         <div className="flex items-center gap-1 border-r border-slate-200 dark:border-slate-800 pr-2">
           <button
             onClick={toggleIsSplitView}
@@ -424,28 +425,13 @@ export const MenuBar: React.FC = () => {
             <span>左右に並べる</span>
           </button>
 
-          {isSplitView && (
-            <button
-              onClick={toggleSyncMode}
-              title="左右ウィンドウのコマ送りを完全同調・連動"
-              className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
-                syncMode
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700'
-              }`}
-            >
-              {syncMode ? <Link className="w-3.5 h-3.5" /> : <Link2Off className="w-3.5 h-3.5" />}
-              <span>左右連動</span>
-            </button>
-          )}
-
           <button
             onClick={handleOpenReference}
-            title="作画比較用の参照画像 (TGA/PNG/JPG) を開く"
-            className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-white shadow-xs transition-colors"
+            title="作画比較用の見本画像 (TGA/PNG/JPG) を開く"
+            className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
           >
             <Pipette className="w-3.5 h-3.5" />
-            <span>参照画像を開く</span>
+            <span>見本ビューア</span>
           </button>
         </div>
       </div>
