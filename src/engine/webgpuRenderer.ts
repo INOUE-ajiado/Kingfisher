@@ -1,4 +1,12 @@
 /**
+ * ⚠️ 【保留中 / 未接続】WebGPU レンダリング基盤
+ *
+ * 現在の描画は CellWindow.tsx の Canvas 2D (putImageData) が担当しており、
+ * このファイルはどこからも import されていない。
+ * 将来 WebGPU へ切り替える際の土台として意図的に残してある。
+ * 編集しても現在のアプリの挙動には一切影響しない点に注意。
+ */
+/**
  * WebGPU High-Performance Renderer for Kingfisher
  * Provides WGSL Fragment Shader execution for Pure-White Alpha Translucency
  * and Multi-texture Light Table Layer Blending.

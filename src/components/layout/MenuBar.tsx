@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { encodeTGA, decodeTGA } from '../../engine/tga';
-import { Columns, Link, Link2Off, Pipette } from 'lucide-react';
+import { decodeTGA } from '../../engine/tga';
+import { Columns, Link, Link2Off, Pipette, Save } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -13,16 +13,9 @@ export const MenuBar: React.FC = () => {
   const {
     isDarkMode,
     toggleDarkMode,
-    currentImage,
     setCurrentImage,
-    folderHandleA,
-    folderHandleB,
     setFolderHandleA,
     setFolderFilesA,
-    unifiedFileList,
-    currentFileIndex,
-    splitFileIndex,
-    activeViewIndex,
     nextCell,
     prevCell,
     undo,
@@ -54,6 +47,9 @@ export const MenuBar: React.FC = () => {
     colorSpecLayoutMode,
     setColorSpecLayoutMode,
     setAutoRevertTool,
+    saveActiveCell,
+    isDirtyA,
+    isDirtyB,
   } = usePaintStore();
 
   useEffect(() => {
@@ -185,26 +181,11 @@ export const MenuBar: React.FC = () => {
     }
   };
 
+  // 保存処理はストア (saveActiveCell) に一本化されている。
+  // アクティブビューの画像を、そのビュー側の実ファイル名へ書き戻す。
   const handleSave = async () => {
-    const targetFolderHandle = activeViewIndex === 1 && folderHandleB ? folderHandleB : folderHandleA;
-    const targetFileIndex = activeViewIndex === 1 ? splitFileIndex : currentFileIndex;
-    const targetFileName = unifiedFileList[targetFileIndex];
-
-    if (currentImage && targetFolderHandle && targetFileName) {
-      try {
-        const fileHandle = await targetFolderHandle.getFileHandle(targetFileName, { create: true });
-        const writable = await fileHandle.createWritable();
-        const buffer = encodeTGA(currentImage);
-        await writable.write(buffer);
-        await writable.close();
-        alert(`アクティブウィンドウ (${activeViewIndex === 1 ? 'Win B / Retake' : 'Win A / Orig'}) のファイル [${targetFileName}] を上書き保存しました。`);
-      } catch (err) {
-        console.error('Failed to save file:', err);
-        alert('保存に失敗しました。');
-      }
-    } else {
-      alert('保存可能なフォルダ・ファイルが開かれていません。');
-    }
+    const result = await saveActiveCell();
+    alert(result.message);
   };
 
   const menuData = [
@@ -420,6 +401,25 @@ export const MenuBar: React.FC = () => {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* 💾 未保存インジケーター ＆ 保存ボタン */}
+        <button
+          id="save-current-cell-btn"
+          onClick={handleSave}
+          title="アクティブなウィンドウのセルを上書き保存 (Ctrl+S)"
+          className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border ${
+            isDirtyA || isDirtyB
+              ? 'bg-orange-500 hover:bg-orange-600 text-white border-orange-600 shadow-xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-700'
+          }`}
+        >
+          <Save className="w-3.5 h-3.5" />
+          <span>
+            {isDirtyA || isDirtyB
+              ? `未保存${isDirtyA ? ' A' : ''}${isDirtyB ? ' B' : ''}`
+              : '保存済み'}
+          </span>
+        </button>
+
         {/* 統合アクションボタン群 (左右比較・左右連動・参照画像) */}
         <div className="flex items-center gap-1 border-r border-slate-200 dark:border-slate-800 pr-2">
           <button

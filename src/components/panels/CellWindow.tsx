@@ -1,523 +1,20 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { floodFill, gradientFill, closedAreaFill, drawBrushLine, removeSingleNoiseAt } from '../../engine/paintAlgorithm';
-import { decodeTGA } from '../../engine/tga';
-import { AlertTriangle, X, Maximize2, Minimize2, Pipette, FolderOpen } from 'lucide-react';
+import {
+  floodFill,
+  gradientFill,
+  closedAreaFill,
+  drawBrushLine,
+  removeSingleNoiseAt,
+  sampleColorAt,
+} from '../../engine/paintAlgorithm';
+import { cloneTGAImage, createCheckerPattern } from '../../engine/imageDecode';
+import { AlertTriangle, Maximize2, Minimize2, FolderOpen } from 'lucide-react';
 import { useFastDraggable } from '../../hooks/useFastDraggable';
 import { useResizableWindow } from '../../hooks/useResizableWindow';
+import { useFrameLoader, useCellPrefetch, useOnionSkinFrames } from '../../hooks/useFrameLoader';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
-
-function createCheckerPattern(ctx: CanvasRenderingContext2D, size: number = 8): CanvasPattern | null {
-  const patternCanvas = document.createElement('canvas');
-  patternCanvas.width = size * 2;
-  patternCanvas.height = size * 2;
-  const pCtx = patternCanvas.getContext('2d');
-  if (!pCtx) return null;
-
-  pCtx.fillStyle = '#FFFFFF';
-  pCtx.fillRect(0, 0, size * 2, size * 2);
-  pCtx.fillStyle = '#CBD5E1';
-  pCtx.fillRect(0, 0, size, size);
-  pCtx.fillRect(size, size, size, size);
-
-  return ctx.createPattern(patternCanvas, 'repeat');
-}
-
-const ReferenceCanvasView: React.FC<{ isFloating?: boolean }> = React.memo(({ isFloating = false }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const {
-    referenceCanvas,
-    closeReferenceWindow,
-    toggleReferenceFloating,
-    setReferenceTransform,
-    pickColorFromReference,
-    openReferenceImage,
-    setActiveDragColor,
-  } = usePaintStore();
-
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
-
-  // ⚡ 超高速 GPU コンポジタ追従用 Direct DOM Ref
-  const tooltipRef = useRef<HTMLDivElement | null>(null);
-  const tooltipBoxRef = useRef<HTMLDivElement | null>(null);
-  const tooltipTextRef = useRef<HTMLSpanElement | null>(null);
-
-  // ⚠️ 最適化仕様書準拠: React State を介さない超高速 GPU コンポジトリドラッグフック
-  const { targetRef, currentPos, setPosition } = useFastDraggable({
-    initialX: 120,
-    initialY: 80,
-    enabled: isFloating,
-  });
-
-  // ⚡ 全4角マルチ方向コーナーリサイズフック
-  const { getResizeHandler } = useResizableWindow(targetRef, currentPos, setPosition, {
-    minWidth: 240,
-    minHeight: 200,
-    enabled: isFloating,
-  });
-
-  // Drag & Drop ハイライトステート
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  const refImage = referenceCanvas.image;
-
-  // Drag & Drop 画像ファイルドロップ受領制御
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
-    const lower = file.name.toLowerCase();
-    if (lower.endsWith('.tga') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
-      try {
-        const decoded = await decodeAnyImageFile(file);
-        openReferenceImage(null, file.name, decoded);
-      } catch (err) {
-        console.error('Failed to load dropped reference image:', err);
-        alert('参照画像の読み込みに失敗しました。');
-      }
-    } else {
-      alert('対応している画像ファイル (.tga, .jpg, .png) をドロップしてください。');
-    }
-  };
-
-  useEffect(() => {
-    const renderCanvas = () => {
-      const canvas = canvasRef.current;
-      if (!canvas || !refImage) return;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      if (canvas.width !== refImage.width || canvas.height !== refImage.height) {
-        canvas.width = refImage.width;
-        canvas.height = refImage.height;
-      }
-
-      const imgData = ctx.createImageData(refImage.width, refImage.height);
-      imgData.data.set(refImage.data);
-      ctx.putImageData(imgData, 0, 0);
-    };
-
-    renderCanvas();
-    const animId = requestAnimationFrame(renderCanvas);
-    return () => cancelAnimationFrame(animId);
-  }, [refImage, isFloating, referenceCanvas.isOpen]);
-
-  const getPixelColorAt = (clientX: number, clientY: number) => {
-    if (!canvasRef.current || !refImage) return null;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const scaleX = canvasRef.current.width / rect.width;
-    const scaleY = canvasRef.current.height / rect.height;
-    const x = Math.floor((clientX - rect.left) * scaleX);
-    const y = Math.floor((clientY - rect.top) * scaleY);
-
-    if (x >= 0 && x < refImage.width && y >= 0 && y < refImage.height) {
-      const idx = (y * refImage.width + x) * 4;
-      const r = refImage.data[idx];
-      const g = refImage.data[idx + 1];
-      const b = refImage.data[idx + 2];
-      const a = refImage.data[idx + 3];
-      const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
-
-      return { r, g, b, a, hex };
-    }
-    return null;
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // 中ボタン (1) または 右ボタン (2): パン移動
-    if (e.button === 1 || e.button === 2) {
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - referenceCanvas.transform.offsetX, y: e.clientY - referenceCanvas.transform.offsetY });
-      return;
-    }
-
-    // 🌟 左クリック (0): 最初のクリック色を完全に固定（Initial Color Lock）し超高速GPUドラッグ開始
-    if (e.button === 0) {
-      const colorObj = getPixelColorAt(e.clientX, e.clientY);
-      if (colorObj) {
-        pickColorFromReference(colorObj);
-        setActiveDragColor(colorObj); // 最初のクリック色を固定ロック
-
-        // DOM 要素の初期位置 ＆ 表示設定
-        if (tooltipRef.current) {
-          tooltipRef.current.style.transform = `translate3d(${e.clientX + 14}px, ${e.clientY + 14}px, 0)`;
-          tooltipRef.current.style.display = 'flex';
-        }
-        if (tooltipBoxRef.current) {
-          tooltipBoxRef.current.style.backgroundColor = colorObj.hex;
-        }
-        if (tooltipTextRef.current) {
-          tooltipTextRef.current.innerText = `${colorObj.hex} (ColorChartへドロップ)`;
-        }
-
-        // ⚡ Direct DOM 全画面コンポジタドラッグ追従（ヌルヌル完全同期）
-        const onGlobalPointerMove = (moveEvt: PointerEvent) => {
-          if (tooltipRef.current) {
-            tooltipRef.current.style.transform = `translate3d(${moveEvt.clientX + 14}px, ${moveEvt.clientY + 14}px, 0)`;
-          }
-        };
-
-        const cleanupDrag = () => {
-          window.removeEventListener('pointermove', onGlobalPointerMove, true);
-          window.removeEventListener('pointerup', cleanupDrag, true);
-          window.removeEventListener('mouseup', cleanupDrag, true);
-          window.removeEventListener('pointercancel', cleanupDrag, true);
-          window.removeEventListener('blur', cleanupDrag);
-
-          if (tooltipRef.current) {
-            tooltipRef.current.style.display = 'none';
-          }
-
-          setTimeout(() => {
-            setActiveDragColor(null);
-          }, 50);
-        };
-
-        window.addEventListener('pointermove', onGlobalPointerMove, true);
-        window.addEventListener('pointerup', cleanupDrag, true);
-        window.addEventListener('mouseup', cleanupDrag, true);
-        window.addEventListener('pointercancel', cleanupDrag, true);
-        window.addEventListener('blur', cleanupDrag);
-      }
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isPanning) {
-      setReferenceTransform({
-        ...referenceCanvas.transform,
-        offsetX: e.clientX - panStart.x,
-        offsetY: e.clientY - panStart.y,
-      });
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (isPanning) setIsPanning(false);
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newScale = Math.min(Math.max(0.2, referenceCanvas.transform.scale * zoomFactor), 5.0);
-    setReferenceTransform({ ...referenceCanvas.transform, scale: newScale });
-  };
-
-  // ⚠️ 完全シームレスな引きはがし (Tear-off) ＆ 独立ウィンドウ自由移動ハンドラー
-  const isDraggingHeader = useRef(false);
-  const dragOffset = useRef({ x: 160, y: 12 });
-  const [isNearDockArea, setIsNearDockArea] = useState(false);
-
-  const handleHeaderPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-
-    isDraggingHeader.current = true;
-
-    if (isFloating && currentPos.current) {
-      dragOffset.current = {
-        x: e.clientX - currentPos.current.x,
-        y: e.clientY - currentPos.current.y,
-      };
-    } else {
-      dragOffset.current = { x: 160, y: 12 };
-    }
-
-    const onWindowPointerMove = (moveEvent: PointerEvent) => {
-      if (!isDraggingHeader.current) return;
-
-      const currentFloating = usePaintStore.getState().referenceCanvas.isFloating;
-
-      if (!currentFloating) {
-        // 1. 固定ウィンドウからの引きはがし判定
-        const dist = Math.hypot(moveEvent.clientX - e.clientX, moveEvent.clientY - e.clientY);
-        if (dist > 6) {
-          const spawnX = Math.max(10, moveEvent.clientX - dragOffset.current.x);
-          const spawnY = Math.max(10, moveEvent.clientY - dragOffset.current.y);
-          setPosition(spawnX, spawnY);
-          toggleReferenceFloating();
-        }
-      } else {
-        // 2. 独立ウィンドウ時: 画面上どこへでも自由に即時移動
-        const newX = Math.max(0, moveEvent.clientX - dragOffset.current.x);
-        const newY = Math.max(0, moveEvent.clientY - dragOffset.current.y);
-        setPosition(newX, newY);
-
-        // タブドッキング判定（※タブ部分のみ）
-        const tabElem1 = document.getElementById('docked-reference-tab');
-        const tabElem2 = document.getElementById('docked-reference-tab-bar');
-        const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
-
-        if (targetElem) {
-          const rect = targetElem.getBoundingClientRect();
-          const padding = 25;
-          const isOver =
-            moveEvent.clientX >= rect.left - padding &&
-            moveEvent.clientX <= rect.right + padding &&
-            moveEvent.clientY >= rect.top - padding &&
-            moveEvent.clientY <= rect.bottom + padding;
-
-          setIsNearDockArea(isOver);
-        } else {
-          setIsNearDockArea(false);
-        }
-      }
-    };
-
-    const onWindowPointerUp = (upEvent: PointerEvent) => {
-      isDraggingHeader.current = false;
-      window.removeEventListener('pointermove', onWindowPointerMove);
-      window.removeEventListener('pointerup', onWindowPointerUp);
-
-      const currentFloating = usePaintStore.getState().referenceCanvas.isFloating;
-      if (currentFloating) {
-        const tabElem1 = document.getElementById('docked-reference-tab');
-        const tabElem2 = document.getElementById('docked-reference-tab-bar');
-        const targetElem = (tabElem2 && tabElem2.offsetParent !== null) ? tabElem2 : tabElem1;
-
-        if (targetElem) {
-          const rect = targetElem.getBoundingClientRect();
-          const padding = 25;
-          const isOver =
-            upEvent.clientX >= rect.left - padding &&
-            upEvent.clientX <= rect.right + padding &&
-            upEvent.clientY >= rect.top - padding &&
-            upEvent.clientY <= rect.bottom + padding;
-
-          if (isOver) {
-            setIsNearDockArea(false);
-            toggleReferenceFloating();
-            return;
-          }
-        }
-
-        // ドッキング外で離した場合: クリックを離した場所へ確定展開
-        const finalX = Math.max(0, upEvent.clientX - dragOffset.current.x);
-        const finalY = Math.max(0, upEvent.clientY - dragOffset.current.y);
-        setPosition(finalX, finalY);
-      }
-    };
-
-    window.addEventListener('pointermove', onWindowPointerMove);
-    window.addEventListener('pointerup', onWindowPointerUp);
-  };
-
-  return (
-    <div
-      ref={targetRef}
-      style={
-        isFloating
-          ? {
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              zIndex: 50,
-              width: '360px',
-              height: '420px',
-              resize: 'both',
-              overflow: 'hidden',
-              minWidth: '240px',
-              minHeight: '200px',
-              maxWidth: '85vw',
-              maxHeight: '85vh',
-            }
-          : undefined
-      }
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={`flex flex-col bg-white dark:bg-slate-900 border-2 ${
-        isNearDockArea
-          ? 'border-blue-500 ring-4 ring-blue-500/50'
-          : isDragOver
-          ? 'border-amber-400 ring-4 ring-amber-400/50'
-          : 'border-emerald-600 dark:border-emerald-700'
-      } rounded shadow-2xl relative ${isFloating ? '' : 'flex-1'}`}
-    >
-      {/* ドラッグ＆ドロップ受領オーバーレイ */}
-      {isDragOver && (
-        <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs border-2 border-dashed border-amber-300 rounded flex flex-col items-center justify-center text-amber-300 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
-          <FolderOpen className="w-8 h-8 mb-2 animate-bounce" />
-          <span className="font-bold text-xs">ここにドロップして参照画像を開く</span>
-          <span className="text-[9px] opacity-80 mt-1">.tga / .jpg / .png に対応</span>
-        </div>
-      )}
-
-      {/* ドッキング復帰ガイドオーバーレイ */}
-      {isFloating && isNearDockArea && (
-        <div className="absolute inset-0 bg-blue-950/80 backdrop-blur-xs border-2 border-dashed border-blue-400 rounded flex flex-col items-center justify-center text-blue-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
-          <Minimize2 className="w-8 h-8 mb-2 animate-pulse text-blue-400" />
-          <span className="font-bold text-xs">ドロップしてタブ表示に戻す (Docking)</span>
-        </div>
-      )}
-
-      {/* ⚠️ タブ（タイトルバー）: Drag to tear off (独立化) & Drag to dock (復帰) */}
-      <div
-        id={isFloating ? undefined : 'docked-reference-tab-bar'}
-        onPointerDown={handleHeaderPointerDown}
-        className="h-6 bg-gradient-to-r from-emerald-600 to-emerald-500 dark:from-emerald-800 dark:to-emerald-700 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing shadow-xs"
-      >
-        <div className="flex items-center gap-1.5 truncate">
-          <Pipette className="w-3.5 h-3.5 text-emerald-200" />
-          <span>【参照】 {referenceCanvas.fileName}</span>
-          <span className="text-[9px] opacity-80 font-normal ml-1 hidden sm:inline">
-            ({isFloating ? 'ドラッグでドッキング領域へドロップ' : 'タブをドラッグで独立ウィンドウ化'})
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleReferenceFloating();
-            }}
-            title={referenceCanvas.isFloating ? 'ドッキングに戻す' : '切り離してフローティング表示'}
-            className="p-0.5 hover:bg-emerald-700/80 rounded transition-colors"
-          >
-            {referenceCanvas.isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              closeReferenceWindow();
-            }}
-            title="参照ウィンドウを閉じる"
-            className="p-0.5 hover:bg-red-600 rounded transition-colors"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        </div>
-      </div>
-
-      {/* キャンバス領域 (Read-Only) */}
-      <div
-        className="flex-1 bg-slate-200 dark:bg-slate-900 relative flex items-center justify-center overflow-hidden cursor-crosshair"
-        onWheel={handleWheel}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        {refImage ? (
-          <>
-            <div
-              style={{
-                transform: `translate(${referenceCanvas.transform.offsetX}px, ${referenceCanvas.transform.offsetY}px) scale(${referenceCanvas.transform.scale})`,
-                transformOrigin: 'center center',
-                transition: isPanning ? 'none' : 'transform 0.05s ease-out',
-              }}
-              className="shadow-2xl border border-slate-300 dark:border-emerald-900/50 bg-white relative"
-            >
-              <canvas
-                ref={canvasRef}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onContextMenu={(e) => e.preventDefault()}
-                className="block cursor-crosshair"
-              />
-            </div>
-
-            {/* ワイヤーフレーム準拠のアクション案内ラベル */}
-            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/90 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold tracking-wide pointer-events-none shadow-md whitespace-nowrap">
-              ドラッグ＆ドロップでColorChartへ色登録 {referenceCanvas.autoRevertTool ? '(Auto-Revert)' : ''}
-            </div>
-
-            {/* ⚡ 超高速 Direct DOM GPU コンポジタ描画カーソル追従カラーチップ */}
-            <div
-              id="eyedropper-drag-tooltip"
-              ref={tooltipRef}
-              style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                display: 'none',
-                willChange: 'transform',
-                zIndex: 9999,
-              }}
-              className="pointer-events-none items-center gap-1.5 bg-slate-900/90 text-white px-2.5 py-1 rounded-full shadow-2xl border border-white/40 select-none"
-            >
-              <div
-                ref={tooltipBoxRef}
-                className="w-4 h-4 rounded-full border border-white shadow-xs"
-              />
-              <span ref={tooltipTextRef} className="text-[10px] font-mono font-bold">
-                #FFFFFF (ColorChartへドロップ)
-              </span>
-            </div>
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/90 border border-slate-300 dark:border-slate-800 rounded-xl shadow-lg backdrop-blur m-4 select-none">
-            <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-2 text-emerald-600 dark:text-emerald-400">
-              <Pipette className="w-5 h-5" />
-            </div>
-            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO REFERENCE IMAGE</h4>
-            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
-              画像をここにドラッグ＆ドロップ、または<br />ファイル &gt; 参照画像として開く (Ctrl+O)
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* ⚡ フローティング時の全4角マルチリサイズグリップ */}
-      {isFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} />}
-    </div>
-  );
-});
-
-async function decodeAnyImageFile(file: File): Promise<any> {
-  const lower = file.name.toLowerCase();
-  if (lower.endsWith('.tga')) {
-    const buffer = await file.arrayBuffer();
-    return decodeTGA(buffer);
-  }
-
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        reject(new Error('Canvas context error'));
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      const imgData = ctx.getImageData(0, 0, img.width, img.height);
-      resolve({
-        width: img.width,
-        height: img.height,
-        data: imgData.data,
-        isReadOnly: true,
-      });
-    };
-    img.onerror = (err) => {
-      URL.revokeObjectURL(url);
-      reject(err);
-    };
-    img.src = url;
-  });
-}
+import { ReferenceCanvasView } from './ReferenceCanvasView';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -525,9 +22,6 @@ export const CellWindow: React.FC = () => {
   const rightCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const {
-    fileListA,
-    fileListB,
-    unifiedFileList,
     currentFileIndex,
     splitFileIndex,
     isSplitView,
@@ -541,9 +35,13 @@ export const CellWindow: React.FC = () => {
     setCurrentColor,
     currentImage,
     setCurrentImage,
+    splitImage,
+    setSplitImage,
+    resolveFileNameForView,
+    isDirtyA,
+    isDirtyB,
     prevImage,
     nextImage,
-    setPrevNextImages,
     canvasTransform,
     setCanvasTransform,
     splitCanvasTransform,
@@ -551,12 +49,8 @@ export const CellWindow: React.FC = () => {
     lightTable,
     renderTrigger,
     triggerRender,
-    folderHandleA,
-    folderHandleB,
     folderNameA,
     folderNameB,
-    fileMapA,
-    fileMapB,
     saveUndoState,
     isPlaying,
     showGrid,
@@ -781,8 +275,11 @@ export const CellWindow: React.FC = () => {
     window.addEventListener('pointerup', onWindowPointerUp);
   };
 
-  const [splitImage, setSplitImage] = useState<any>(null);
-  const [onionFramesMap, setOnionFramesMap] = useState<Map<number, any>>(new Map());
+  // 画像の読み込み・先読み・オニオンスキンは useFrameLoader 系フックに委譲する。
+  // (splitImage = Win B の編集対象はストア管理なので、保存・Undo が Win A と同じ経路を通る)
+  const loadFrameForView = useFrameLoader();
+  useCellPrefetch(loadFrameForView);
+  const onionFramesMap = useOnionSkinFrames(loadFrameForView);
 
   // 画面サイズ（PCディスプレイのキャンバスエリア高さ）に合わせて、仮想フレーム/セル画像が上下にぴったり収まるサイズに自動計算＆初期位置設定
   const fitToScreenHeight = useCallback(() => {
@@ -808,157 +305,35 @@ export const CellWindow: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [fitToScreenHeight]);
 
-  // オニオンスキン用マルチフレーム(前後最大5枚)の読み込み
-  useEffect(() => {
-    if (!lightTable.enabled || isPlaying) return;
-    let isSubscribed = true;
-
-    async function loadOnionFrames() {
-      const pastCount = lightTable.pastFrames ?? 1;
-      const futureCount = lightTable.futureFrames ?? 1;
-      const loadedMap = new Map<number, any>();
-
-      const fetchSingleFrame = async (targetIndex: number) => {
-        if (targetIndex < 0 || targetIndex >= unifiedFileList.length) return null;
-        const fileName = unifiedFileList[targetIndex];
-        if (!fileName) return null;
-
-        if (fileMapA.has(fileName)) {
-          try {
-            const file = fileMapA.get(fileName)!;
-            const buffer = await file.arrayBuffer();
-            return decodeTGA(buffer);
-          } catch (e) {
-            console.error('Failed to decode onion frame from fileMapA:', e);
-          }
-        }
-
-        if (folderHandleA && fileListA.includes(fileName)) {
-          try {
-            const fileHandle = await folderHandleA.getFileHandle(fileName);
-            const file = await fileHandle.getFile();
-            const buffer = await file.arrayBuffer();
-            return decodeTGA(buffer);
-          } catch (e) {
-            console.error('Failed to read onion frame from folderHandleA:', e);
-          }
-        }
-        return null;
-      };
-
-      // 過去フレーム (offset = -1, -2, ...)
-      for (let offset = -1; offset >= -pastCount; offset--) {
-        const frame = await fetchSingleFrame(currentFileIndex + offset);
-        if (frame) loadedMap.set(offset, frame);
-      }
-
-      // 未来フレーム (offset = 1, 2, ...)
-      for (let offset = 1; offset <= futureCount; offset++) {
-        const frame = await fetchSingleFrame(currentFileIndex + offset);
-        if (frame) loadedMap.set(offset, frame);
-      }
-
-      if (isSubscribed) {
-        setOnionFramesMap(loadedMap);
-      }
-    }
-
-    loadOnionFrames();
-    return () => { isSubscribed = false; };
-  }, [
-    currentFileIndex,
-    lightTable.enabled,
-    lightTable.pastFrames,
-    lightTable.futureFrames,
-    unifiedFileList,
-    fileListA,
-    fileMapA,
-    folderHandleA,
-    isPlaying,
-  ]);
-
-  // メイン画像の読み込み (Dir A / Unified)
+  // メイン画像の読み込み (Win A)
   useEffect(() => {
     let isSubscribed = true;
 
-    async function loadImage() {
-      const currentFileName = unifiedFileList[currentFileIndex];
-      if (!currentFileName) {
-        if (isSubscribed) setCurrentImage(null);
-        return;
-      }
+    (async () => {
+      const frame = await loadFrameForView(currentFileIndex, 0);
+      if (!isSubscribed) return;
+      setCurrentImage(frame ? cloneTGAImage(frame) : null);
+    })();
 
-      if (fileMapA.has(currentFileName)) {
-        try {
-          const file = fileMapA.get(currentFileName)!;
-          const decoded = await decodeAnyImageFile(file);
-          if (isSubscribed) setCurrentImage(decoded);
-          return;
-        } catch (e) {
-          console.error('Failed to decode image from fileMapA:', e);
-        }
-      }
-
-      if (folderHandleA && fileListA.includes(currentFileName)) {
-        try {
-          const fileHandle = await folderHandleA.getFileHandle(currentFileName);
-          const file = await fileHandle.getFile();
-          const decoded = await decodeAnyImageFile(file);
-          if (isSubscribed) setCurrentImage(decoded);
-          return;
-        } catch (e) {
-          console.error('Failed to read image from folderHandleA:', e);
-        }
-      }
-
-      if (isSubscribed) setCurrentImage(null);
-    }
-
-    loadImage();
     return () => { isSubscribed = false; };
-  }, [currentFileIndex, unifiedFileList, fileListA, folderHandleA, fileMapA, setCurrentImage, setPrevNextImages]);
+  }, [currentFileIndex, loadFrameForView, setCurrentImage]);
 
-  // 分割右側ビュー画像の読み込み (Dir B / Unified)
+  // 分割右側ビュー画像の読み込み (Win B)
   useEffect(() => {
-    if (!isSplitView) return;
+    if (!isSplitView) {
+      setSplitImage(null);
+      return;
+    }
     let isSubscribed = true;
 
-    async function loadSplitImage() {
-      const splitFileName = unifiedFileList[splitFileIndex];
-      if (!splitFileName) {
-        if (isSubscribed) setSplitImage(null);
-        return;
-      }
+    (async () => {
+      const frame = await loadFrameForView(splitFileIndex, 1);
+      if (!isSubscribed) return;
+      setSplitImage(frame ? cloneTGAImage(frame) : null);
+    })();
 
-      if (fileMapB.has(splitFileName)) {
-        try {
-          const file = fileMapB.get(splitFileName)!;
-          const decoded = await decodeAnyImageFile(file);
-          if (isSubscribed) setSplitImage(decoded);
-          return;
-        } catch (e) {
-          console.error('Failed to decode image from fileMapB:', e);
-        }
-      }
-
-      if (folderHandleB && fileListB.includes(splitFileName)) {
-        try {
-          const fileHandle = await folderHandleB.getFileHandle(splitFileName);
-          const file = await fileHandle.getFile();
-          const decoded = await decodeAnyImageFile(file);
-          if (isSubscribed) setSplitImage(decoded);
-          return;
-        } catch (e) {
-          console.error('Failed to read image from folderHandleB:', e);
-        }
-      }
-
-      if (isSubscribed) setSplitImage(null);
-    }
-
-    loadSplitImage();
     return () => { isSubscribed = false; };
-  }, [isSplitView, splitFileIndex, unifiedFileList, fileListB, folderHandleB, fileMapB]);
+  }, [isSplitView, splitFileIndex, loadFrameForView, setSplitImage]);
 
   // アニメーション再生
   useEffect(() => {
@@ -1026,7 +401,7 @@ export const CellWindow: React.FC = () => {
 
           const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
           const pColor = lightTable.pastColor || { r: 239, g: 68, b: 68 };
-          const mode = lightTable.displayMode || (lightTable.colorMode === 'tinted' ? 'monochrome' : 'color');
+          const mode = lightTable.displayMode;
 
           for (let i = 0; i < frameImg.data.length; i += 4) {
             const a = frameImg.data[i + 3];
@@ -1075,7 +450,7 @@ export const CellWindow: React.FC = () => {
 
           const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
           const fColor = lightTable.futureColor || { r: 59, g: 130, b: 246 };
-          const mode = lightTable.displayMode || (lightTable.colorMode === 'tinted' ? 'monochrome' : 'color');
+          const mode = lightTable.displayMode;
 
           for (let i = 0; i < frameImg.data.length; i += 4) {
             const a = frameImg.data[i + 3];
@@ -1223,7 +598,7 @@ export const CellWindow: React.FC = () => {
         ctx.setLineDash([]);
       }
     },
-    [prevImage, nextImage, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, pegStabilizer]
+    [prevImage, nextImage, onionFramesMap, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, pegStabilizer]
   );
 
   useEffect(() => {
@@ -1279,7 +654,8 @@ export const CellWindow: React.FC = () => {
         targetImg.height,
         x, y,
         currentColor,
-        toolOptions
+        toolOptions,
+        referenceCanvas.image?.data ?? null
       );
       triggerRender();
     } else if (activeTool === 'gradient') {
@@ -1291,7 +667,8 @@ export const CellWindow: React.FC = () => {
         x, y,
         currentColor,
         backgroundColor,
-        toolOptions
+        toolOptions,
+        referenceCanvas.image?.data ?? null
       );
       triggerRender();
     } else if (activeTool === 'noiseEraser') {
@@ -1319,13 +696,19 @@ export const CellWindow: React.FC = () => {
       );
       triggerRender();
     } else if (activeTool === 'eyedropper' || e.altKey) {
-      const idx = (y * targetImg.width + x) * 4;
-      const r = targetImg.data[idx];
-      const g = targetImg.data[idx + 1];
-      const b = targetImg.data[idx + 2];
-      const a = targetImg.data[idx + 3];
-      const hex = `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase()}`;
-      setCurrentColor({ r, g, b, a, hex });
+      // ツールオプションの「サンプル範囲」に従って色を採取する
+      const sampled = sampleColorAt(
+        targetImg.data,
+        targetImg.width,
+        targetImg.height,
+        x, y,
+        toolOptions.sampleSize
+      );
+      const hex = `#${((1 << 24) + (sampled.r << 16) + (sampled.g << 8) + sampled.b)
+        .toString(16)
+        .slice(1)
+        .toUpperCase()}`;
+      setCurrentColor({ ...sampled, hex });
     } else if (activeTool === 'closedFill' || activeTool === 'lasso') {
       saveUndoState('閉領域フィル');
       setIsLassoing(true);
@@ -1505,7 +888,7 @@ export const CellWindow: React.FC = () => {
               className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
             >
               <span className="font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1.5">
-                <span>Win A ({folderNameA || 'Orig'}): {unifiedFileList[currentFileIndex] || '0001.tga'}</span>
+                <span>Win A ({folderNameA || 'Orig'}): {resolveFileNameForView(currentFileIndex, 0) || '---'}{isDirtyA ? ' *' : ''}</span>
                 {currentImage?.isReadOnly && (
                   <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
                     🔒 閲覧専用 (Sheet View)
@@ -1641,7 +1024,7 @@ export const CellWindow: React.FC = () => {
                 className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] select-none touch-none cursor-grab active:cursor-grabbing"
               >
                 <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
-                  <span>Win B ({folderNameB || 'Retake'}): {unifiedFileList[splitFileIndex] || '0001.tga'}</span>
+                  <span>Win B ({folderNameB || 'Retake'}): {resolveFileNameForView(splitFileIndex, 1) || '---'}{isDirtyB ? ' *' : ''}</span>
                   {splitImage?.isReadOnly && (
                     <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
                       🔒 閲覧専用 (Sheet View)
