@@ -204,13 +204,34 @@ export const CellWindow: React.FC = () => {
 
   const resetSplitRatio = () => setMainAreaSplitRatio(0.5);
 
-  // 閲覧専用の画像に描画しようとした時の通知 (無言で無視されると原因が分からないため)
-  const [readOnlyNotice, setReadOnlyNotice] = useState(false);
+  /**
+   * アクティブなウィンドウを示す枠線。
+   *
+   * ⚠️ 独立ウィンドウ (Tear-off) 側は以前 Win A=青 / Win B=緑 の固定色で、
+   * activeViewIndex を反映していなかった。切り離すと「どちらが操作対象か」が
+   * 枠線から読み取れなくなり、Win B を触っているのに Win A がアクティブに
+   * 見える状態になっていたため、ドッキング中と同じ規則へ揃える。
+   */
+  const activeBorderClass = (view: 0 | 1, isFloating: boolean) => {
+    const isActive = isSplitView && activeViewIndex === view;
+    if (isFloating) {
+      // 独立ウィンドウは枠が無いと背景に溶けるので、非アクティブでも色は残す
+      return isActive
+        ? 'border-blue-600 dark:border-blue-500'
+        : 'border-slate-300 dark:border-slate-700';
+    }
+    return isActive ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent';
+  };
+
+  // 閲覧専用の画像に描画しようとした時の通知 (無言で無視されると原因が分からないため)。
+  // ⚠️ どちらのウィンドウで弾かれたかを保持する。単一の真偽値にすると
+  // Win B をクリックしたのに Win A にも通知が出て、判定が Win A へ移ったように見える。
+  const [readOnlyNoticeView, setReadOnlyNoticeView] = useState<0 | 1 | null>(null);
   useEffect(() => {
-    if (!readOnlyNotice) return;
-    const timer = setTimeout(() => setReadOnlyNotice(false), 3000);
+    if (readOnlyNoticeView === null) return;
+    const timer = setTimeout(() => setReadOnlyNoticeView(null), 3000);
     return () => clearTimeout(timer);
-  }, [readOnlyNotice]);
+  }, [readOnlyNoticeView]);
 
   // 参照ウィンドウがドッキング領域の上にいるか (跡地のハイライト用)
   const [isReferenceOverDock, setIsReferenceOverDock] = useState(false);
@@ -827,7 +848,7 @@ export const CellWindow: React.FC = () => {
     // 閲覧専用（タイムシートや指示メモなどの JPG/PNG 画像）の場合は塗り・描画操作をガード。
     // 黙って無視すると「ツールが反応しない」ようにしか見えないので理由を表示する。
     if (targetImg.isReadOnly && activeTool !== 'eyedropper' && e.button !== 1 && !e.altKey) {
-      setReadOnlyNotice(true);
+      setReadOnlyNoticeView(viewIdx);
       return;
     }
 
@@ -1035,12 +1056,8 @@ export const CellWindow: React.FC = () => {
             // 逃げてしまうため判定が点滅していた。
             className={`flex flex-col border-2 ${
               isWinAFloating
-                ? 'bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
-                : `flex-1 relative rounded overflow-hidden ${
-                    activeViewIndex === 0 && isSplitView
-                      ? 'border-blue-600 dark:border-blue-500 shadow-md'
-                      : 'border-transparent'
-                  }`
+                ? `bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(0, true)}`
+                : `flex-1 relative rounded overflow-hidden ${activeBorderClass(0, false)}`
             } ${isWinADragOver ? 'border-blue-500 ring-4 ring-inset ring-blue-500/60' : ''}`}
           >
             {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
@@ -1119,7 +1136,7 @@ export const CellWindow: React.FC = () => {
                   className="block"
                 />
 
-                {readOnlyNotice && (
+                {readOnlyNoticeView === 0 && (
                   <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                     <span>
@@ -1179,10 +1196,8 @@ export const CellWindow: React.FC = () => {
               // Win A と同様、ハイライトでレイアウトが変わらないようにする
               className={`flex flex-col border-2 ${
                 isWinBFloating
-                  ? 'bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
-                  : `flex-1 relative rounded overflow-hidden ${
-                      activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
-                    }`
+                  ? `bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(1, true)}`
+                  : `flex-1 relative rounded overflow-hidden ${activeBorderClass(1, false)}`
               } ${isWinBDragOver ? 'border-emerald-500 ring-4 ring-inset ring-emerald-500/60' : ''}`}
             >
               {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
@@ -1258,7 +1273,7 @@ export const CellWindow: React.FC = () => {
                     className="block"
                   />
 
-                  {readOnlyNotice && (
+                  {readOnlyNoticeView === 1 && (
                     <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
                       <AlertTriangle className="w-4 h-4 flex-shrink-0" />
                       <span>
