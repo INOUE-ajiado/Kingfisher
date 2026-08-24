@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { usePaintStore } from './usePaintStore';
 import { TGAImage } from '../engine/tga';
+import { createUiSlice } from './slices/uiSlice';
+import { createViewSlice } from './slices/viewSlice';
+import { createWindowSlice } from './slices/windowSlice';
+import { createFileSlice } from './slices/fileSlice';
+import { createDocumentSlice } from './slices/documentSlice';
+import { createToolSlice } from './slices/toolSlice';
+import { createEditSlice } from './slices/editSlice';
+import { createLightTableSlice } from './slices/lightTableSlice';
 
 /**
  * グローバルストアのテスト。
@@ -26,10 +34,32 @@ beforeEach(() => {
 });
 
 describe('スライスの合成', () => {
-  it('全スライスのキーが揃っている', () => {
-    const keys = Object.keys(s());
-    expect(keys.length).toBe(176);
-    expect(keys.every((k) => (s() as any)[k] !== undefined)).toBe(true);
+  it('どのスライスのキーも欠けずに合成されている', () => {
+    // キー数を直接書くと項目を足すたびに壊れるので、
+    // 各スライスが実際に返すキーが全てストアに載っているかを確かめる
+    const factories = [
+      createUiSlice,
+      createViewSlice,
+      createWindowSlice,
+      createFileSlice,
+      createDocumentSlice,
+      createToolSlice,
+      createEditSlice,
+      createLightTableSlice,
+    ];
+    const storeKeys = new Set(Object.keys(s()));
+
+    for (const factory of factories) {
+      const slice = (factory as any)(() => {}, () => s(), {});
+      for (const key of Object.keys(slice)) {
+        expect(storeKeys.has(key), `${key} が合成されていない`).toBe(true);
+      }
+    }
+  });
+
+  it('値が undefined のキーが無い', () => {
+    const entries = Object.entries(s());
+    expect(entries.every(([, v]) => v !== undefined)).toBe(true);
   });
 
   it('各スライスの代表的なアクションが呼べる', () => {
@@ -302,6 +332,62 @@ describe('lightTable スライス', () => {
     expect('nextFrames' in lt).toBe(false);
     expect('opacity' in lt).toBe(false);
     expect('colorMode' in lt).toBe(false);
+  });
+});
+
+describe('view スライス — 参照ウィンドウとの分割比', () => {
+  it('初期値は左右均等', () => {
+    expect(s().mainAreaSplitRatio).toBe(0.5);
+  });
+
+  it('境界線を動かすと取り分が変わる', () => {
+    s().setMainAreaSplitRatio(0.7);
+    expect(s().mainAreaSplitRatio).toBeCloseTo(0.7);
+  });
+
+  it('片側が潰れないよう両端で止まる', () => {
+    s().setMainAreaSplitRatio(0);
+    expect(s().mainAreaSplitRatio).toBe(0.15);
+
+    s().setMainAreaSplitRatio(1);
+    expect(s().mainAreaSplitRatio).toBe(0.85);
+
+    s().setMainAreaSplitRatio(-5);
+    expect(s().mainAreaSplitRatio).toBe(0.15);
+  });
+});
+
+describe('window スライス — 独立ウィンドウの位置・サイズ・重なり順', () => {
+  it('位置とサイズが保持される (ドッキング往復で失われない)', () => {
+    s().setFloatingWindowPosition('winA', 300, 200);
+    s().setFloatingWindowSize('winA', 900, 700);
+
+    expect(s().floatingWindows.winA).toMatchObject({ x: 300, y: 200, width: 900, height: 700 });
+    // 他のウィンドウには影響しない
+    expect(s().floatingWindows.winB.x).toBe(200);
+  });
+
+  it('最前面に持ち上げると z-index が上がる', () => {
+    const before = s().getWindowZIndex('reference');
+    s().bringWindowToFront('reference');
+
+    expect(s().floatingWindowOrder[s().floatingWindowOrder.length - 1]).toBe('reference');
+    expect(s().getWindowZIndex('reference')).toBeGreaterThan(before);
+    // 最前面のウィンドウが他のどれよりも手前に来る
+    const others = ['winA', 'winB', 'colorChart'] as const;
+    for (const id of others) {
+      expect(s().getWindowZIndex('reference')).toBeGreaterThan(s().getWindowZIndex(id));
+    }
+  });
+
+  it('重なり順に同じウィンドウが重複しない', () => {
+    s().bringWindowToFront('winB');
+    s().bringWindowToFront('winB');
+    s().bringWindowToFront('colorChart');
+
+    const order = s().floatingWindowOrder;
+    expect(new Set(order).size).toBe(order.length);
+    expect(order.length).toBe(4);
   });
 });
 
