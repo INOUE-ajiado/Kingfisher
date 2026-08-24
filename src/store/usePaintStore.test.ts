@@ -314,10 +314,22 @@ describe('lightTable スライス', () => {
     expect(s().lightTable.futureFrames).toBe(2);
   });
 
-  it('コマ数は 0〜5 に収まる', () => {
+  it('コマ数は 0〜30 に収まる', () => {
     s().setOnionSkinFrames(99, -1);
-    expect(s().lightTable.pastFrames).toBe(5);
+    expect(s().lightTable.pastFrames).toBe(30);
     expect(s().lightTable.futureFrames).toBe(0);
+  });
+
+  it('既定ではオニオンスキンは OFF', () => {
+    expect(s().lightTable.enabled).toBe(false);
+    expect(s().lightTable.showAllFrames).toBe(false);
+  });
+
+  it('カット全体モードを切り替えられる', () => {
+    s().setOnionSkinShowAllFrames(true);
+    expect(s().lightTable.showAllFrames).toBe(true);
+    s().setOnionSkinShowAllFrames(false);
+    expect(s().lightTable.showAllFrames).toBe(false);
   });
 
   it('不透明度は startOpacity に反映される', () => {
@@ -332,6 +344,59 @@ describe('lightTable スライス', () => {
     expect('nextFrames' in lt).toBe(false);
     expect('opacity' in lt).toBe(false);
     expect('colorMode' in lt).toBe(false);
+  });
+});
+
+describe('view スライス — 左右連動', () => {
+  beforeEach(() => {
+    s().setFolderHandleA(null, 'dirA', ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga']);
+    s().setFolderHandleB(null, 'dirB', ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga']);
+    usePaintStore.setState({ isSplitView: true, syncMode: false });
+  });
+
+  it('初期状態では連動しない', () => {
+    expect(usePaintStore.getState().syncMode).toBe(false);
+  });
+
+  it('連動を押しても、それぞれが選んでいるコマは動かない', () => {
+    usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 3 });
+
+    s().toggleSyncMode();
+
+    expect(s().syncMode).toBe(true);
+    expect(s().currentFileIndex).toBe(1); // 勝手に揃えられない
+    expect(s().splitFileIndex).toBe(3);
+    expect(s().syncFrameOffset).toBe(2); // 差分を記録する
+  });
+
+  it('連動中はコマ差を保ったまま追従する', () => {
+    usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 3 });
+    s().toggleSyncMode();
+
+    s().nextCell();
+    expect(s().currentFileIndex).toBe(2);
+    expect(s().splitFileIndex).toBe(4); // 差 2 を維持
+
+    s().setCurrentFileIndex(0);
+    expect(s().splitFileIndex).toBe(2); // 直接選択でも差を維持
+  });
+
+  it('Win B 側を選んでも Win A が同じ差で追従する', () => {
+    usePaintStore.setState({ currentFileIndex: 0, splitFileIndex: 2 });
+    s().toggleSyncMode();
+
+    s().setSplitFileIndex(4);
+    expect(s().currentFileIndex).toBe(2);
+  });
+
+  it('連動を解除すると相手は動かなくなる', () => {
+    usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 3 });
+    s().toggleSyncMode();
+    s().toggleSyncMode();
+
+    expect(s().syncMode).toBe(false);
+    s().setCurrentFileIndex(4);
+    expect(s().splitFileIndex).toBe(3); // 据え置き
   });
 });
 
