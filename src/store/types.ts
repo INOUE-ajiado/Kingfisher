@@ -275,8 +275,14 @@ export interface FileSlice {
   fileListA: string[]
   fileListB: string[]
   unifiedFileList: string[]
-  setFolderHandleA: (handle: any, name: string, files: string[]) => void
-  setFolderHandleB: (handle: any, name: string, files: string[]) => void
+  /**
+   * ⚠️ handle には「files のパスの起点」となるハンドルを渡すこと。
+   * 相対パスがサブフォルダ名から始まるなら、そのサブフォルダではなく
+   * ルートのハンドルを渡す (resolveFileHandle がそこから辿るため)。
+   * filesMap を省略すると、前のフォルダの残骸を防ぐため空で置き換える。
+   */
+  setFolderHandleA: (handle: any, name: string, files: string[], filesMap?: Map<string, File>) => void
+  setFolderHandleB: (handle: any, name: string, files: string[], filesMap?: Map<string, File>) => void
   setFolderFilesA: (name: string, filesMap: Map<string, File>) => void
   setFolderFilesB: (name: string, filesMap: Map<string, File>) => void
   // --- ファイル・ナビゲーション ＆ D&Dドロップフォルダ ---
