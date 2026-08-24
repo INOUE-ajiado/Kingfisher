@@ -7,6 +7,7 @@
  */
 
 import { TGAImage } from '../engine/tga';
+import { RenamePlanItem } from '../engine/renamePlan';
 
 export type ToolType = 
   | 'pointer' 
@@ -299,6 +300,12 @@ export interface FileSlice {
   prevCell: () => void
   /** 統合フレーム番号から、指定ビュー側の実ファイル名を解決する (異名連番対応) */
   resolveFileNameForView: (index: number, view: 0 | 1) => string | null;
+
+  /**
+   * ファイル名を変更する。plan は engine/renamePlan で組み立てたもの。
+   * 衝突・不正な名前があれば 1 件も書き換えずに中止する。
+   */
+  renameFiles: (view: 0 | 1, plan: RenamePlanItem[]) => Promise<RenameResult>;
 }
 
 /** 編集中の画像・キャッシュ・未保存管理・操作履歴・再生 */
@@ -464,6 +471,13 @@ export interface WindowSlice {
 
 
 /** 全スライスを合成したストアの最終形 */
+export interface RenameResult {
+  ok: boolean;
+  message: string;
+  /** 実際に名前が変わった件数 */
+  renamed: number;
+}
+
 export interface SaveResult {
   ok: boolean;
   message: string;

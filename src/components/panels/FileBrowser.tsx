@@ -1,7 +1,8 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { usePaintStore, SubDirectoryItem, extractFrameNumber } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network } from 'lucide-react';
+import { RenameModal } from '../modals/RenameModal';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type } from 'lucide-react';
 
 export interface FileTreeNode {
   name: string;
@@ -93,6 +94,10 @@ const TreeItemNode: React.FC<{
   showSyncBadge?: boolean;
   onFocusNode: (path: string) => void;
   currentIdx: number;
+  /** リネーム対象として選択されているパス (Ctrl / Shift クリック) */
+  markedPaths?: Set<string>;
+  /** 修飾キー付きクリック。true を返したら通常の移動は行わない */
+  onMarkFile?: (path: string, modifiers: { ctrl: boolean; shift: boolean }) => boolean;
 }> = ({
   node,
   depth,
@@ -105,11 +110,14 @@ const TreeItemNode: React.FC<{
   secondaryIdx,
   selectionTone = 'blue',
   showSyncBadge = false,
+  markedPaths,
+  onMarkFile,
 }) => {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const isExpanded = expandedPaths.has(node.path);
   const isFocused = focusedPath === node.path;
   const isSelected = !node.isFolder && node.fileIndex === currentIdx;
+  const isMarked = !node.isFolder && !!markedPaths?.has(node.path);
   const isSecondary = !node.isFolder && secondaryIdx !== undefined && node.fileIndex === secondaryIdx;
 
   // ⚠️ フォーカス/選択中アイテムがウィンドウ外へ出た場合、自動追従スクロール
@@ -163,6 +171,8 @@ const TreeItemNode: React.FC<{
                 showSyncBadge={showSyncBadge}
                 onFocusNode={onFocusNode}
                 currentIdx={currentIdx}
+                markedPaths={markedPaths}
+                onMarkFile={onMarkFile}
               />
             ))}
           </div>
@@ -174,12 +184,18 @@ const TreeItemNode: React.FC<{
   return (
     <div
       ref={itemRef}
-      onClick={() => {
+      onClick={(e) => {
         onFocusNode(node.path);
+        // Ctrl / Shift クリックはリネーム対象の選択。表示コマは動かさない
+        if (onMarkFile && onMarkFile(node.path, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })) {
+          return;
+        }
         if (node.fileIndex !== undefined) onSelectFile(node.fileIndex);
       }}
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
       className={`flex items-center gap-1.5 py-1 px-1 cursor-pointer text-[11px] transition-colors select-none ${
+        isMarked ? 'ring-1 ring-inset ring-amber-500 bg-amber-50/70 dark:bg-amber-950/30 rounded' : ''
+      } ${
         isSelected && isSecondary
           ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-bold rounded shadow-xs'
           : isSelected
@@ -216,6 +232,16 @@ export const FileBrowser: React.FC = () => {
   const [viewMode, setViewMode] = useState<'tree' | 'merge'>('tree');
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
+
+  /**
+   * リネーム対象として選んだファイル (Ctrl / Shift クリック)。
+   * 表示中のコマ (currentFileIndex) とは別の概念なので混ぜないこと。
+   * ビューをまたぐ選択は連番の意味が壊れるため、片方だけを保持する。
+   */
+  const [markedView, setMarkedView] = useState<0 | 1>(0);
+  const [markedPaths, setMarkedPaths] = useState<string[]>([]);
+  const [markAnchor, setMarkAnchor] = useState<string | null>(null);
+  const [isRenameOpen, setIsRenameOpen] = useState(false);
 
   const {
     rootFolderName,
@@ -314,6 +340,50 @@ export const FileBrowser: React.FC = () => {
     const idx = mergedFrameNumbers.indexOf(extractFrameNumber(path));
     return idx >= 0 ? idx : fallback;
   };
+
+  const clearMarks = () => {
+    setMarkedPaths([]);
+    setMarkAnchor(null);
+  };
+
+  /**
+   * Ctrl / Shift クリックでリネーム対象を選ぶ。
+   * 修飾キーが無いときは false を返し、通常のコマ移動に任せる。
+   */
+  const markFileInView = (view: 0 | 1, list: string[]) =>
+    (path: string, modifiers: { ctrl: boolean; shift: boolean }): boolean => {
+      if (!modifiers.ctrl && !modifiers.shift) {
+        // 通常クリックは選択を解除して移動へ譲る
+        if (markedPaths.length > 0) clearMarks();
+        return false;
+      }
+
+      // 別ビューのツリーを触ったら選択を作り直す
+      const base = view === markedView ? markedPaths : [];
+      if (view !== markedView) setMarkedView(view);
+
+      if (modifiers.shift && markAnchor && view === markedView) {
+        const from = list.indexOf(markAnchor);
+        const to = list.indexOf(path);
+        if (from >= 0 && to >= 0) {
+          const [lo, hi] = from <= to ? [from, to] : [to, from];
+          setMarkedPaths(list.slice(lo, hi + 1));
+          return true;
+        }
+      }
+
+      const next = base.includes(path) ? base.filter((p) => p !== path) : [...base, path];
+      setMarkedPaths(next);
+      setMarkAnchor(path);
+      return true;
+    };
+
+  /** 連番の順序はツリーの並び (ソート済みのファイル一覧) に合わせる */
+  const markedInOrder = useMemo(() => {
+    const list = markedView === 1 ? fileListB : fileListA;
+    const set = new Set(markedPaths);
+    return list.filter((p) => set.has(p));
+  }, [markedPaths, markedView, fileListA, fileListB]);
 
   const handleSelectFromTreeA = (localIdx: number) => {
     const path = fileListA[localIdx];
@@ -575,6 +645,7 @@ export const FileBrowser: React.FC = () => {
   const handleSelectWinBOnly = (idx: number) => setSplitFileIndex(idx);
 
   return (
+    <>
     <div className="flex-1 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col select-none min-h-[200px]">
       {/* 1. 統合ファイルブラウザ ヘッダー */}
       <div className="h-6 bg-slate-100 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
@@ -607,6 +678,25 @@ export const FileBrowser: React.FC = () => {
               <span>連番表</span>
             </button>
           </div>
+
+          {/* 名前を変更 (Ctrl / Shift クリックで選んだファイルが対象) */}
+          <button
+            onClick={() => setIsRenameOpen(true)}
+            disabled={markedInOrder.length === 0}
+            title={
+              markedInOrder.length === 0
+                ? 'ファイルを Ctrl クリック (範囲は Shift クリック) で選ぶと名前を変更できます'
+                : `選択した ${markedInOrder.length} 項目の名前を変更`
+            }
+            className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold border transition-colors ${
+              markedInOrder.length === 0
+                ? 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                : 'bg-amber-500 text-white border-amber-500 shadow-sm hover:bg-amber-600'
+            }`}
+          >
+            <Type className="w-3 h-3" />
+            <span>名前を変更{markedInOrder.length > 0 ? ` (${markedInOrder.length})` : ''}</span>
+          </button>
 
           <button
             onClick={toggleSyncMode}
@@ -737,6 +827,7 @@ export const FileBrowser: React.FC = () => {
                     selectionTone: 'blue' as const,
                     nodes: treeA,
                     onSelect: handleSelectFromTreeA,
+                    onMark: markFileInView(0, fileListA),
                     activeIdx: activeLocalIdxA,
                   },
                   {
@@ -746,6 +837,7 @@ export const FileBrowser: React.FC = () => {
                     selectionTone: 'emerald' as const,
                     nodes: treeB,
                     onSelect: handleSelectFromTreeB,
+                    onMark: markFileInView(1, fileListB),
                     activeIdx: activeLocalIdxB,
                   },
                 ] as const
@@ -778,6 +870,8 @@ export const FileBrowser: React.FC = () => {
                         currentIdx={pane.activeIdx}
                         selectionTone={pane.selectionTone}
                         showSyncBadge={syncMode}
+                        markedPaths={new Set(markedInOrder)}
+                        onMarkFile={pane.onMark}
                       />
                     ))}
                   </div>
@@ -802,6 +896,8 @@ export const FileBrowser: React.FC = () => {
                 onSelectFile={handleSelectFrame}
                 onFocusNode={setFocusedPath}
                 currentIdx={currentFileIndex}
+                markedPaths={new Set(markedInOrder)}
+                onMarkFile={markFileInView(0, fileListA)}
                 secondaryIdx={isSplitView ? splitFileIndex : undefined}
                 showSyncBadge={syncMode && isSplitView}
               />
@@ -953,5 +1049,15 @@ export const FileBrowser: React.FC = () => {
         {...({ webkitdirectory: '', directory: '', multiple: true } as any)}
       />
     </div>
+
+      {isRenameOpen && markedInOrder.length > 0 && (
+        <RenameModal
+          view={markedView}
+          paths={markedInOrder}
+          onClose={() => setIsRenameOpen(false)}
+          onRenamed={clearMarks}
+        />
+      )}
+    </>
   );
 };

@@ -3,6 +3,14 @@
  */
 
 import { StateCreator } from 'zustand';
+import { renameFile } from '../../engine/fileSystemPath';
+import {
+  findInvalidNames,
+  findRenameConflicts,
+  needsTwoPhaseRename,
+  omitUnchanged,
+  replaceBaseName,
+} from '../../engine/renamePlan';
 import {
   PaintStore,
   FileSlice,
@@ -448,5 +456,117 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     const list = view === 1 ? fileListB : fileListA;
     if (list.length === 0 || list.includes(fallback)) return fallback;
     return null;
+  },
+
+  /**
+   * ファイル名を変更する。
+   *
+   * ⚠️ 制作データを直接書き換えるので、衝突や不正な名前があれば
+   * 1 件も書き換えずに中止する (部分的に適用された状態を作らない)。
+   * 番号をずらすだけのリネームは名前が入れ替わるため、
+   * 一時名を経由する 2 段階で実行する。
+   */
+  renameFiles: async (view, rawPlan) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const fileList = view === 1 ? state.fileListB : state.fileListA;
+    const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    const plan = omitUnchanged(rawPlan);
+    if (plan.length === 0) {
+      return { ok: true, message: '名前が変わるファイルはありませんでした。', renamed: 0 };
+    }
+
+    if (!folderHandle) {
+      return {
+        ok: false,
+        message:
+          `${label} は書き込み可能なフォルダとして開かれていません。\n` +
+          `「ファイル > フォルダを開く」から開き直してください。`,
+        renamed: 0,
+      };
+    }
+
+    const invalid = findInvalidNames(plan);
+    if (invalid.length > 0) {
+      return {
+        ok: false,
+        message:
+          `ファイル名として使えない名前が ${invalid.length} 件あります。\n` +
+          invalid.slice(0, 5).map((i) => `・${i.from} → ${i.to}`).join('\n'),
+        renamed: 0,
+      };
+    }
+
+    const conflicts = findRenameConflicts(plan, fileList);
+    if (conflicts.length > 0) {
+      const dup = conflicts.filter((c) => c.reason === 'duplicate').map((c) => c.to);
+      const exists = conflicts.filter((c) => c.reason === 'exists').map((c) => c.to);
+      return {
+        ok: false,
+        message:
+          '名前が衝突するため中止しました。ファイルは 1 件も変更していません。\n' +
+          (dup.length ? `\n同じ名前が複数できます: ${dup.slice(0, 5).join(', ')}` : '') +
+          (exists.length ? `\n既にあるファイルと同名です: ${exists.slice(0, 5).join(', ')}` : ''),
+        renamed: 0,
+      };
+    }
+
+    const { ensureWritePermission } = await import('../../engine/fileSystemPath');
+    if (!(await ensureWritePermission(folderHandle))) {
+      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    }
+
+    const rootName = state.rootFolderName;
+    const twoPhase = needsTwoPhaseRename(plan);
+    const stamp = Date.now().toString(36);
+
+    try {
+      if (twoPhase) {
+        // 名前が入れ替わるので、一度すべて一時名へ逃がしてから本来の名前にする
+        const temps = plan.map((item, i) => ({ item, temp: `__kf_rename_${stamp}_${i}__${item.to}` }));
+        for (const { item, temp } of temps) {
+          await renameFile(folderHandle, item.path, temp, rootName);
+        }
+        for (const { item, temp } of temps) {
+          await renameFile(folderHandle, replaceBaseName(item.path, temp), item.to, rootName);
+        }
+      } else {
+        for (const item of plan) {
+          await renameFile(folderHandle, item.path, item.to, rootName);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to rename:', err);
+      return {
+        ok: false,
+        message:
+          `リネームの途中で失敗しました: ${err?.message || err}\n` +
+          `フォルダを開き直して状態を確認してください。`,
+        renamed: 0,
+      };
+    }
+
+    // --- ストア側の一覧を新しい名前へ差し替える ---
+    const renamedPath = new Map(plan.map((item) => [item.path, replaceBaseName(item.path, item.to)]));
+
+    const nextList = fileList.map((p) => renamedPath.get(p) ?? p).sort();
+    const nextMap = new Map<string, File>();
+    fileMap.forEach((file, p) => nextMap.set(renamedPath.get(p) ?? p, file));
+
+    // 名前が変わったコマはキャッシュを捨てる (古い名前のキーが残るため)
+    plan.forEach((item) => {
+      state.invalidateCachedImage(state.getImageCacheKey(view, item.path));
+    });
+
+    if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
+    else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
+
+    return {
+      ok: true,
+      message: `${plan.length} 件のファイル名を変更しました。`,
+      renamed: plan.length,
+    };
   },
 });
