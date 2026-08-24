@@ -159,3 +159,31 @@ export async function renameFile(
   await writable.close();
   await dir.removeEntry(name);
 }
+
+/** 同じディレクトリにファイルを複製する */
+export async function copyFile(
+  rootHandle: any,
+  path: string,
+  newName: string,
+  rootFolderName?: string | null
+): Promise<void> {
+  const { dir, name } = await resolveParentDirectory(rootHandle, path, rootFolderName);
+
+  const source = await dir.getFileHandle(name);
+  const buffer = await (await source.getFile()).arrayBuffer();
+
+  const target = await dir.getFileHandle(newName, { create: true });
+  const writable = await target.createWritable();
+  await writable.write(buffer);
+  await writable.close();
+}
+
+/** ファイルを削除する */
+export async function deleteFile(
+  rootHandle: any,
+  path: string,
+  rootFolderName?: string | null
+): Promise<void> {
+  const { dir, name } = await resolveParentDirectory(rootHandle, path, rootFolderName);
+  await dir.removeEntry(name);
+}

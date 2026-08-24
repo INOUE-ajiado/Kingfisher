@@ -306,6 +306,12 @@ export interface FileSlice {
    * 衝突・不正な名前があれば 1 件も書き換えずに中止する。
    */
   renameFiles: (view: 0 | 1, plan: RenamePlanItem[]) => Promise<RenameResult>;
+
+  /** 選択したファイルを同じフォルダへ複製する (元ファイルは触らない) */
+  duplicateFiles: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
+
+  /** 選択したファイルを削除する。呼ぶ前に確認を取ること */
+  deleteFiles: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
 }
 
 /** 編集中の画像・キャッシュ・未保存管理・操作履歴・再生 */

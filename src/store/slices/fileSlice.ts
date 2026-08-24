@@ -3,8 +3,10 @@
  */
 
 import { StateCreator } from 'zustand';
-import { renameFile } from '../../engine/fileSystemPath';
+import { renameFile, copyFile, deleteFile, ensureWritePermission } from '../../engine/fileSystemPath';
 import {
+  buildDuplicatePlan,
+  replaceBaseName as _replaceBaseName,
   findInvalidNames,
   findRenameConflicts,
   needsTwoPhaseRename,
@@ -513,7 +515,6 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       };
     }
 
-    const { ensureWritePermission } = await import('../../engine/fileSystemPath');
     if (!(await ensureWritePermission(folderHandle))) {
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
     }
@@ -568,5 +569,98 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       message: `${plan.length} 件のファイル名を変更しました。`,
       renamed: plan.length,
     };
+  },
+
+  /**
+   * 選択したファイルを同じフォルダへ複製する。
+   * 名前は _copy / _copy2 … と衝突しないところまで伸ばす。
+   */
+  duplicateFiles: async (view, paths) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const fileList = view === 1 ? state.fileListB : state.fileListA;
+    const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
+    if (!folderHandle) {
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
+    }
+    if (!(await ensureWritePermission(folderHandle))) {
+      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    }
+
+    const plan = buildDuplicatePlan(paths, fileList);
+    const created: string[] = [];
+
+    try {
+      for (const item of plan) {
+        await copyFile(folderHandle, item.path, item.to, state.rootFolderName);
+        created.push(_replaceBaseName(item.path, item.to));
+      }
+    } catch (err: any) {
+      console.error('Failed to duplicate:', err);
+      return {
+        ok: false,
+        message: `複製の途中で失敗しました: ${err?.message || err}` + '\n' + `${created.length} 件は作成済みです。`,
+        renamed: created.length,
+      };
+    }
+
+    const nextList = [...fileList, ...created].sort();
+    const nextMap = new Map(fileMap);
+    // 複製したファイルの実体はまだ読んでいないので、ハンドル経由で読ませる
+
+    if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
+    else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
+
+    return { ok: true, message: `${created.length} 件を複製しました。`, renamed: created.length };
+  },
+
+  /**
+   * 選択したファイルを削除する。
+   * ⚠️ 元に戻せないので、呼び出し側で必ず確認を取ること。
+   */
+  deleteFiles: async (view, paths) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const fileList = view === 1 ? state.fileListB : state.fileListA;
+    const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
+    if (!folderHandle) {
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
+    }
+    if (!(await ensureWritePermission(folderHandle))) {
+      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    }
+
+    const removed: string[] = [];
+    try {
+      for (const path of paths) {
+        await deleteFile(folderHandle, path, state.rootFolderName);
+        removed.push(path);
+      }
+    } catch (err: any) {
+      console.error('Failed to delete:', err);
+      return {
+        ok: false,
+        message: `削除の途中で失敗しました: ${err?.message || err}` + '\n' + `${removed.length} 件は削除済みです。`,
+        renamed: removed.length,
+      };
+    }
+
+    const gone = new Set(removed);
+    const nextList = fileList.filter((p) => !gone.has(p));
+    const nextMap = new Map<string, File>();
+    fileMap.forEach((file, p) => { if (!gone.has(p)) nextMap.set(p, file); });
+
+    removed.forEach((p) => state.invalidateCachedImage(state.getImageCacheKey(view, p)));
+
+    if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
+    else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
+
+    return { ok: true, message: `${removed.length} 件を削除しました。`, renamed: removed.length };
   },
 });

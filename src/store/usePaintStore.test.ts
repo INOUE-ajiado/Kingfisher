@@ -660,6 +660,84 @@ describe('file スライス — リネーム', () => {
   });
 });
 
+describe('file スライス — 複製と削除', () => {
+  /** getFile / createWritable / removeEntry を持つディレクトリの模擬 */
+  function makeDir(files: string[]) {
+    const contents = new Map(files.map((f) => [f, `content:${f}`]));
+    const dir: any = {
+      name: 'dirA',
+      contents,
+      getFileHandle: async (n: string, opts?: any) => {
+        if (!contents.has(n)) {
+          if (!opts?.create) throw new Error(`no file: ${n}`);
+          contents.set(n, '');
+        }
+        return {
+          getFile: async () => ({ arrayBuffer: async () => contents.get(n) }),
+          createWritable: async () => ({
+            write: async (body: any) => contents.set(n, body),
+            close: async () => {},
+          }),
+        };
+      },
+      removeEntry: async (n: string) => {
+        if (!contents.has(n)) throw new Error(`no file: ${n}`);
+        contents.delete(n);
+      },
+      getDirectoryHandle: async (n: string) => { throw new Error(`no dir: ${n}`); },
+    };
+    return dir;
+  }
+
+  const namesOf = (dir: any) => Array.from(dir.contents.keys()).sort();
+
+  function setup(files: string[]) {
+    const dir = makeDir(files);
+    s().setFolderHandleA(dir, 'dirA', files.slice(), new Map(files.map((f) => [f, new File([], f)])));
+    return dir;
+  }
+
+  it('複製は元ファイルを残したまま _copy を作る', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga']);
+
+    const result = await s().duplicateFiles(0, ['A0001.tga', 'A0002.tga']);
+
+    expect(result.ok).toBe(true);
+    expect(namesOf(dir)).toEqual(['A0001.tga', 'A0001_copy.tga', 'A0002.tga', 'A0002_copy.tga']);
+    // 中身が元と同じであること
+    expect(dir.contents.get('A0001_copy.tga')).toBe('content:A0001.tga');
+    // 一覧にも反映される
+    expect(s().fileListA).toContain('A0001_copy.tga');
+  });
+
+  it('複製を繰り返しても既存を潰さない', async () => {
+    const dir = setup(['A0001.tga']);
+
+    await s().duplicateFiles(0, ['A0001.tga']);
+    await s().duplicateFiles(0, ['A0001.tga']);
+
+    expect(namesOf(dir)).toEqual(['A0001.tga', 'A0001_copy.tga', 'A0001_copy2.tga']);
+  });
+
+  it('削除すると実体と一覧の両方から消える', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga', 'A0003.tga']);
+
+    const result = await s().deleteFiles(0, ['A0001.tga', 'A0003.tga']);
+
+    expect(result.ok).toBe(true);
+    expect(result.renamed).toBe(2);
+    expect(namesOf(dir)).toEqual(['A0002.tga']);
+    expect(s().fileListA).toEqual(['A0002.tga']);
+  });
+
+  it('書き込み可能なフォルダが無ければ何もしない', async () => {
+    s().setFolderHandleA(null, 'dirA', ['A0001.tga']);
+
+    expect((await s().duplicateFiles(0, ['A0001.tga'])).ok).toBe(false);
+    expect((await s().deleteFiles(0, ['A0001.tga'])).ok).toBe(false);
+  });
+});
+
 describe('document スライス — 画像キャッシュ', () => {
   it('キーにフォルダ名が含まれ、別フォルダの同名ファイルと衝突しない', () => {
     s().setFolderHandleA(null, 'cut_A', ['0001.tga']);

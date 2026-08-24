@@ -9,6 +9,8 @@ import {
   findRenameConflicts,
   needsTwoPhaseRename,
   omitUnchanged,
+  buildDuplicateName,
+  buildDuplicatePlan,
 } from './renamePlan';
 
 /**
@@ -186,5 +188,26 @@ describe('変化しない項目の除外', () => {
     ];
 
     expect(omitUnchanged(plan).map((i) => i.to)).toEqual(['9.tga']);
+  });
+});
+
+describe('複製の名前', () => {
+  it('_copy を付ける', () => {
+    expect(buildDuplicateName('A0001.tga', [])).toBe('A0001_copy.tga');
+  });
+
+  it('衝突したら番号を伸ばす', () => {
+    const existing = ['A0001.tga', 'A0001_copy.tga', 'A0001_copy2.tga'];
+    expect(buildDuplicateName('A0001.tga', existing)).toBe('A0001_copy3.tga');
+  });
+
+  it('拡張子が無くても壊れない', () => {
+    expect(buildDuplicateName('README', [])).toBe('README_copy');
+  });
+
+  it('計画の中でも衝突しない', () => {
+    // 同じ名前を 2 回複製しても、2 つ目は _copy2 になる
+    const plan = buildDuplicatePlan(['a/A0001.tga', 'a/A0001.tga'], ['a/A0001.tga']);
+    expect(plan.map((i) => i.to)).toEqual(['A0001_copy.tga', 'A0001_copy2.tga']);
   });
 });
