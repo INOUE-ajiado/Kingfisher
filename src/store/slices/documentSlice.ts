@@ -109,6 +109,74 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
    * - 書き込む画素: そのビューが実際に編集している画像
    * - 書き込む先  : そのビューのフォルダハンドル / そのビュー側の実ファイル名
    */
+  /**
+   * 名前を付けて保存。
+   *
+   * ⚠️ 上書き保存と混同しないこと。以前はメニューの「名前を付けて保存」も
+   * Ctrl+Shift+S も saveActiveCell に繋がっており、確認なく元ファイルを
+   * 上書きしていた。
+   *
+   * 開いているフォルダと連番の対応づけは変更しない。書き出した先は
+   * 連番の一部ではないため、元ファイルの未保存状態はそのまま残す
+   * (クリアすると、まだ書き戻していない編集を保存済みに見せてしまう)。
+   */
+  saveActiveCellAs: async () => {
+    const { activeViewIndex, currentImage, splitImage, currentFileIndex, splitFileIndex, resolveFileNameForView } =
+      get();
+
+    const view: 0 | 1 = activeViewIndex === 1 ? 1 : 0;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+    const image = view === 1 ? splitImage : currentImage;
+
+    if (!image) {
+      return { ok: false, message: `${label} に保存できる画像が読み込まれていません。` };
+    }
+    if (image.isReadOnly) {
+      return { ok: false, message: `${label} の画像は閲覧専用のため保存できません。` };
+    }
+    // window ではなく globalThis を見る (ブラウザでは同一。テスト環境に window は無い)
+    const showSaveFilePicker = (globalThis as any).showSaveFilePicker;
+    if (typeof showSaveFilePicker !== 'function') {
+      return {
+        ok: false,
+        message: 'お使いのブラウザは保存先を選ぶ操作に対応していません。上書き保存 (Ctrl+S) を使ってください。',
+      };
+    }
+
+    const fileIndex = view === 1 ? splitFileIndex : currentFileIndex;
+    const currentName = resolveFileNameForView(fileIndex, view);
+    const suggestedName = (currentName ?? 'cell.tga').split('/').pop() || 'cell.tga';
+
+    try {
+      const fileHandle = await showSaveFilePicker({
+        suggestedName,
+        types: [{ description: 'TGA 画像', accept: { 'application/octet-stream': ['.tga'] } }],
+      });
+
+      if (!(await ensureWritePermission(fileHandle))) {
+        return { ok: false, message: `${label} の保存先への書き込みが許可されませんでした。` };
+      }
+
+      const writable = await fileHandle.createWritable();
+      await writable.write(encodeTGA(image));
+      await writable.close();
+
+      const isDirty = view === 1 ? get().isDirtyB : get().isDirtyA;
+      return {
+        ok: true,
+        message:
+          `${label} を [${fileHandle.name}] へ保存しました。` +
+          (isDirty ? `
+(連番の元ファイルは未保存のままです。上書きするには Ctrl+S)` : ''),
+      };
+    } catch (err: any) {
+      // ダイアログを閉じただけなら通知しない
+      if (err?.name === 'AbortError') return { ok: false, message: '', cancelled: true };
+      console.error('Failed to save as:', err);
+      return { ok: false, message: `保存に失敗しました: ${err?.message || err}` };
+    }
+  },
+
   saveActiveCell: async () => {
     const {
       activeViewIndex,
