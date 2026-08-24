@@ -9,11 +9,7 @@ export const LightTable: React.FC = () => {
 
   const {
     lightTable,
-    setLightTableEnabled,
-    setLightTableOpacity,
-    setOnionSkinFrames,
     setOnionSkinOpacityConfig,
-    setOnionSkinDisplayMode,
     addLightTableSubItem,
     removeLightTableSubItem,
     updateLightTableSubItemTransform,
@@ -46,75 +42,26 @@ export const LightTable: React.FC = () => {
     <div className="bg-white dark:bg-slate-900 border-t border-slate-300 dark:border-slate-800 flex flex-col px-2 py-0.5 text-xs select-none gap-0.5 whitespace-nowrap flex-shrink-0">
       {/* メインコントロールバー (改行完全無効・横スクロール維持) */}
       <div className="h-6.5 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar flex-nowrap min-w-0">
-        {/* オニオンスキン基本トグル ＆ フレーム表示 */}
+        {/* オニオンスキンの設定は右パネルのツールオプションへ集約した。
+            ここには現在の状態表示だけを残す。 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <label className="flex items-center gap-1 cursor-pointer font-bold text-slate-700 dark:text-slate-200 text-[10px] whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={lightTable.enabled}
-              onChange={(e) => setLightTableEnabled(e.target.checked)}
-              className="rounded accent-blue-600 cursor-pointer w-3.5 h-3.5"
-            />
-            <span>オニオンスキン</span>
-          </label>
-
-          {/* 前後表示枚数 */}
-          <div className="flex items-center gap-1 text-[10px] ml-1 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 flex-shrink-0 whitespace-nowrap">
-            <span className="text-slate-500">枚数(前/後):</span>
-            <input
-              type="number"
-              min="0"
-              max="5"
-              value={lightTable.pastFrames}
-              onChange={(e) => setOnionSkinFrames(Number(e.target.value), lightTable.futureFrames)}
-              className="w-7 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center"
-            />
-            <span>/</span>
-            <input
-              type="number"
-              min="0"
-              max="5"
-              value={lightTable.futureFrames}
-              onChange={(e) => setOnionSkinFrames(lightTable.pastFrames, Number(e.target.value))}
-              className="w-7 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded text-center"
-            />
-          </div>
-
-          {/* 表示モード切替 */}
-          <button
-            onClick={() => {
-              const nextMode =
-                lightTable.displayMode === 'monochrome'
-                  ? 'half-color'
-                  : lightTable.displayMode === 'half-color'
-                  ? 'color'
-                  : 'monochrome';
-              setOnionSkinDisplayMode(nextMode);
-            }}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold border transition-colors bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 flex-shrink-0 whitespace-nowrap"
+          <div
+            title="オニオンスキンの設定は右側のツールオプションで行います"
+            className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border whitespace-nowrap ${
+              lightTable.enabled
+                ? 'bg-purple-600 text-white border-purple-600'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300 dark:border-slate-700'
+            }`}
           >
-            <Palette className="w-3 h-3 text-red-500" />
+            <Palette className="w-3 h-3" />
             <span>
-              {lightTable.displayMode === 'monochrome'
-                ? 'モノクロ(前赤/後青)'
-                : lightTable.displayMode === 'half-color'
-                ? 'ハーフカラー'
-                : 'フルカラー'}
+              オニオンスキン{' '}
+              {lightTable.enabled
+                ? lightTable.showAllFrames
+                  ? '(カット全体)'
+                  : `(前${lightTable.pastFrames} / 後${lightTable.futureFrames})`
+                : 'OFF'}
             </span>
-          </button>
-
-          {/* 不透明度 */}
-          <div className="flex items-center gap-1.5 ml-1 text-[11px] flex-shrink-0 whitespace-nowrap">
-            <span className="text-slate-600 dark:text-slate-400">不透明度:</span>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={lightTable.startOpacity}
-              onChange={(e) => setLightTableOpacity(Number(e.target.value))}
-              className="w-20 sm:w-28 accent-blue-600 cursor-pointer"
-            />
-            <span className="w-7 text-slate-700 dark:text-slate-300 font-mono text-[10px]">{lightTable.startOpacity}%</span>
           </div>
 
           {/* 詳細展開ボタン */}

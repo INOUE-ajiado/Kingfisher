@@ -1,6 +1,6 @@
 import React from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { SkipForward, Anchor, Eye, Sliders, Layers, Palette, RefreshCw } from 'lucide-react';
+import { SkipForward, Anchor, Eye, Sliders, Layers, Palette, RefreshCw, Film } from 'lucide-react';
 
 export const ToolOptionsPanel: React.FC = () => {
   const {
@@ -15,6 +15,12 @@ export const ToolOptionsPanel: React.FC = () => {
     setContiguous,
     setReferenceLayer,
     nextCell,
+    lightTable,
+    setLightTableEnabled,
+    setOnionSkinFrames,
+    setOnionSkinOpacityConfig,
+    setOnionSkinDisplayMode,
+    setOnionSkinShowAllFrames,
     pegStabilizer,
     togglePegStabilizerEnabled,
     runPegStabilizerAutoDetect,
@@ -338,7 +344,147 @@ export const ToolOptionsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 6. ⏭️ アクションボタン (Fit & Next Cell) */}
+      {/* 6. 🎞️ オニオンスキン (ライトテーブル) */}
+      <div className="space-y-1.5 pt-1 border-t border-slate-200 dark:border-slate-800">
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            <Film className="w-3.5 h-3.5 text-purple-500" />
+            オニオンスキン
+          </span>
+          <input
+            type="checkbox"
+            checked={lightTable.enabled}
+            onChange={(e) => setLightTableEnabled(e.target.checked)}
+            className="w-3.5 h-3.5 accent-purple-600 cursor-pointer"
+          />
+        </label>
+
+        {lightTable.enabled && (
+          <div className="space-y-2 pl-1 border-l-2 border-purple-500/30">
+            {/* 対象範囲: カット全体 か 前後の枚数指定 か */}
+            <label className="flex items-center justify-between cursor-pointer">
+              <span className="text-[10px] text-slate-600 dark:text-slate-400">
+                カット内の全セルを重ねる
+              </span>
+              <input
+                type="checkbox"
+                checked={lightTable.showAllFrames}
+                onChange={(e) => setOnionSkinShowAllFrames(e.target.checked)}
+                className="w-3 h-3 accent-purple-600 cursor-pointer"
+              />
+            </label>
+
+            {lightTable.showAllFrames ? (
+              <p className="text-[9px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                現在のセルを基準に、フォルダ内の前後すべてを重ねます。
+                枚数が多いほど読み込みと描画に時間がかかります。
+              </p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] text-slate-600 dark:text-slate-400">前のセル</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    value={lightTable.pastFrames}
+                    onChange={(e) => setOnionSkinFrames(Number(e.target.value), lightTable.futureFrames)}
+                    className="flex-1 h-1 accent-red-500 cursor-pointer"
+                  />
+                  <span className="w-8 text-right font-mono text-[10px] text-red-500">
+                    {lightTable.pastFrames}枚
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] text-slate-600 dark:text-slate-400">次のセル</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="30"
+                    value={lightTable.futureFrames}
+                    onChange={(e) => setOnionSkinFrames(lightTable.pastFrames, Number(e.target.value))}
+                    className="flex-1 h-1 accent-blue-500 cursor-pointer"
+                  />
+                  <span className="w-8 text-right font-mono text-[10px] text-blue-500">
+                    {lightTable.futureFrames}枚
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* 濃度 */}
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] text-slate-600 dark:text-slate-400">濃度</span>
+              <input
+                type="range"
+                min="5"
+                max="100"
+                value={lightTable.startOpacity}
+                onChange={(e) =>
+                  setOnionSkinOpacityConfig(Number(e.target.value), lightTable.opacityStep)
+                }
+                className="flex-1 h-1 accent-purple-500 cursor-pointer"
+              />
+              <span className="w-8 text-right font-mono text-[10px] text-slate-600 dark:text-slate-300">
+                {lightTable.startOpacity}%
+              </span>
+            </div>
+
+            {/* 離れたセルほど薄くする度合い */}
+            <div className="flex items-center justify-between gap-1">
+              <span className="text-[10px] text-slate-600 dark:text-slate-400" title="離れたセルほど薄くする度合い">
+                減衰
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="50"
+                value={lightTable.opacityStep}
+                onChange={(e) =>
+                  setOnionSkinOpacityConfig(lightTable.startOpacity, Number(e.target.value))
+                }
+                className="flex-1 h-1 accent-purple-500 cursor-pointer"
+              />
+              <span className="w-8 text-right font-mono text-[10px] text-slate-600 dark:text-slate-300">
+                {lightTable.opacityStep}%
+              </span>
+            </div>
+
+            {/* 表示モード */}
+            <div className="flex items-center gap-1">
+              {(
+                [
+                  { key: 'monochrome', label: '色分け' },
+                  { key: 'half-color', label: '半調' },
+                  { key: 'color', label: '原色' },
+                ] as const
+              ).map((mode) => (
+                <button
+                  key={mode.key}
+                  onClick={() => setOnionSkinDisplayMode(mode.key)}
+                  title={
+                    mode.key === 'monochrome'
+                      ? '前を赤・次を青の単色で表示'
+                      : mode.key === 'half-color'
+                      ? '元の色を残しつつ色味を寄せる'
+                      : '元の色のまま重ねる'
+                  }
+                  className={`flex-1 py-1 rounded text-[9px] font-bold border transition-colors ${
+                    lightTable.displayMode === mode.key
+                      ? 'bg-purple-600 text-white border-purple-600'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-700'
+                  }`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 7. ⏭️ アクションボタン (Fit & Next Cell) */}
       <div className="space-y-1.5 pt-1">
         <button
           onClick={resetCanvasTransform}
