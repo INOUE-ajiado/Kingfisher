@@ -101,6 +101,41 @@ export const CellWindow: React.FC = () => {
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
+  /**
+   * ドラッグ操作を canvas の外で離した時の取りこぼし対策。
+   *
+   * パン・ブラシ・投げ縄の終了は canvas の onMouseUp だけに任せていたため、
+   * キャンバスの外へ出てからボタンを離すと状態が「押しっぱなし」のまま残り、
+   * 以降の左クリックがすべてパン扱いになって描画ツールが反応しなくなる。
+   * window 側でも確実に終了させる。
+   */
+  useEffect(() => {
+    if (!isPanning && !isBrushing) return;
+
+    const endDrag = () => {
+      setIsPanning(false);
+      setIsBrushing(false);
+      setLastPos(null);
+    };
+
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    return () => {
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+    };
+  }, [isPanning, isBrushing]);
+
+  /**
+   * ウィンドウからフォーカスが外れている間に Space を離すと keyup が届かず、
+   * 「Space 押しっぱなし」と誤認して左クリックがパンになり続ける。
+   */
+  useEffect(() => {
+    const clearSpace = () => setIsSpacePressed(false);
+    window.addEventListener('blur', clearSpace);
+    return () => window.removeEventListener('blur', clearSpace);
+  }, []);
+
   // ⌨️ Space キー検出 (Space キーを押している間は一時的にパン移動ツール化)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -169,18 +204,141 @@ export const CellWindow: React.FC = () => {
 
   const resetSplitRatio = () => setMainAreaSplitRatio(0.5);
 
+  // 閲覧専用の画像に描画しようとした時の通知 (無言で無視されると原因が分からないため)
+  const [readOnlyNotice, setReadOnlyNotice] = useState(false);
+  useEffect(() => {
+    if (!readOnlyNotice) return;
+    const timer = setTimeout(() => setReadOnlyNotice(false), 3000);
+    return () => clearTimeout(timer);
+  }, [readOnlyNotice]);
+
   // 参照ウィンドウがドッキング領域の上にいるか (跡地のハイライト用)
   const [isReferenceOverDock, setIsReferenceOverDock] = useState(false);
 
   const [isWinADragOver, setIsWinADragOver] = useState(false);
   const [isWinBDragOver, setIsWinBDragOver] = useState(false);
 
+  /**
+   * ファイルのドラッグ判定。
+   *
+   * dragenter / dragleave は子要素をまたぐたびに親へバブリングしてくる。
+   * さらに Chrome / WebKit では dragleave が dragenter より先に発火することがあり、
+   * 出入りの回数を数えるだけでは一瞬 0 になってハイライトが点滅する。
+   * そこで発火順に依存しない 2 段構えにする。
+   *
+   *  1. dragleave は relatedTarget が自分の内側なら無視する (子要素への移動)
+   *  2. dragover を心拍とみなし、一定時間届かなくなったら解除する
+   *     (relatedTarget が null になるブラウザ差異への保険)
+   */
+  const DRAG_HEARTBEAT_MS = 500;
+  const dragClearTimer = useRef<{ winA: number | null; winB: number | null }>({
+    winA: null,
+    winB: null,
+  });
+
+  const setDragOverState = (win: 'winA' | 'winB', active: boolean) => {
+    if (win === 'winA') setIsWinADragOver(active);
+    else setIsWinBDragOver(active);
+  };
+
+  const resetDragState = (win: 'winA' | 'winB') => {
+    if (dragClearTimer.current[win] !== null) {
+      clearTimeout(dragClearTimer.current[win]!);
+      dragClearTimer.current[win] = null;
+    }
+    setDragOverState(win, false);
+  };
+
+  /**
+   * ドラッグ継続中であることを記録し、途切れたら自動で解除する。
+   *
+   * ハイライトは常にどちらか一方だけ。Win A の上を通過して Win B へ入ると、
+   * 心拍のタイムアウトが切れるまで Win A も光ったままになり、
+   * どちらに取り込まれるのか分からなくなるため、相手側は即座に消す。
+   */
+  const keepDragAlive = (win: 'winA' | 'winB') => {
+    const other: 'winA' | 'winB' = win === 'winA' ? 'winB' : 'winA';
+    if (dragClearTimer.current[other] !== null) {
+      clearTimeout(dragClearTimer.current[other]!);
+      dragClearTimer.current[other] = null;
+    }
+    setDragOverState(other, false);
+
+    setDragOverState(win, true);
+    if (dragClearTimer.current[win] !== null) clearTimeout(dragClearTimer.current[win]!);
+    dragClearTimer.current[win] = window.setTimeout(() => {
+      dragClearTimer.current[win] = null;
+      setDragOverState(win, false);
+    }, DRAG_HEARTBEAT_MS);
+  };
+
+  /** ファイル / フォルダのドラッグかどうか (テキスト選択のドラッグ等を無視する) */
+  const isFileDrag = (e: React.DragEvent) => {
+    const types = e.dataTransfer?.types;
+    return !!types && Array.prototype.includes.call(types, 'Files');
+  };
+
+  const handleWindowDragEnter = (e: React.DragEvent, win: 'winA' | 'winB') => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    keepDragAlive(win);
+  };
+
+  const handleWindowDragOver = (e: React.DragEvent, win: 'winA' | 'winB') => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // 毎回指定しないとブラウザが「ドロップ不可」と判断して drop が発火しない
+    e.dataTransfer.dropEffect = 'copy';
+    keepDragAlive(win);
+  };
+
+  const handleWindowDragLeave = (e: React.DragEvent, win: 'winA' | 'winB') => {
+    // 子要素へ移動しただけの dragleave は無視する
+    const related = e.relatedTarget as Node | null;
+    if (related && e.currentTarget.contains(related)) return;
+    e.stopPropagation();
+    resetDragState(win);
+  };
+
+  // ドラッグがウィンドウ外で終わった場合にハイライトが残らないようにする
+  useEffect(() => {
+    const clearAll = () => {
+      resetDragState('winA');
+      resetDragState('winB');
+    };
+    window.addEventListener('dragend', clearAll);
+    window.addEventListener('drop', clearAll);
+    return () => {
+      window.removeEventListener('dragend', clearAll);
+      window.removeEventListener('drop', clearAll);
+    };
+  }, []);
+
   // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理 (階層パス保持)
+  /**
+   * readEntries() は 1 回の呼び出しで最大 100 件しか返さない仕様なので、
+   * 空配列が返るまで繰り返す。1 回で済ませると大きなカットフォルダの
+   * ファイルが黙って欠落する。
+   */
+  const readAllDirectoryEntries = async (dirReader: any): Promise<any[]> => {
+    const all: any[] = [];
+    for (;;) {
+      const batch: any[] = await new Promise((resolve) => {
+        dirReader.readEntries(
+          (results: any[]) => resolve(results),
+          () => resolve([])
+        );
+      });
+      if (!batch.length) break;
+      all.push(...batch);
+    }
+    return all;
+  };
+
   const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>, currentPath = '') => {
-    const dirReader = dirEntry.createReader();
-    const entries: any[] = await new Promise((resolve) => {
-      dirReader.readEntries((results: any[]) => resolve(results));
-    });
+    const entries = await readAllDirectoryEntries(dirEntry.createReader());
 
     for (const entry of entries) {
       const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
@@ -199,41 +357,44 @@ export const CellWindow: React.FC = () => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (targetWin === 'winA') setIsWinADragOver(false);
-    else setIsWinBDragOver(false);
+    resetDragState('winA');
+    resetDragState('winB');
 
+    // ⚠️ dataTransfer.items はハンドラを抜けた時点で無効になる。
+    // await を挟む前に、エントリとファイルを同期的に取り出しておく。
+    // (従来は 1 件目の処理を await した後で 2 件目を読んでいたため、
+    //  複数まとめてドロップすると取りこぼしが起きていた)
+    const entries: any[] = [];
     const items = e.dataTransfer.items;
-    const files = e.dataTransfer.files;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+    }
+    const plainFiles: File[] = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+
     const fileMap = new Map<string, File>();
     let detectedFolderName: string | null = null;
 
-    if (items && items.length > 0) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.webkitGetAsEntry) {
-          const entry = item.webkitGetAsEntry();
-          if (entry) {
-            if (entry.isDirectory) {
-              if (!detectedFolderName) detectedFolderName = entry.name;
-              await readDirectoryEntries(entry, fileMap, entry.name);
-            } else if (entry.isFile) {
-              const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
-              if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
-                const relPath = (file as any).webkitRelativePath || file.name;
-                fileMap.set(relPath, file);
-              }
-            }
-          }
+    for (const entry of entries) {
+      if (entry.isDirectory) {
+        if (!detectedFolderName) detectedFolderName = entry.name;
+        await readDirectoryEntries(entry, fileMap, entry.name);
+      } else if (entry.isFile) {
+        const file: File | null = await new Promise((resolve) =>
+          entry.file((f: File) => resolve(f), () => resolve(null))
+        );
+        if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+          fileMap.set((file as any).webkitRelativePath || file.name, file);
         }
       }
     }
 
-    if (fileMap.size === 0 && files && files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    if (fileMap.size === 0) {
+      for (const file of plainFiles) {
         if (/\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
-          const relPath = (file as any).webkitRelativePath || file.name;
-          fileMap.set(relPath, file);
+          fileMap.set((file as any).webkitRelativePath || file.name, file);
         }
       }
     }
@@ -246,6 +407,8 @@ export const CellWindow: React.FC = () => {
       } else {
         setCustomDropFolderB(folderTitle, fileMap, fileList);
       }
+    } else {
+      alert('ドロップされた中に画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
     }
   };
 
@@ -255,6 +418,9 @@ export const CellWindow: React.FC = () => {
   const loadFrameForView = useFrameLoader();
   useCellPrefetch(loadFrameForView);
   const onionFramesMap = useOnionSkinFrames(loadFrameForView);
+
+  // 自動フィットが最後に設定した値 (ユーザー操作との区別に使う)
+  const lastFitTransformRef = useRef<{ scale: number; offsetX: number; offsetY: number } | null>(null);
 
   // 画面サイズ（PCディスプレイのキャンバスエリア高さ）に合わせて、仮想フレーム/セル画像が上下にぴったり収まるサイズに自動計算＆初期位置設定
   const fitToScreenHeight = useCallback(() => {
@@ -268,14 +434,47 @@ export const CellWindow: React.FC = () => {
     const fitScale = Math.min(Math.max(0.2, availableHeight / targetHeight), 3.0);
     const fitTransform = { scale: fitScale, offsetX: 0, offsetY: 0 };
 
+    // 「自動で合わせた値」を控えておく。これと現在値がずれていれば
+    // ユーザーが自分でズーム・パンしたと判断できる。
+    lastFitTransformRef.current = fitTransform;
     setCanvasTransform(fitTransform);
     setSplitCanvasTransform(fitTransform);
   }, [currentImage, setCanvasTransform, setSplitCanvasTransform]);
 
-  // 初回マウント時、画像読み込み時、およびウィンドウリサイズ時に上下フィット位置を適用
+  /**
+   * 自動フィットは「画像のサイズが変わった時」だけ行う。
+   *
+   * 以前は currentImage が変わるたびに実行していたため、拡大して細部を塗っている最中に
+   * コマ送りすると毎回ズームが初期化されてしまっていた。
+   * 同じサイズのセルを送っている間は、ユーザーが決めた表示倍率と位置をそのまま保つ。
+   */
+  const lastFittedSizeRef = useRef<string | null>(null);
+
   useEffect(() => {
+    if (!currentImage) return;
+    const sizeKey = `${currentImage.width}x${currentImage.height}`;
+    if (lastFittedSizeRef.current === sizeKey) return;
+    lastFittedSizeRef.current = sizeKey;
     fitToScreenHeight();
-    const handleResize = () => fitToScreenHeight();
+  }, [currentImage, fitToScreenHeight]);
+
+  /**
+   * ウィンドウをリサイズした時は表示を合わせ直すが、
+   * ユーザーが自分でズーム・パンしている場合はその操作を尊重して触らない。
+   */
+  useEffect(() => {
+    const handleResize = () => {
+      const fitted = lastFitTransformRef.current;
+      const current = usePaintStore.getState().canvasTransform;
+      const isUserAdjusted =
+        !!fitted &&
+        (fitted.scale !== current.scale ||
+          fitted.offsetX !== current.offsetX ||
+          fitted.offsetY !== current.offsetY);
+      if (isUserAdjusted) return;
+      fitToScreenHeight();
+    };
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [fitToScreenHeight]);
@@ -365,7 +564,10 @@ export const CellWindow: React.FC = () => {
       // 1. Draw Onion Skin Layers (オニオンスキン: 前後フレーム透過 & カラーコーディング)
       if (isLeft && lightTable.enabled && !isPlaying) {
         // A. 過去フレーム描画 (Past Frames: デフォルト 赤)
-        const pastCount = lightTable.pastFrames ?? 1;
+        // 「カット全体」指定のときは読み込めた枚数ぶんすべて重ねる
+        const pastCount = lightTable.showAllFrames
+          ? onionFramesMap.size
+          : lightTable.pastFrames ?? 1;
         for (let step = pastCount; step >= 1; step--) {
           const frameImg = onionFramesMap.get(-step) || (step === 1 ? prevImage : null);
           if (!frameImg) continue;
@@ -414,7 +616,9 @@ export const CellWindow: React.FC = () => {
         }
 
         // B. 未来フレーム描画 (Future Frames: デフォルト 青)
-        const futureCount = lightTable.futureFrames ?? 1;
+        const futureCount = lightTable.showAllFrames
+          ? onionFramesMap.size
+          : lightTable.futureFrames ?? 1;
         for (let step = 1; step <= futureCount; step++) {
           const frameImg = onionFramesMap.get(step) || (step === 1 ? nextImage : null);
           if (!frameImg) continue;
@@ -597,6 +801,10 @@ export const CellWindow: React.FC = () => {
     const viewIdx = isLeftView ? 0 : 1;
     setActiveViewIndex(viewIdx);
 
+    // 前回のドラッグが canvas の外で終わっていた場合に備え、毎回状態を仕切り直す
+    if (isPanning) setIsPanning(false);
+    if (isBrushing) setIsBrushing(false);
+
     const targetImg = isLeftView ? currentImage : splitImage;
     const canvas = isLeftView ? leftCanvasRef.current : rightCanvasRef.current;
     if (!targetImg || !canvas) return;
@@ -616,8 +824,10 @@ export const CellWindow: React.FC = () => {
 
     const { x, y } = getCanvasCoords(e, canvas);
 
-    // 閲覧専用（タイムシートや指示メモなどのJPG画像）の場合は塗り・描画操作をガード
+    // 閲覧専用（タイムシートや指示メモなどの JPG/PNG 画像）の場合は塗り・描画操作をガード。
+    // 黙って無視すると「ツールが反応しない」ようにしか見えないので理由を表示する。
     if (targetImg.isReadOnly && activeTool !== 'eyedropper' && e.button !== 1 && !e.altKey) {
+      setReadOnlyNotice(true);
       return;
     }
 
@@ -816,21 +1026,22 @@ export const CellWindow: React.FC = () => {
             style={winAWindow.windowStyle}
             onPointerDownCapture={winAWindow.bringToFront}
             onClick={() => setActiveViewIndex(0)}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsWinADragOver(true);
-            }}
-            onDragLeave={() => setIsWinADragOver(false)}
+            onDragEnter={(e) => handleWindowDragEnter(e, 'winA')}
+            onDragOver={(e) => handleWindowDragOver(e, 'winA')}
+            onDragLeave={(e) => handleWindowDragLeave(e, 'winA')}
             onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winA')}
+            // ⚠️ ハイライト用のクラスはレイアウト用のクラスと必ず併記する。
+            // 以前は D&D 中に flex-1 が外れて要素が縮み、カーソルの下から
+            // 逃げてしまうため判定が点滅していた。
             className={`flex flex-col border-2 ${
-              isWinADragOver
-                ? 'border-blue-500 ring-4 ring-blue-500/50'
-                : isWinAFloating
+              isWinAFloating
                 ? 'bg-slate-100 dark:bg-slate-900 border-blue-600 shadow-2xl rounded relative'
                 : `flex-1 relative rounded overflow-hidden ${
-                    activeViewIndex === 0 && isSplitView ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
+                    activeViewIndex === 0 && isSplitView
+                      ? 'border-blue-600 dark:border-blue-500 shadow-md'
+                      : 'border-transparent'
                   }`
-            }`}
+            } ${isWinADragOver ? 'border-blue-500 ring-4 ring-inset ring-blue-500/60' : ''}`}
           >
             {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
             {isWinADragOver && (
@@ -846,11 +1057,14 @@ export const CellWindow: React.FC = () => {
               onPointerDown={winAWindow.handleHeaderPointerDown}
               className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
             >
-              <span className="font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1.5">
-                <span>Win A ({folderNameA || 'Orig'}): {resolveFileNameForView(currentFileIndex, 0) || '---'}{isDirtyA ? ' *' : ''}</span>
+              <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5 min-w-0">
+                <span className="truncate">
+                  Win A ({folderNameA || 'Orig'}): {resolveFileNameForView(currentFileIndex, 0) || '---'}
+                  {isDirtyA ? ' *' : ''}
+                </span>
                 {currentImage?.isReadOnly && (
-                  <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
-                    🔒 閲覧専用 (Sheet View)
+                  <span className="flex-shrink-0 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs whitespace-nowrap">
+                    🔒 閲覧専用 (描画不可)
                   </span>
                 )}
               </span>
@@ -905,9 +1119,20 @@ export const CellWindow: React.FC = () => {
                   className="block"
                 />
 
+                {readOnlyNotice && (
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>
+                      この画像は閲覧専用（TGA 以外）のため描画できません。
+                      <br />
+                      .tga のセルが入ったフォルダを選択してください。
+                    </span>
+                  </div>
+                )}
+
                 {!currentImage && (
                   <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
-                    <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm pointer-events-auto select-none animate-in fade-in duration-150">
+                    <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm select-none animate-in fade-in duration-150">
                       <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-2.5 text-blue-600 dark:text-blue-400">
                         <FolderOpen className="w-5 h-5" />
                       </div>
@@ -947,21 +1172,18 @@ export const CellWindow: React.FC = () => {
               style={winBWindow.windowStyle}
               onPointerDownCapture={winBWindow.bringToFront}
               onClick={() => setActiveViewIndex(1)}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsWinBDragOver(true);
-              }}
-              onDragLeave={() => setIsWinBDragOver(false)}
+              onDragEnter={(e) => handleWindowDragEnter(e, 'winB')}
+              onDragOver={(e) => handleWindowDragOver(e, 'winB')}
+              onDragLeave={(e) => handleWindowDragLeave(e, 'winB')}
               onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
+              // Win A と同様、ハイライトでレイアウトが変わらないようにする
               className={`flex flex-col border-2 ${
-                isWinBDragOver
-                  ? 'border-emerald-500 ring-4 ring-emerald-500/50'
-                  : isWinBFloating
+                isWinBFloating
                   ? 'bg-slate-100 dark:bg-slate-900 border-emerald-600 shadow-2xl rounded relative'
                   : `flex-1 relative rounded overflow-hidden ${
                       activeViewIndex === 1 ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent'
                     }`
-              }`}
+              } ${isWinBDragOver ? 'border-emerald-500 ring-4 ring-inset ring-emerald-500/60' : ''}`}
             >
               {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
               {isWinBDragOver && (
@@ -1036,9 +1258,20 @@ export const CellWindow: React.FC = () => {
                     className="block"
                   />
 
+                  {readOnlyNotice && (
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>
+                        この画像は閲覧専用（TGA 以外）のため描画できません。
+                        <br />
+                        .tga のセルが入ったフォルダを選択してください。
+                      </span>
+                    </div>
+                  )}
+
                   {!splitImage && (
                     <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
-                      <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm pointer-events-auto select-none animate-in fade-in duration-150">
+                      <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm select-none animate-in fade-in duration-150">
                         <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-2.5 text-emerald-600 dark:text-emerald-400">
                           <FolderOpen className="w-5 h-5" />
                         </div>
