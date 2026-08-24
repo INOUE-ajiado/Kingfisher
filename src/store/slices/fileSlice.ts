@@ -233,10 +233,31 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set({ folderHandle: handle, folderName: name, fileList: files, currentFileIndex: 0, splitFileIndex: 0, historyStack: [], historyIndex: -1 }),
 
   setCurrentFileIndex: (index) => {
-    const { currentFileIndex, confirmDiscardIfDirty } = get();
-    if (index === currentFileIndex) return;
-    if (!confirmDiscardIfDirty(0)) return;
-    set({ currentFileIndex: index, historyStack: [], historyIndex: -1, isDirtyA: false });
+    const state = get();
+    if (index === state.currentFileIndex) return;
+    if (!state.confirmDiscardIfDirty(0)) return;
+
+    const patch: Record<string, unknown> = {
+      currentFileIndex: index,
+      historyStack: [],
+      historyIndex: -1,
+      isDirtyA: false,
+    };
+
+    // 連動中は、連動を開始した時点のコマ差を保ったまま Win B も追従させる
+    if (state.syncMode && state.isSplitView) {
+      const last = Math.max(0, state.unifiedFileList.length - 1);
+      const target = Math.max(0, Math.min(last, index + state.syncFrameOffset));
+      if (target !== state.splitFileIndex) {
+        if (!state.confirmDiscardIfDirty(1)) return;
+        patch.splitFileIndex = target;
+        patch.splitHistoryStack = [];
+        patch.splitHistoryIndex = -1;
+        patch.isDirtyB = false;
+      }
+    }
+
+    set(patch as any);
   },
 
   /** 移動対象のビューをすべて確認したうえでコマ送りする共通処理 */
