@@ -1,0 +1,170 @@
+{
+  "name": "Kingfisher",
+  "summary": "アニメ制作の彩色・仕上げ工程をブラウザで完結させる Web アプリ。RETAS STUDIO PaintMan 互換を目指す。完全フロントエンド動作でサーバーへ画像を送らない。",
+  "production": "https://kingfisher-paint-2026.web.app",
+  "repository": "git@github.com:INOUE-ajiado/Kingfisher.git",
+  "repositoryVisibility": "public",
+  "lastReviewed": "2026-08-24",
+
+  "techStack": {
+    "implemented": [
+      "React 18 + TypeScript 5.7 + Vite 6",
+      "Zustand 5 (スライス分割)",
+      "Tailwind 3 / lucide-react",
+      "Canvas 2D API による描画 (putImageData → drawImage)",
+      "File System Access API (ゼロ・アップロード)",
+      "Web Workers (TGA デコード / ベクター・ラスタートレース)",
+      "vitest (テスト 90 件)",
+      "Firebase Hosting (COOP/COEP ヘッダー付き)"
+    ],
+    "notImplemented": [
+      "Rust / WebAssembly — 存在しない。画像処理は全て素の TypeScript",
+      "WebGPU — src/engine/webgpuRenderer.ts は書かれているがどこからも import されていない。実際の描画は Canvas 2D",
+      "SharedArrayBuffer — 未使用。COOP/COEP ヘッダーだけ先に設定済み"
+    ]
+  },
+
+  "criticalWarnings": [
+    {
+      "id": "docs-are-not-spec",
+      "severity": "high",
+      "title": "Doc/ の仕様書は達成済み仕様ではない",
+      "detail": "Doc/ 配下の 24 本の Markdown はアジャイル開発の過程で書かれた設計目標・道筋の痕跡。仕様より効率的なコードへ組み替えた箇所も多い。Basic_Design.md は Rust/Wasm・WebGPU・SharedArrayBuffer を中核と記すが、いずれも未実装。",
+      "howToApply": "機能の有無は必ずコードを読んで確認する。Doc を根拠に『実装済みのはず』と推論しない。"
+    },
+    {
+      "id": "auth-is-internal-only",
+      "severity": "info",
+      "title": "AuthGuard は社内配布前提の目隠し",
+      "detail": "正解ハッシュがバンドルに含まれ localStorage にも同じ値を保存するため DevTools から突破可能。サーバーを持たない構成では原理的にこれ以上の強度は出せない。社内配布に留める方針で許容済み。",
+      "howToApply": "認証強化を提案しない。セキュリティ指摘は不要。"
+    },
+    {
+      "id": "deploy-password-hash",
+      "severity": "high",
+      "title": "デプロイ前にパスワードハッシュを照合すること",
+      "detail": ".env が無い環境ではビルドが AuthGuard.tsx のフォールバックハッシュを使う。本番と異なるハッシュでデプロイすると全員ログインできなくなる。",
+      "howToApply": "本番バンドルを取得し 2cfbedf50a09b0767c5d4c17ecb94f4b81fc17a160ef609c0b7566f5fcea2974 が含まれることを確認してから firebase deploy する。"
+    },
+    {
+      "id": "branch-before-commit",
+      "severity": "medium",
+      "title": "main に直接コミットしない",
+      "detail": "運用は『ブランチを切る → コミット → main へ --no-ff マージ → push → デプロイ』。",
+      "howToApply": "git checkout -b improve/<topic> から始める。"
+    }
+  ],
+
+  "domainRules": [
+    {
+      "id": "white-is-transparent",
+      "title": "純白 RGB(255,255,255) は透明 (alpha 0)",
+      "detail": "decodeTGA が読み込み時に純白を alpha 0 へ変換する。encodeTGA は保存時に alpha 0 を純白へ戻す。アニメ業界の慣習に合わせた独自仕様。",
+      "location": "src/engine/tga.ts"
+    },
+    {
+      "id": "transparent-wall-rule",
+      "title": "透明画素は『透明領域を塗るとき』だけ通り抜けられる",
+      "detail": "isBoundary は alpha 0 の画素について targetA !== 0 を返す。基準色が不透明 (線をクリックした場合) は透明部分を壁として扱い、セル全面が塗り潰されるのを防ぐ。",
+      "location": "src/engine/paintAlgorithm.ts"
+    },
+    {
+      "id": "relative-paths",
+      "title": "ファイル識別子はルートからの相対パス",
+      "detail": "ファイルツリーを階層表示するため Cat/_go/A0001.tga のような相対パスを使う。getFileHandle() は名前を 1 つしか受け取れないので、resolveFileHandle() でディレクトリを 1 段ずつ辿る。folderHandleA/B にはサブフォルダではなくルートのハンドルを保持する。",
+      "location": "src/engine/fileSystemPath.ts"
+    },
+    {
+      "id": "frame-merge",
+      "title": "A/B は異名連番。フレーム番号で対応付ける",
+      "detail": "Win A と Win B はファイル名が異なる (例: a_0001.tga と b_go0001.tga)。extractFrameNumber でフレーム番号を取り出し buildMergedFrameData でマージする。ビューごとの実ファイル名は resolveFileNameForView(index, view) で解決する。unifiedFileList の中身は A 側の代表名なので、B の保存先や表示に使ってはいけない。",
+      "location": "src/store/types.ts, src/store/slices/fileSlice.ts"
+    },
+    {
+      "id": "sync-frame-offset",
+      "title": "左右連動はコマ差を保つ",
+      "detail": "連動を押した瞬間の splitFileIndex - currentFileIndex を syncFrameOffset として記録し、以降その差を保ったまま追従する。押した時点では両者とも動かない。相手側への追従はストア (setCurrentFileIndex / setSplitFileIndex) が担うので、コンポーネント側で両方に同じ番号を入れてはいけない。",
+      "location": "src/store/slices/viewSlice.ts"
+    },
+    {
+      "id": "undo-model",
+      "title": "履歴は historyStack[historyIndex] が常に表示中の状態",
+      "detail": "saveUndoState は操作の直前に呼ばれるため、積んだ枠の中身は commitLiveState() で遅延同期される。履歴は Win A / Win B で独立 (historyStack / splitHistoryStack)。最初の操作時に『編集前』を基準状態として積む。",
+      "location": "src/store/slices/documentSlice.ts"
+    },
+    {
+      "id": "readonly-guard",
+      "title": "TGA 以外の画像は閲覧専用でツールが効かない",
+      "detail": "decodeAnyImageFile は .tga 以外 (JPG/PNG) に isReadOnly: true を付ける。handleMouseDown は右クリックのパン判定より後、ツール分岐より前でこれを弾く。『ツールが反応しない』症状の最有力候補。",
+      "location": "src/engine/imageDecode.ts, src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "floating-window-transform",
+      "title": "独立ウィンドウの位置は element.style.transform へ直接書く",
+      "detail": "再描画を挟まないための高速化。React の管理外なので、ドッキングへ戻すときに明示的に消さないとパネルがズレたまま残る。位置・サイズ・重なり順はストア (windowSlice) が保持する。",
+      "location": "src/hooks/useFastDraggable.ts, src/hooks/useFloatingWindow.ts"
+    }
+  ],
+
+  "workflow": {
+    "commands": {
+      "dev": "npm run dev",
+      "test": "npm test",
+      "typecheckWithTests": "npm run typecheck",
+      "build": "npm run build",
+      "deploy": "npm run build && firebase deploy --only hosting --project kingfisher-paint-2026"
+    },
+    "beforeCommit": [
+      "npx tsc --noEmit",
+      "npm test",
+      "npm run build"
+    ],
+    "conventions": [
+      "回答は日本語で行う",
+      "検証した事実と推測を明確に分けて書く。推測で断定しない",
+      "原因が確定できないときは、ユーザーがツール無しで判定できる方法を提示する (カーソルの形・保存ボタンの色・履歴パネルの増減など)",
+      "修正後は tsc / test / build を必ず通す",
+      "意図的にコードを壊してテストが落ちることを確認する検証が有効"
+    ]
+  },
+
+  "knownFixedBugs": [
+    { "symptom": "Ctrl+S が効かない", "cause": "存在しない DOM 要素をクリックしようとしていた" },
+    { "symptom": "Win B の保存が別ファイルに書かれる", "cause": "保存先に A 側の代表名を使っていた" },
+    { "symptom": "Win B の Undo が効かない", "cause": "splitImage がコンポーネントのローカル state だった" },
+    { "symptom": "Ctrl+Z が 2 手戻る / 1 手目が戻せない", "cause": "履歴の基準状態が無く undo の条件がずれていた" },
+    { "symptom": "コマ送りで編集が消える", "cause": "未保存の確認が無かった" },
+    { "symptom": "隙間閉じが効かない", "cause": "UI から値は渡るが floodFill が参照していなかった" },
+    { "symptom": "線をクリックすると全面が塗り潰される", "cause": "透明画素を常に通り抜け可能にしていた" },
+    { "symptom": "ドッキングに戻すとパネルがズレる", "cause": "直接書いた transform を消していなかった" },
+    { "symptom": "D&D が点滅して挿入できない", "cause": "ハイライト時に flex-1 が外れて要素が縮んでいた" },
+    { "symptom": "D&D で 101 枚目以降が欠落", "cause": "readEntries() の 100 件制限を繰り返していなかった" },
+    { "symptom": "D&D で複数選択が取りこぼされる", "cause": "await を挟んだ後に dataTransfer.items を読んでいた" },
+    { "symptom": "コマ送りでズームが戻る", "cause": "画像が変わるたびに自動フィットしていた" },
+    { "symptom": "ファイルツリーがフラットになる", "cause": "フォルダを開く経路が相対パスを持たず 1 階層しか走査していなかった" },
+    { "symptom": "Win B のファイルツリーが出ない", "cause": "統合リスト (A 側の代表名) から 1 本だけ組み立てていた" }
+  ],
+
+  "openIssues": [
+    {
+      "id": "winb-tools",
+      "severity": "high",
+      "title": "Win B でツールが使えない (原因未確定)",
+      "verifiedOk": [
+        "canvas の ref と handleMouseDown(e, false) の配線",
+        "targetImg = isLeftView ? currentImage : splitImage の分岐",
+        "Win A は Win B の DOM 上の親ではない (兄弟)",
+        "saveUndoState は activeViewIndex を見るので Win B 側に積まれる"
+      ],
+      "lastAttempt": "Win B にも閲覧専用の通知バナーを追加。NO CELL DATA カードの pointer-events-auto を除去。ユーザー未確認。",
+      "nextStep": "Win B クリック時に (1) オレンジの通知が出るか (2) NO CELL DATA が出ているか (3) 保存ボタンが未保存 B に変わるか を確認する。readonly-guard が最有力。"
+    },
+    {
+      "id": "colorchart-lag",
+      "severity": "medium",
+      "title": "ColorChart の独立ウィンドウが重い (対策済み・効果未確認)",
+      "lastAttempt": "document.body へポータル描画 (FloatingPortal.tsx)。右サイドパネルの overflow-y-auto 内にあると position:fixed でも再描画が起きるため。",
+      "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。"
+    }
+  ]
+}
