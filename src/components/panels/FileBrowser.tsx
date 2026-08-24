@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
-import { usePaintStore, SubDirectoryItem } from '../../store/usePaintStore';
+import { usePaintStore, SubDirectoryItem, extractFrameNumber } from '../../store/usePaintStore';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network } from 'lucide-react';
 
 export interface FileTreeNode {
@@ -41,6 +41,17 @@ function buildTreeFromPaths(paths: string[]): FileTreeNode[] {
   return root;
 }
 
+/** ツリー内のフォルダのパスを、階層の深さに関係なくすべて集める */
+function collectFolderPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): Set<string> {
+  nodes.forEach((node) => {
+    if (node.isFolder) {
+      acc.add(node.path);
+      if (node.children) collectFolderPaths(node.children, acc);
+    }
+  });
+  return acc;
+}
+
 export interface FlatNodeItem {
   node: FileTreeNode;
   depth: number;
@@ -73,13 +84,32 @@ const TreeItemNode: React.FC<{
   focusedPath: string | null;
   togglePath: (path: string, forceState?: boolean) => void;
   onSelectFile: (idx: number) => void;
+  /** もう一方のウィンドウが表示中の位置 (単一ツリー表示時の副次ハイライト) */
+  secondaryIdx?: number;
+  /** 選択中ファイルのハイライト色。Win A は青、Win B は緑 */
+  selectionTone?: 'blue' | 'emerald';
+  /** 左右連動中であることを示す 🔗 を選択中ファイルに付ける */
+  showSyncBadge?: boolean;
   onFocusNode: (path: string) => void;
   currentIdx: number;
-}> = ({ node, depth, expandedPaths, focusedPath, togglePath, onSelectFile, onFocusNode, currentIdx }) => {
+}> = ({
+  node,
+  depth,
+  expandedPaths,
+  focusedPath,
+  togglePath,
+  onSelectFile,
+  onFocusNode,
+  currentIdx,
+  secondaryIdx,
+  selectionTone = 'blue',
+  showSyncBadge = false,
+}) => {
   const itemRef = useRef<HTMLDivElement | null>(null);
   const isExpanded = expandedPaths.has(node.path);
   const isFocused = focusedPath === node.path;
   const isSelected = !node.isFolder && node.fileIndex === currentIdx;
+  const isSecondary = !node.isFolder && secondaryIdx !== undefined && node.fileIndex === secondaryIdx;
 
   // ⚠️ フォーカス/選択中アイテムがウィンドウ外へ出た場合、自動追従スクロール
   useEffect(() => {
@@ -127,6 +157,9 @@ const TreeItemNode: React.FC<{
                 focusedPath={focusedPath}
                 togglePath={togglePath}
                 onSelectFile={onSelectFile}
+                secondaryIdx={secondaryIdx}
+                selectionTone={selectionTone}
+                showSyncBadge={showSyncBadge}
                 onFocusNode={onFocusNode}
                 currentIdx={currentIdx}
               />
@@ -146,14 +179,30 @@ const TreeItemNode: React.FC<{
       }}
       style={{ paddingLeft: `${depth * 12 + 16}px` }}
       className={`flex items-center gap-1.5 py-1 px-1 cursor-pointer text-[11px] transition-colors select-none ${
-        isSelected
-          ? 'bg-blue-600 text-white font-bold rounded shadow-xs'
+        isSelected && isSecondary
+          ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-bold rounded shadow-xs'
+          : isSelected
+          ? `${selectionTone === 'emerald' ? 'bg-emerald-600' : 'bg-blue-600'} text-white font-bold rounded shadow-xs`
+          : isSecondary
+          ? 'bg-emerald-600 text-white font-bold rounded shadow-xs'
           : isFocused
           ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 ring-1 ring-blue-400/50 rounded-xs'
           : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
       }`}
     >
-      <FileImage className={`w-3.5 h-3.5 flex-shrink-0 ${isSelected ? 'text-white' : 'text-blue-400'}`} />
+      {/* 左右連動中は、連動しているファイルであることを 🔗 で示す */}
+      {showSyncBadge && (isSelected || isSecondary) && (
+        <Link className="w-3 h-3 flex-shrink-0 text-white" />
+      )}
+      <FileImage
+        className={`w-3.5 h-3.5 flex-shrink-0 ${
+          isSelected || isSecondary
+            ? 'text-white'
+            : selectionTone === 'emerald'
+            ? 'text-emerald-400'
+            : 'text-blue-400'
+        }`}
+      />
       <span className="truncate">{node.name}</span>
     </div>
   );
@@ -192,6 +241,10 @@ export const FileBrowser: React.FC = () => {
     setFolderFilesB,
     syncMode,
     toggleSyncMode,
+    syncFrameOffset,
+    alignSyncFrames,
+    isSplitView,
+    resolveFileNameForView,
   } = usePaintStore();
 
   const togglePath = (path: string, forceState?: boolean) => {
@@ -209,15 +262,89 @@ export const FileBrowser: React.FC = () => {
   };
 
   // ファイルリストから階層ツリー構造を動的作成
-  const fileTreeNodes = useMemo(() => {
-    const tree = buildTreeFromPaths(unifiedFileList);
-    const defaultExpanded = new Set<string>();
-    tree.forEach((node) => {
-      if (node.isFolder) defaultExpanded.add(node.path);
+  const fileTreeNodes = useMemo(() => buildTreeFromPaths(unifiedFileList), [unifiedFileList]);
+
+  /**
+   * 2画面分割中は Win A / Win B のツリーを並べて表示する。
+   *
+   * 各ツリーは自分のフォルダのファイル一覧から組み立てるため、
+   * ノードが持つ index はそのリスト内の位置になる。
+   * 選択時はファイル名からフレーム番号を取り出し、
+   * 統合リスト上の位置へ読み替えてから反映する。
+   */
+  const showDualTree = isSplitView && fileListA.length > 0 && fileListB.length > 0;
+
+  const treeA = useMemo(() => buildTreeFromPaths(fileListA), [fileListA]);
+  const treeB = useMemo(() => buildTreeFromPaths(fileListB), [fileListB]);
+
+  /**
+   * 読み込み直後はフォルダをすべて開いた状態にする。
+   *
+   * 以前は最上位のフォルダしか展開しておらず、しかも統合リストから作った
+   * ツリーだけを対象にしていたため、Win B のツリーが閉じたままだった。
+   * 既に開いているものはそのままなので、ユーザーが畳んだ状態は保たれる。
+   */
+  useEffect(() => {
+    const wanted = new Set<string>();
+    collectFolderPaths(fileTreeNodes, wanted);
+    collectFolderPaths(treeA, wanted);
+    collectFolderPaths(treeB, wanted);
+    if (wanted.size === 0) return;
+
+    setExpandedPaths((prev) => {
+      const missing = Array.from(wanted).filter((path) => !prev.has(path));
+      if (missing.length === 0) return prev;
+      const next = new Set(prev);
+      missing.forEach((path) => next.add(path));
+      return next;
     });
-    setExpandedPaths((prev) => (prev.size === 0 ? defaultExpanded : prev));
-    return tree;
-  }, [unifiedFileList]);
+  }, [fileTreeNodes, treeA, treeB]);
+
+  const toUnifiedIndex = (path: string, fallback: number) => {
+    const idx = mergedFrameNumbers.indexOf(extractFrameNumber(path));
+    return idx >= 0 ? idx : fallback;
+  };
+
+  const handleSelectFromTreeA = (localIdx: number) => {
+    const path = fileListA[localIdx];
+    if (!path) return;
+    setCurrentFileIndex(toUnifiedIndex(path, localIdx));
+  };
+
+  const handleSelectFromTreeB = (localIdx: number) => {
+    const path = fileListB[localIdx];
+    if (!path) return;
+    setSplitFileIndex(toUnifiedIndex(path, localIdx));
+  };
+
+  // 各ツリー内で「今表示中のセル」がどれかを求める
+  /**
+   * 統合リスト上の位置から、各ツリー内での位置を求める。
+   *
+   * ファイル名での一致 → フレーム番号での突き合わせ → 同位置、の順に試す。
+   * 名前だけで引くと、マージ情報が無い読み込み経路で解決できず
+   * Win B 側のハイライトが出なくなる。
+   */
+  const toLocalIndex = (unifiedIdx: number, list: string[], view: 0 | 1) => {
+    if (list.length === 0) return -1;
+
+    const name = resolveFileNameForView(unifiedIdx, view);
+    if (name) {
+      const byName = list.indexOf(name);
+      if (byName >= 0) return byName;
+    }
+
+    const frame = mergedFrameNumbers[unifiedIdx];
+    if (frame) {
+      const byFrame = list.findIndex((f) => extractFrameNumber(f) === frame);
+      if (byFrame >= 0) return byFrame;
+    }
+
+    return unifiedIdx < list.length ? unifiedIdx : -1;
+  };
+
+  const activeLocalIdxA = toLocalIndex(currentFileIndex, fileListA, 0);
+  const activeLocalIdxB = toLocalIndex(splitFileIndex, fileListB, 1);
 
   // 可視ノードのフラット配列 (キーボード移動用)
   const flatVisibleNodes = useMemo(() => {
@@ -225,11 +352,10 @@ export const FileBrowser: React.FC = () => {
   }, [fileTreeNodes, expandedPaths]);
 
   // 連番フレーム行クリック時の連動・個別のルーティング挙動
+  // 連動中の Win B への追従はストア側 (setCurrentFileIndex) が担う。
+  // ここで両方に同じ番号を入れると、連動開始時のコマ差が失われる。
   const handleSelectFrame = (idx: number) => {
     setCurrentFileIndex(idx);
-    if (syncMode) {
-      setSplitFileIndex(idx);
-    }
   };
 
   // ⌨️ キーボード方向キー (↑ ↓ ← → Enter Space) ナビゲーション処理
@@ -478,15 +604,9 @@ export const FileBrowser: React.FC = () => {
     }
   };
 
-  const handleSelectWinAOnly = (idx: number) => {
-    setCurrentFileIndex(idx);
-    if (syncMode) setSplitFileIndex(idx);
-  };
-
-  const handleSelectWinBOnly = (idx: number) => {
-    setSplitFileIndex(idx);
-    if (syncMode) setCurrentFileIndex(idx);
-  };
+  // 連動中の相手側への追従はストアが担う (連動開始時のコマ差を保つため)
+  const handleSelectWinAOnly = (idx: number) => setCurrentFileIndex(idx);
+  const handleSelectWinBOnly = (idx: number) => setSplitFileIndex(idx);
 
   return (
     <div className="flex-1 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800 flex flex-col select-none min-h-[200px]">
@@ -524,7 +644,15 @@ export const FileBrowser: React.FC = () => {
 
           <button
             onClick={toggleSyncMode}
-            title={syncMode ? '左右連動中' : '独立モード'}
+            title={
+              syncMode
+                ? `左右連動中${
+                    syncFrameOffset !== 0
+                      ? ` (Win B は Win A の ${syncFrameOffset > 0 ? `${syncFrameOffset} コマ先` : `${-syncFrameOffset} コマ手前`})`
+                      : ' (同じコマ)'
+                  }`
+                : '独立モード (押すと現在のコマ差を保ったまま連動します)'
+            }
             className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold border transition-colors ${
               syncMode
                 ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
@@ -532,7 +660,21 @@ export const FileBrowser: React.FC = () => {
             }`}
           >
             {syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
+            {/* コマ差が見えないと「連動していない」ように見えるため常に表示する */}
+            {syncMode && syncFrameOffset !== 0 && (
+              <span className="tabular-nums">{syncFrameOffset > 0 ? `+${syncFrameOffset}` : syncFrameOffset}</span>
+            )}
           </button>
+
+          {syncMode && syncFrameOffset !== 0 && (
+            <button
+              onClick={alignSyncFrames}
+              title="コマ差をリセットして Win B を Win A と同じコマに揃える"
+              className="px-1.5 py-0.5 rounded text-[9px] font-bold border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-white transition-colors"
+            >
+              差を揃える
+            </button>
+          )}
         </div>
       </div>
 
@@ -617,6 +759,58 @@ export const FileBrowser: React.FC = () => {
             </span>
           </div>
         ) : viewMode === 'tree' ? (
+          showDualTree ? (
+            /* 📁📁 2画面分割中: Win A / Win B のツリーを並べて表示 */
+            <div className="flex gap-1 h-full">
+              {(
+                [
+                  {
+                    key: 'A',
+                    label: `Win A (${selectedSubDirA || folderNameA || 'Orig'})`,
+                    tone: 'text-blue-600 dark:text-blue-400 border-blue-500/40',
+                    selectionTone: 'blue' as const,
+                    nodes: treeA,
+                    onSelect: handleSelectFromTreeA,
+                    activeIdx: activeLocalIdxA,
+                  },
+                  {
+                    key: 'B',
+                    label: `Win B (${selectedSubDirB || folderNameB || 'Retake'})`,
+                    tone: 'text-emerald-600 dark:text-emerald-400 border-emerald-500/40',
+                    selectionTone: 'emerald' as const,
+                    nodes: treeB,
+                    onSelect: handleSelectFromTreeB,
+                    activeIdx: activeLocalIdxB,
+                  },
+                ] as const
+              ).map((pane) => (
+                <div key={pane.key} className="flex-1 min-w-0 flex flex-col">
+                  <div
+                    className={`text-[9px] font-bold px-1 pb-1 mb-1 border-b truncate select-none ${pane.tone}`}
+                  >
+                    {pane.label}
+                  </div>
+                  <div className="flex-1 overflow-y-auto space-y-0.5">
+                    {pane.nodes.map((node) => (
+                      <TreeItemNode
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        expandedPaths={expandedPaths}
+                        focusedPath={focusedPath}
+                        togglePath={togglePath}
+                        onSelectFile={pane.onSelect}
+                        onFocusNode={setFocusedPath}
+                        currentIdx={pane.activeIdx}
+                        selectionTone={pane.selectionTone}
+                        showSyncBadge={syncMode}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           /* 📁 フォルダ階層ツリービュー (キーボード ↑ ↓ ← → 操作対応) */
           <div
             tabIndex={0}
@@ -634,9 +828,12 @@ export const FileBrowser: React.FC = () => {
                 onSelectFile={handleSelectFrame}
                 onFocusNode={setFocusedPath}
                 currentIdx={currentFileIndex}
+                secondaryIdx={isSplitView ? splitFileIndex : undefined}
+                showSyncBadge={syncMode && isSplitView}
               />
             ))}
           </div>
+          )
         ) : (
           /* 📊 連番マージ表ビュー (Merge Table View) */
           <table className="w-full text-left text-xs border-collapse">

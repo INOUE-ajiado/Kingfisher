@@ -142,7 +142,10 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
   // 2画面分割 (Split View) & 連動 (Sync Mode)
   isSplitView: false,
 
-  syncMode: true,
+  // 初期状態では連動しない。それぞれ好きなセルを選んでから「連動」を押す使い方に合わせる
+  syncMode: false,
+
+  syncFrameOffset: 0,
 
   activeViewIndex: 0,
 
@@ -163,21 +166,61 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
   toggleSyncMode: () =>
     set((state) => {
-      const nextSyncMode = !state.syncMode;
-      if (nextSyncMode) {
-        return { syncMode: true, splitFileIndex: state.currentFileIndex };
+      if (!state.syncMode) {
+        // 連動開始: 今それぞれが表示しているコマの差をそのまま保つ。
+        // 以前は Win B を Win A の位置へ強制的に合わせていたため、
+        // 狙って選んだコマがずれてしまっていた。
+        return {
+          syncMode: true,
+          syncFrameOffset: state.splitFileIndex - state.currentFileIndex,
+        };
       }
       return { syncMode: false };
     }),
+
+  alignSyncFrames: () => {
+    const state = get();
+    if (state.splitFileIndex !== state.currentFileIndex) {
+      if (!state.confirmDiscardIfDirty(1)) return;
+    }
+    set({
+      syncFrameOffset: 0,
+      splitFileIndex: state.currentFileIndex,
+      splitHistoryStack: [],
+      splitHistoryIndex: -1,
+      isDirtyB: false,
+    });
+  },
 
   setActiveViewIndex: (idx) => set({ activeViewIndex: idx }),
 
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
 
   setSplitFileIndex: (index) => {
-    const { splitFileIndex, confirmDiscardIfDirty } = get();
-    if (index === splitFileIndex) return;
-    if (!confirmDiscardIfDirty(1)) return;
-    set({ splitFileIndex: index, splitHistoryStack: [], splitHistoryIndex: -1, isDirtyB: false });
+    const state = get();
+    if (index === state.splitFileIndex) return;
+    if (!state.confirmDiscardIfDirty(1)) return;
+
+    const patch: Record<string, unknown> = {
+      splitFileIndex: index,
+      splitHistoryStack: [],
+      splitHistoryIndex: -1,
+      isDirtyB: false,
+    };
+
+    // 連動中は Win A 側も同じコマ差を保って追従させる
+    if (state.syncMode && state.isSplitView) {
+      const last = Math.max(0, state.unifiedFileList.length - 1);
+      const target = Math.max(0, Math.min(last, index - state.syncFrameOffset));
+      if (target !== state.currentFileIndex) {
+        if (!state.confirmDiscardIfDirty(0)) return;
+        patch.currentFileIndex = target;
+        patch.historyStack = [];
+        patch.historyIndex = -1;
+        patch.isDirtyA = false;
+      }
+    }
+
+    set(patch as any);
   },
 });

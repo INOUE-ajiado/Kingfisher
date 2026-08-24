@@ -62,43 +62,61 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  /**
+   * ディレクトリを再帰的に走査し、ルートからの相対パスをキーにしてファイルを集める。
+   *
+   * ファイルツリーを階層表示するには識別子が `Cat/a/A0001.tga` のような
+   * 相対パスである必要がある。ドラッグ＆ドロップ側は元からこの形式なので、
+   * 「フォルダを開く」も同じ形に揃える。
+   */
+  const collectFilesRecursively = async (
+    dirHandle: any,
+    filesMap: Map<string, File>,
+    currentPath: string
+  ) => {
+    for await (const entry of dirHandle.values()) {
+      const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+
+      if (entry.kind === 'file') {
+        if (/\.(tga|png|jpg|jpeg)$/i.test(entry.name)) {
+          try {
+            filesMap.set(relPath, await entry.getFile());
+          } catch (e) {
+            console.error(`Failed to read ${relPath}:`, e);
+          }
+        }
+      } else if (entry.kind === 'directory') {
+        await collectFilesRecursively(entry, filesMap, relPath);
+      }
+    }
+  };
+
   const handleOpenFolderDir = async () => {
     if ('showDirectoryPicker' in window) {
       try {
         const rootHandle = await (window as any).showDirectoryPicker();
+        const rootName: string = rootHandle.name;
         const subDirs: any[] = [];
 
+        // 直下のディレクトリごとに、その配下すべてを再帰的に集める
         for await (const entry of rootHandle.values()) {
-          if (entry.kind === 'directory') {
-            const filesMap = new Map<string, File>();
-            const fileList: string[] = [];
-            let isImageFolder = false;
+          if (entry.kind !== 'directory') continue;
 
-            for await (const fileEntry of entry.values()) {
-              if (fileEntry.kind === 'file') {
-                const lower = fileEntry.name.toLowerCase();
-                if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-                  fileList.push(fileEntry.name);
-                  try {
-                    const file = await fileEntry.getFile();
-                    filesMap.set(fileEntry.name, file);
-                  } catch (e) {}
-                  if (lower.endsWith('.tga') || lower.endsWith('.png')) isImageFolder = true;
-                }
-              }
-            }
+          const filesMap = new Map<string, File>();
+          await collectFilesRecursively(entry, filesMap, `${rootName}/${entry.name}`);
+          if (filesMap.size === 0) continue;
 
-            fileList.sort();
-            if (fileList.length > 0) {
-              subDirs.push({
-                name: entry.name,
-                handle: entry,
-                filesMap,
-                fileList,
-                isImageFolder,
-              });
-            }
-          }
+          const fileList = Array.from(filesMap.keys()).sort();
+          const isImageFolder = fileList.some((f) => /\.(tga|png)$/i.test(f));
+
+          subDirs.push({
+            name: entry.name,
+            // 相対パスで引くため、ハンドルはサブフォルダではなくルートを持たせる
+            handle: rootHandle,
+            filesMap,
+            fileList,
+            isImageFolder,
+          });
         }
 
         subDirs.sort((a, b) => {
@@ -108,24 +126,25 @@ export const MenuBar: React.FC = () => {
         });
 
         if (subDirs.length > 0) {
-          usePaintStore.getState().setCutRootFolder(rootHandle, rootHandle.name, subDirs);
+          usePaintStore.getState().setCutRootFolder(rootHandle, rootName, subDirs);
           return;
-        } else {
-          // 直下に画像がある場合
-          const files: string[] = [];
-          for await (const entry of rootHandle.values()) {
-            if (entry.kind === 'file' && (entry.name.toLowerCase().endsWith('.tga') || entry.name.toLowerCase().endsWith('.jpg'))) {
-              files.push(entry.name);
-            }
-          }
-          files.sort();
-          if (files.length > 0) {
-            setFolderHandleA(rootHandle, rootHandle.name, files);
-            return;
-          }
         }
+
+        // サブフォルダが無く、直下に画像がある場合
+        const rootFiles = new Map<string, File>();
+        await collectFilesRecursively(rootHandle, rootFiles, rootName);
+        if (rootFiles.size > 0) {
+          const files = Array.from(rootFiles.keys()).sort();
+          setFolderHandleA(rootHandle, rootName, files);
+          setFolderFilesA(rootName, rootFiles);
+          return;
+        }
+
+        alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
+        return;
       } catch (e: any) {
         if (e.name === 'AbortError') return;
+        console.error('Failed to open directory:', e);
       }
     }
     folderInputRef.current?.click();

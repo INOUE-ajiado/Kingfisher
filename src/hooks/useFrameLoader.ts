@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { usePaintStore } from '../store/usePaintStore';
 import { TGAImage } from '../engine/tga';
 import { decodeAnyImageFile } from '../engine/imageDecode';
+import { resolveFileHandle } from '../engine/fileSystemPath';
 import { usePrefetchWorker } from './usePrefetchWorker';
 
 export type LoadFrameFn = (index: number, view: 0 | 1) => Promise<TGAImage | null>;
@@ -29,6 +30,7 @@ export function useFrameLoader(): LoadFrameFn {
     fileMapA,
     fileMapB,
     unifiedFileList,
+    rootFolderName,
   } = usePaintStore();
 
   const { decodeTgaAsync } = usePrefetchWorker();
@@ -48,7 +50,7 @@ export function useFrameLoader(): LoadFrameFn {
 
       if (folderHandle && fileList.includes(fileName)) {
         try {
-          const fileHandle = await folderHandle.getFileHandle(fileName);
+          const fileHandle = await resolveFileHandle(folderHandle, fileName, rootFolderName);
           const file = await fileHandle.getFile();
           const decoded = await decodeAnyImageFile(file, decodeTgaAsync);
           putCachedImage(cacheKey, decoded);
@@ -83,6 +85,7 @@ export function useFrameLoader(): LoadFrameFn {
       fileMapA,
       fileMapB,
       unifiedFileList,
+      rootFolderName,
     ]
   );
 }
@@ -134,16 +137,22 @@ export function useOnionSkinFrames(loadFrame: LoadFrameFn): Map<number, TGAImage
   const { currentFileIndex, unifiedFileList, lightTable, isPlaying } = usePaintStore();
   const [onionFramesMap, setOnionFramesMap] = useState<Map<number, TGAImage>>(new Map());
 
-  const { enabled, pastFrames, futureFrames } = lightTable;
+  const { enabled, pastFrames, futureFrames, showAllFrames } = lightTable;
 
   useEffect(() => {
     if (!enabled || isPlaying) return;
     let isSubscribed = true;
 
     (async () => {
+      // 「カット全体」指定のときは、いま開いているセルを基準に前後すべてを対象にする
+      const backCount = showAllFrames ? currentFileIndex : pastFrames ?? 1;
+      const aheadCount = showAllFrames
+        ? Math.max(0, unifiedFileList.length - 1 - currentFileIndex)
+        : futureFrames ?? 1;
+
       const offsets: number[] = [];
-      for (let offset = -1; offset >= -(pastFrames ?? 1); offset--) offsets.push(offset);
-      for (let offset = 1; offset <= (futureFrames ?? 1); offset++) offsets.push(offset);
+      for (let offset = -1; offset >= -backCount; offset--) offsets.push(offset);
+      for (let offset = 1; offset <= aheadCount; offset++) offsets.push(offset);
 
       // 逐次 await をやめて並列読み込み。既にキャッシュ済みのコマは即座に返る。
       const frames = await Promise.all(
@@ -169,7 +178,7 @@ export function useOnionSkinFrames(loadFrame: LoadFrameFn): Map<number, TGAImage
     return () => {
       isSubscribed = false;
     };
-  }, [currentFileIndex, enabled, pastFrames, futureFrames, unifiedFileList, loadFrame, isPlaying]);
+  }, [currentFileIndex, enabled, pastFrames, futureFrames, showAllFrames, unifiedFileList, loadFrame, isPlaying]);
 
   return onionFramesMap;
 }

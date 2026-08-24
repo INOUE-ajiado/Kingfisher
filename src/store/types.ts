@@ -90,6 +90,8 @@ export interface LightTableState {
   startOpacity: number;
   opacityStep: number;
   displayMode: 'color' | 'half-color' | 'monochrome';
+  /** カット内の全セルを対象にする (前後の枚数指定を無視する) */
+  showAllFrames: boolean;
   pastColor: { r: number; g: number; b: number };
   futureColor: { r: number; g: number; b: number };
   items: LightTableSubItem[];
@@ -233,6 +235,13 @@ export interface ViewSlice {
   runPegStabilizerAutoDetect: () => void
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
   isSplitView: boolean
+  /**
+   * 連動時に保つ Win B と Win A のコマ差 (splitFileIndex - currentFileIndex)。
+   * 「連動」を押した瞬間の位置関係を記録し、以降その差を保ったまま追従させる。
+   */
+  syncFrameOffset: number;
+  /** 連動中のコマ差を 0 に揃える (Win B を Win A と同じコマへ) */
+  alignSyncFrames: () => void;
   syncMode: boolean
   activeViewIndex: 0 | 1
   splitFileIndex: number
@@ -410,6 +419,8 @@ export interface LightTableSlice {
   setLightTableOpacity: (opacity: number) => void
   setOnionSkinFrames: (past: number, future: number) => void
   setOnionSkinOpacityConfig: (startOpacity: number, opacityStep: number) => void
+  /** カット内の全セルをオニオンスキン表示するかどうか */
+  setOnionSkinShowAllFrames: (showAll: boolean) => void;
   setOnionSkinDisplayMode: (mode: 'color' | 'half-color' | 'monochrome') => void
   setOnionSkinColors: (pastColor: { r: number; g: number; b: number }, futureColor: { r: number; g: number; b: number }) => void
   addLightTableSubItem: (name: string, file?: File, image?: TGAImage) => void

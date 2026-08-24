@@ -4,6 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { encodeTGA } from '../../engine/tga';
+import { resolveFileHandle } from '../../engine/fileSystemPath';
 import { PaintStore, DocumentSlice } from '../types';
 
 /** 1 セルあたりに保持する履歴の最大数 (基準状態「編集前」を含む) */
@@ -149,7 +150,7 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     }
 
     try {
-      const fileHandle = await folderHandle.getFileHandle(fileName);
+      const fileHandle = await resolveFileHandle(folderHandle, fileName, get().rootFolderName);
       const writable = await fileHandle.createWritable();
       await writable.write(encodeTGA(image));
       await writable.close();
