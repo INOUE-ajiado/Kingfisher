@@ -37,16 +37,17 @@ export const useGlobalShortcuts = () => {
       // 🟢 2. Ctrl / Cmd 組み合わせのブラウザ挙動オーバーライド
       if (e.ctrlKey || e.metaKey) {
         // Ctrl + S (通常: ページ保存 → 変更: アクティブセルの上書き保存 / ブラウザ保存ダイアログ遮断)
+        // ⚠️ Shift の有無で分岐すること。見ないと Ctrl+Shift+S まで
+        //    上書き保存に流れ、保存先を聞かずに元ファイルを潰す。
         if (keyLower === 's') {
           e.preventDefault();
           e.stopPropagation();
           // ストアの保存処理を直接呼ぶ (DOM 上のボタン有無に依存しない)
-          usePaintStore
-            .getState()
-            .saveActiveCell()
-            .then((result) => {
-              if (!result.ok) alert(result.message);
-            });
+          const store = usePaintStore.getState();
+          const saving = e.shiftKey ? store.saveActiveCellAs() : store.saveActiveCell();
+          saving.then((result) => {
+            if (!result.ok && !result.cancelled) alert(result.message);
+          });
           return;
         }
 

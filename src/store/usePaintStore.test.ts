@@ -449,6 +449,88 @@ describe('document スライス — 書き込み許可', () => {
   });
 });
 
+describe('document スライス — 名前を付けて保存', () => {
+  const origPicker = (globalThis as any).showSaveFilePicker;
+  afterEach(() => {
+    if (origPicker === undefined) delete (globalThis as any).showSaveFilePicker;
+    else (globalThis as any).showSaveFilePicker = origPicker;
+  });
+
+  function setupCell() {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a_0001.tga']);
+    usePaintStore.setState({
+      folderHandleA: {
+        name: 'dirA',
+        getFileHandle: async () => { throw new Error('上書きしてはいけない'); },
+      },
+      currentImage: makeImage(5),
+      activeViewIndex: 0,
+      isDirtyA: true,
+    });
+  }
+
+  it('元ファイルを上書きせず、選んだ先へ書き出す', async () => {
+    setupCell();
+    let suggested = '';
+    const written: number[] = [];
+    (globalThis as any).showSaveFilePicker = async (opts: any) => {
+      suggested = opts.suggestedName;
+      return {
+        name: 'retake_0001.tga',
+        createWritable: async () => ({
+          write: async (buf: ArrayBuffer) => { written.push(new Uint8Array(buf)[18]); },
+          close: async () => {},
+        }),
+      };
+    };
+
+    const result = await s().saveActiveCellAs();
+
+    expect(result.ok).toBe(true);
+    // 連番のパスではなくファイル名だけを初期値にする
+    expect(suggested).toBe('a_0001.tga');
+    expect(written).toEqual([5]);
+    expect(result.message).toContain('retake_0001.tga');
+  });
+
+  it('書き出しても連番の元ファイルは未保存のまま', async () => {
+    setupCell();
+    (globalThis as any).showSaveFilePicker = async () => ({
+      name: 'elsewhere.tga',
+      createWritable: async () => ({ write: async () => {}, close: async () => {} }),
+    });
+
+    await s().saveActiveCellAs();
+
+    // 書き出し先は連番の一部ではないので、保存済みに見せてはいけない
+    expect(s().isDirtyA).toBe(true);
+  });
+
+  it('ダイアログを閉じただけなら通知しない', async () => {
+    setupCell();
+    (globalThis as any).showSaveFilePicker = async () => {
+      const err: any = new Error('aborted');
+      err.name = 'AbortError';
+      throw err;
+    };
+
+    const result = await s().saveActiveCellAs();
+    expect(result.ok).toBe(false);
+    expect(result.cancelled).toBe(true);
+    expect(result.message).toBe('');
+  });
+
+  it('閲覧専用の画像は書き出さない', async () => {
+    setupCell();
+    usePaintStore.setState({ currentImage: { ...makeImage(1), isReadOnly: true } });
+    (globalThis as any).showSaveFilePicker = async () => { throw new Error('呼ばれてはいけない'); };
+
+    const result = await s().saveActiveCellAs();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('閲覧専用');
+  });
+});
+
 describe('document スライス — 画像キャッシュ', () => {
   it('キーにフォルダ名が含まれ、別フォルダの同名ファイルと衝突しない', () => {
     s().setFolderHandleA(null, 'cut_A', ['0001.tga']);

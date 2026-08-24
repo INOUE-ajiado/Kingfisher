@@ -328,7 +328,13 @@ export interface DocumentSlice {
   /** 未保存の編集があれば確認ダイアログを出す。移動して良ければ true */
   confirmDiscardIfDirty: (view: 0 | 1) => boolean
   /** アクティブビューのセルを、正しいフォルダ・正しいファイル名へ上書き保存する */
-  saveActiveCell: () => Promise<{ ok: boolean; message: string }>
+  saveActiveCell: () => Promise<SaveResult>
+  /**
+   * アクティブビューのセルを、保存先を選んで書き出す。
+   * 開いているフォルダ・連番の対応づけは変えないので、
+   * 元ファイルの未保存状態はそのまま残る。
+   */
+  saveActiveCellAs: () => Promise<SaveResult>
   // --- 操作履歴 (Win A / Win B で独立) ---
   historyStack: HistoryItem[]
   historyIndex: number
@@ -458,6 +464,13 @@ export interface WindowSlice {
 
 
 /** 全スライスを合成したストアの最終形 */
+export interface SaveResult {
+  ok: boolean;
+  message: string;
+  /** ユーザーがダイアログを閉じただけ。通知を出す必要はない */
+  cancelled?: boolean;
+}
+
 export interface PaintStore
   extends UiSlice,
     ViewSlice,

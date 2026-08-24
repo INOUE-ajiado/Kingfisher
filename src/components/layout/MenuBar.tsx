@@ -47,6 +47,7 @@ export const MenuBar: React.FC = () => {
     setColorSpecLayoutMode,
     setAutoRevertTool,
     saveActiveCell,
+    saveActiveCellAs,
     isDirtyA,
     isDirtyB,
   } = usePaintStore();
@@ -177,6 +178,15 @@ export const MenuBar: React.FC = () => {
     alert(result.message);
   };
 
+  // ⚠️ 上書き保存と同じハンドラを使わないこと。
+  // 以前は「名前を付けて保存」も handleSave に繋がっており、
+  // 保存先を聞かずに元ファイルを上書きしていた。
+  const handleSaveAs = async () => {
+    const result = await saveActiveCellAs();
+    if (result.cancelled) return;
+    alert(result.message);
+  };
+
   const menuData = [
     {
       id: 'file',
@@ -187,7 +197,7 @@ export const MenuBar: React.FC = () => {
         { label: '参照画像として開く (Open as Reference)...', shortcut: 'Ctrl+O', action: handleOpenReference },
         { type: 'divider' },
         { label: '上書き保存', shortcut: 'Ctrl+S', action: handleSave },
-        { label: '名前を付けて保存', shortcut: 'Ctrl+Shift+S', action: handleSave },
+        { label: '名前を付けて保存...', shortcut: 'Ctrl+Shift+S', action: handleSaveAs },
         { type: 'divider' },
         { label: 'ベクター出力 (SVG)...', shortcut: '', action: () => setActiveModal('exportVector') },
         { label: '画像トレース / 背景透過 (PNG/TGA)...', shortcut: '', action: () => setActiveModal('exportTrace') },
