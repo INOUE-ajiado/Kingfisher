@@ -48,6 +48,12 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       referenceCanvas: { ...state.referenceCanvas, isFloating: !state.referenceCanvas.isFloating },
     })),
 
+  mainAreaSplitRatio: 0.5,
+
+  setMainAreaSplitRatio: (ratio) =>
+    // 片側が潰れて操作できなくならないよう両端を残す
+    set({ mainAreaSplitRatio: Math.min(0.85, Math.max(0.15, ratio)) }),
+
   setColorSpecLayoutMode: (mode) => set({ colorSpecLayoutMode: mode }),
 
   setAutoRevertTool: (enable) =>

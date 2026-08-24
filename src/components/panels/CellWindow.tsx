@@ -10,10 +10,10 @@ import {
 } from '../../engine/paintAlgorithm';
 import { cloneTGAImage, createCheckerPattern } from '../../engine/imageDecode';
 import { AlertTriangle, Maximize2, Minimize2, FolderOpen } from 'lucide-react';
-import { useFastDraggable } from '../../hooks/useFastDraggable';
-import { useResizableWindow } from '../../hooks/useResizableWindow';
+import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { useFrameLoader, useCellPrefetch, useOnionSkinFrames } from '../../hooks/useFrameLoader';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
+import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
 
 export const CellWindow: React.FC = () => {
@@ -59,29 +59,38 @@ export const CellWindow: React.FC = () => {
     pegStabilizer,
     referenceCanvas,
     colorSpecLayoutMode,
+    mainAreaSplitRatio,
+    setMainAreaSplitRatio,
     isWinAFloating,
     isWinBFloating,
     toggleWinAFloating,
     toggleWinBFloating,
+    toggleReferenceFloating,
     setCustomDropFolderA,
     setCustomDropFolderB,
     canvasBgMatteMode,
     canvasCustomBgColor,
   } = usePaintStore();
 
-  const winADrag = useFastDraggable({ initialX: 60, initialY: 60, enabled: isWinAFloating });
-  const winBDrag = useFastDraggable({ initialX: 200, initialY: 80, enabled: isWinBFloating });
-
-  const winAResize = useResizableWindow(winADrag.targetRef, winADrag.currentPos, winADrag.setPosition, {
+  // 引きはがし・移動・リサイズ・ドッキング復帰・重なり順は useFloatingWindow に集約
+  const winAWindow = useFloatingWindow({
+    id: 'winA',
+    isFloating: isWinAFloating,
+    getIsFloating: () => usePaintStore.getState().isWinAFloating,
+    toggleFloating: toggleWinAFloating,
+    dockTargetId: 'winA-dock-target',
     minWidth: 320,
     minHeight: 240,
-    enabled: isWinAFloating,
   });
 
-  const winBResize = useResizableWindow(winBDrag.targetRef, winBDrag.currentPos, winBDrag.setPosition, {
+  const winBWindow = useFloatingWindow({
+    id: 'winB',
+    isFloating: isWinBFloating,
+    getIsFloating: () => usePaintStore.getState().isWinBFloating,
+    toggleFloating: toggleWinBFloating,
+    dockTargetId: 'winB-dock-target',
     minWidth: 320,
     minHeight: 240,
-    enabled: isWinBFloating,
   });
 
   const [isPanning, setIsPanning] = useState(false);
@@ -114,6 +123,55 @@ export const CellWindow: React.FC = () => {
   }, []);
 
   // エクスプローラーダイレクト D&D ドラッグオーバー・ステート
+  // ── ドッキング中の参照ウィンドウとの境界線ドラッグ ──────────────────
+  // ドラッグ中はストアを毎フレーム更新せず、flexGrow を直接書き換える。
+  // 確定値は離した時にだけ保存するので、React の再描画が挟まらず滑らかに動く。
+  const splitRowRef = useRef<HTMLDivElement | null>(null);
+  const mainAreaRef = useRef<HTMLDivElement | null>(null);
+  const referenceAreaRef = useRef<HTMLDivElement | null>(null);
+
+  const handleSplitterPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const row = splitRowRef.current;
+    if (!row) return;
+
+    const rect = row.getBoundingClientRect();
+    const vertical = isHorizontalSplit;
+    let ratio = mainAreaSplitRatio;
+
+    const applyRatio = (value: number) => {
+      ratio = Math.min(0.85, Math.max(0.15, value));
+      if (mainAreaRef.current) mainAreaRef.current.style.flexGrow = String(ratio);
+      if (referenceAreaRef.current) referenceAreaRef.current.style.flexGrow = String(1 - ratio);
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const raw = vertical
+        ? (ev.clientY - rect.top) / rect.height
+        : (ev.clientX - rect.left) / rect.width;
+      if (Number.isFinite(raw)) applyRatio(raw);
+    };
+
+    const finish = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      setMainAreaSplitRatio(ratio);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  };
+
+  const resetSplitRatio = () => setMainAreaSplitRatio(0.5);
+
+  // 参照ウィンドウがドッキング領域の上にいるか (跡地のハイライト用)
+  const [isReferenceOverDock, setIsReferenceOverDock] = useState(false);
+
   const [isWinADragOver, setIsWinADragOver] = useState(false);
   const [isWinBDragOver, setIsWinBDragOver] = useState(false);
 
@@ -191,89 +249,6 @@ export const CellWindow: React.FC = () => {
     }
   };
 
-  // ⚠️ メインウィンドウ全般 (Win A / Win B) 共通引きはがし (Tear-off) ＆ ドッキングポインターハンドラー
-  const isDraggingGenericHeader = useRef(false);
-  const genericDragOffset = useRef({ x: 160, y: 12 });
-
-  const handleGenericHeaderPointerDown = (
-    e: React.PointerEvent,
-    winId: 'winA' | 'winB',
-    isFloating: boolean,
-    currentPos: React.MutableRefObject<{ x: number; y: number }>,
-    setPosition: (x: number, y: number) => void
-  ) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-
-    isDraggingGenericHeader.current = true;
-
-    if (isFloating && currentPos && currentPos.current) {
-      genericDragOffset.current = {
-        x: e.clientX - currentPos.current.x,
-        y: e.clientY - currentPos.current.y,
-      };
-    } else {
-      genericDragOffset.current = { x: 160, y: 12 };
-    }
-
-    const toggleFloating = winId === 'winA' ? toggleWinAFloating : toggleWinBFloating;
-    const tabId = winId === 'winA' ? 'docked-winA-tab' : 'docked-winB-tab';
-
-    const onWindowPointerMove = (moveEvent: PointerEvent) => {
-      if (!isDraggingGenericHeader.current) return;
-
-      const state = usePaintStore.getState();
-      const currentIsFloating = winId === 'winA' ? state.isWinAFloating : state.isWinBFloating;
-
-      if (!currentIsFloating) {
-        const dist = Math.hypot(moveEvent.clientX - e.clientX, moveEvent.clientY - e.clientY);
-        if (dist > 6) {
-          const spawnX = Math.max(10, moveEvent.clientX - genericDragOffset.current.x);
-          const spawnY = Math.max(10, moveEvent.clientY - genericDragOffset.current.y);
-          setPosition(spawnX, spawnY);
-          toggleFloating();
-        }
-      } else {
-        const newX = Math.max(0, moveEvent.clientX - genericDragOffset.current.x);
-        const newY = Math.max(0, moveEvent.clientY - genericDragOffset.current.y);
-        setPosition(newX, newY);
-      }
-    };
-
-    const onWindowPointerUp = (upEvent: PointerEvent) => {
-      isDraggingGenericHeader.current = false;
-      window.removeEventListener('pointermove', onWindowPointerMove);
-      window.removeEventListener('pointerup', onWindowPointerUp);
-
-      const state = usePaintStore.getState();
-      const currentIsFloating = winId === 'winA' ? state.isWinAFloating : state.isWinBFloating;
-
-      if (currentIsFloating) {
-        const targetElem = document.getElementById(tabId);
-        if (targetElem && targetElem.offsetParent !== null) {
-          const rect = targetElem.getBoundingClientRect();
-          const padding = 25;
-          const isOver =
-            upEvent.clientX >= rect.left - padding &&
-            upEvent.clientX <= rect.right + padding &&
-            upEvent.clientY >= rect.top - padding &&
-            upEvent.clientY <= rect.bottom + padding;
-
-          if (isOver) {
-            toggleFloating();
-            return;
-          }
-        }
-
-        const finalX = Math.max(0, upEvent.clientX - genericDragOffset.current.x);
-        const finalY = Math.max(0, upEvent.clientY - genericDragOffset.current.y);
-        setPosition(finalX, finalY);
-      }
-    };
-
-    window.addEventListener('pointermove', onWindowPointerMove);
-    window.addEventListener('pointerup', onWindowPointerUp);
-  };
 
   // 画像の読み込み・先読み・オニオンスキンは useFrameLoader 系フックに委譲する。
   // (splitImage = Win B の編集対象はストア管理なので、保存・Undo が Win A と同じ経路を通る)
@@ -824,37 +799,22 @@ export const CellWindow: React.FC = () => {
       }`}
       style={canvasBgMatteMode === 'custom' ? { backgroundColor: canvasCustomBgColor } : undefined}
     >
-      {/* 隠しドッキング復帰吸着アンカー (参照画像ドッキング復帰用) */}
-      <div id="docked-reference-tab" className="hidden" />
-
-      {/* フローティング参照ウィンドウ */}
-      {referenceCanvas.isOpen && referenceCanvas.isFloating && <ReferenceCanvasView isFloating={true} />}
-
       {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
-      <div className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}>
+      <div
+        ref={splitRowRef}
+        className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}
+      >
         {/* メイン編集エリア (Win A / Win B 独立フローティング対応) */}
-        <div className="flex-1 flex overflow-hidden gap-0.5 relative">
+        <div
+          ref={mainAreaRef}
+          style={isDockedReference ? { flexGrow: mainAreaSplitRatio, flexBasis: 0, minWidth: 200 } : undefined}
+          className="flex-1 flex overflow-hidden gap-0.5 relative"
+        >
           {/* 左ビュー (Win A / Dir A) */}
           <div
-            ref={winADrag.targetRef}
-            style={
-              isWinAFloating
-                ? {
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    zIndex: 50,
-                    width: '680px',
-                    height: '520px',
-                    resize: 'both',
-                    overflow: 'hidden',
-                    minWidth: '320px',
-                    minHeight: '240px',
-                    maxWidth: '90vw',
-                    maxHeight: '90vh',
-                  }
-                : undefined
-            }
+            ref={winAWindow.targetRef}
+            style={winAWindow.windowStyle}
+            onPointerDownCapture={winAWindow.bringToFront}
             onClick={() => setActiveViewIndex(0)}
             onDragOver={(e) => {
               e.preventDefault();
@@ -883,8 +843,7 @@ export const CellWindow: React.FC = () => {
 
             {/* Win A タイトルバー (Tear-off & Docking 対応) */}
             <div
-              id={isWinAFloating ? undefined : 'docked-winA-tab'}
-              onPointerDown={(e) => handleGenericHeaderPointerDown(e, 'winA', isWinAFloating, winADrag.currentPos, winADrag.setPosition)}
+              onPointerDown={winAWindow.handleHeaderPointerDown}
               className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
             >
               <span className="font-semibold text-blue-600 dark:text-blue-400 truncate flex items-center gap-1.5">
@@ -966,31 +925,27 @@ export const CellWindow: React.FC = () => {
             </div>
 
             {/* ⚡ フローティング Win A 用の全4角マルチリサイズグリップ */}
-            {isWinAFloating && <CornerResizeHandles getResizeHandler={winAResize.getResizeHandler} />}
+            {isWinAFloating && (
+              <CornerResizeHandles getResizeHandler={winAWindow.getResizeHandler} topOffset={24} />
+            )}
           </div>
+
+          {/* Win A を切り離した跡地: ドッキング復帰のドロップ先 ＆ 復帰ボタン */}
+          {isWinAFloating && (
+            <DockPlaceholder
+              id="winA-dock-target"
+              label="Win A"
+              onRestore={toggleWinAFloating}
+              isActive={winAWindow.isOverDockTarget}
+            />
+          )}
 
           {/* 右ビュー (Win B / Dir B / Split View 有効時) */}
           {isSplitView && (
             <div
-              ref={winBDrag.targetRef}
-              style={
-                isWinBFloating
-                  ? {
-                      position: 'fixed',
-                      top: 0,
-                      left: 0,
-                      zIndex: 50,
-                      width: '680px',
-                      height: '520px',
-                      resize: 'both',
-                      overflow: 'hidden',
-                      minWidth: '320px',
-                      minHeight: '240px',
-                      maxWidth: '90vw',
-                      maxHeight: '90vh',
-                    }
-                  : undefined
-              }
+              ref={winBWindow.targetRef}
+              style={winBWindow.windowStyle}
+              onPointerDownCapture={winBWindow.bringToFront}
               onClick={() => setActiveViewIndex(1)}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1019,8 +974,7 @@ export const CellWindow: React.FC = () => {
 
               {/* Win B タイトルバー (Tear-off & Docking 対応) */}
               <div
-                id={isWinBFloating ? undefined : 'docked-winB-tab'}
-                onPointerDown={(e) => handleGenericHeaderPointerDown(e, 'winB', isWinBFloating, winBDrag.currentPos, winBDrag.setPosition)}
+                onPointerDown={winBWindow.handleHeaderPointerDown}
                 className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] select-none touch-none cursor-grab active:cursor-grabbing"
               >
                 <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
@@ -1102,18 +1056,67 @@ export const CellWindow: React.FC = () => {
               </div>
 
               {/* ⚡ フローティング Win B 用の全4角マルチリサイズグリップ */}
-              {isWinBFloating && <CornerResizeHandles getResizeHandler={winBResize.getResizeHandler} />}
+              {isWinBFloating && (
+                <CornerResizeHandles getResizeHandler={winBWindow.getResizeHandler} topOffset={24} />
+              )}
             </div>
+          )}
+
+          {/* Win B を切り離した跡地 */}
+          {isSplitView && isWinBFloating && (
+            <DockPlaceholder
+              id="winB-dock-target"
+              label="Win B"
+              onRestore={toggleWinBFloating}
+              isActive={winBWindow.isOverDockTarget}
+            />
           )}
         </div>
 
-        {/* ドッキング参照ウィンドウ (分割表示時) ＆ ドッキングターゲット領域 */}
+        {/* メイン編集エリアと参照ウィンドウの境界線 (ドラッグで左右の取り分を調整) */}
+        {isDockedReference && (
+          <div
+            onPointerDown={handleSplitterPointerDown}
+            onDoubleClick={resetSplitRatio}
+            title="ドラッグで表示領域の広さを調整 (ダブルクリックで左右均等に戻す)"
+            className={`flex-shrink-0 z-20 touch-none flex items-center justify-center group bg-slate-300 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 transition-colors ${
+              isHorizontalSplit ? 'h-1.5 w-full cursor-row-resize' : 'w-1.5 h-full cursor-col-resize'
+            }`}
+          >
+            <div
+              className={`bg-slate-500/60 group-hover:bg-white rounded-full transition-colors ${
+                isHorizontalSplit ? 'w-8 h-0.5' : 'h-8 w-0.5'
+              }`}
+            />
+          </div>
+        )}
+
+        {/* 参照ウィンドウ。独立表示中は position:fixed で浮くため、
+            この枠には帯状のドッキング領域だけが残る */}
         {referenceCanvas.isOpen && (
           <div
-            id="docked-reference-area"
-            className={referenceCanvas.isFloating ? 'hidden' : 'flex-1 flex flex-col min-w-[240px]'}
+            ref={referenceAreaRef}
+            style={
+              isDockedReference
+                ? { flexGrow: 1 - mainAreaSplitRatio, flexBasis: 0, minWidth: 200 }
+                : undefined
+            }
+            className={
+              referenceCanvas.isFloating
+                ? `flex-shrink-0 flex ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`
+                : 'flex-1 flex flex-col min-w-[240px]'
+            }
           >
-            <ReferenceCanvasView isFloating={false} />
+            {referenceCanvas.isFloating && (
+              <DockPlaceholder
+                id="reference-dock-target"
+                label="参照"
+                onRestore={toggleReferenceFloating}
+                isActive={isReferenceOverDock}
+                variant={isHorizontalSplit ? 'strip-h' : 'strip-v'}
+              />
+            )}
+            <ReferenceCanvasView onDockHoverChange={setIsReferenceOverDock} />
           </div>
         )}
       </div>

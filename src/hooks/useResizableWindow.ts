@@ -8,6 +8,8 @@ interface UseResizableWindowOptions {
   maxWidth?: number;
   maxHeight?: number;
   enabled?: boolean;
+  /** リサイズ確定時に呼ばれる。サイズの永続化に使う */
+  onCommit?: (width: number, height: number) => void;
 }
 
 export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
@@ -22,7 +24,11 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
     maxWidth = window.innerWidth * 0.9,
     maxHeight = window.innerHeight * 0.9,
     enabled = true,
+    onCommit,
   } = options;
+
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
 
   const isResizing = useRef(false);
   const startState = useRef({
@@ -58,8 +64,9 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
         direction,
       };
 
+      const captureTarget = e.currentTarget as HTMLElement;
       try {
-        e.currentTarget.setPointerCapture(e.pointerId);
+        captureTarget.setPointerCapture(e.pointerId);
       } catch (err) {}
 
       const handlePointerMove = (moveEvt: PointerEvent) => {
@@ -104,10 +111,15 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
         isResizing.current = false;
 
         try {
-          if (e.currentTarget.hasPointerCapture(upEvt.pointerId)) {
-            e.currentTarget.releasePointerCapture(upEvt.pointerId);
+          if (captureTarget.hasPointerCapture(upEvt.pointerId)) {
+            captureTarget.releasePointerCapture(upEvt.pointerId);
           }
         } catch (err) {}
+
+        if (targetRef.current) {
+          const finalRect = targetRef.current.getBoundingClientRect();
+          onCommitRef.current?.(finalRect.width, finalRect.height);
+        }
 
         window.removeEventListener('pointermove', handlePointerMove);
         window.removeEventListener('pointerup', handlePointerUp);

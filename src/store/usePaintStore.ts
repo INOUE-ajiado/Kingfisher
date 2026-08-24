@@ -12,6 +12,7 @@ import { create } from 'zustand';
 import { PaintStore } from './types';
 import { createUiSlice } from './slices/uiSlice';
 import { createViewSlice } from './slices/viewSlice';
+import { createWindowSlice } from './slices/windowSlice';
 import { createFileSlice } from './slices/fileSlice';
 import { createDocumentSlice } from './slices/documentSlice';
 import { createToolSlice } from './slices/toolSlice';
@@ -21,6 +22,7 @@ import { createLightTableSlice } from './slices/lightTableSlice';
 export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createUiSlice(...a),
   ...createViewSlice(...a),
+  ...createWindowSlice(...a),
   ...createFileSlice(...a),
   ...createDocumentSlice(...a),
   ...createToolSlice(...a),
