@@ -156,3 +156,36 @@ export function needsTwoPhaseRename(plan: RenamePlanItem[]): boolean {
 export function omitUnchanged(plan: RenamePlanItem[]): RenamePlanItem[] {
   return plan.filter((item) => item.from !== item.to);
 }
+
+/**
+ * 複製に付ける名前を決める。
+ *
+ * 既存と衝突しないところまで連番を伸ばす (_copy → _copy2 → _copy3)。
+ * 衝突したまま書き込むと元のファイルを潰すので、必ずここを通すこと。
+ */
+export function buildDuplicateName(fileName: string, existingNames: Iterable<string>): string {
+  const taken = new Set(existingNames);
+  const { stem, ext } = splitExtension(fileName);
+
+  let candidate = `${stem}_copy${ext}`;
+  let n = 2;
+  while (taken.has(candidate)) {
+    candidate = `${stem}_copy${n}${ext}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+/**
+ * 複数ファイルの複製計画を組み立てる。
+ * 生成した名前も「使用済み」に加えていくので、計画内で衝突しない。
+ */
+export function buildDuplicatePlan(paths: string[], existingPaths: string[]): RenamePlanItem[] {
+  const taken = new Set(existingPaths.map(baseName));
+  return paths.map((path) => {
+    const from = baseName(path);
+    const to = buildDuplicateName(from, taken);
+    taken.add(to);
+    return { path, from, to };
+  });
+}

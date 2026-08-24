@@ -217,6 +217,72 @@ describe('file スライス — Win B ツリーからの選択', () => {
   });
 });
 
+describe('file スライス — ツリー選択のインデックス対応', () => {
+  // 報告された症状: 下へ順に選んでいるのに先頭へ戻る / 別フォルダへ飛ぶ /
+  // 一部のファイルが飛ばされる。いずれも「ツリー内の位置」と
+  // 「統合リスト上の位置」の対応が 1 対 1 でないことが原因だった。
+
+  it('番号が重なるサブフォルダがあってもファイルが消えない', () => {
+    const listA = [
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/b/b0001.tga',
+      'Cut/b/b0002.tga',
+    ];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    // 以前は 4 件が 2 件に潰れ、消えた側は選択できなかった
+    expect(s().unifiedFileList.length).toBe(4);
+    expect(s().mergedFrameNumbers.length).toBe(4);
+  });
+
+  it('どのファイルも自分自身の位置へ解決される (往復して一致する)', () => {
+    const listA = [
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/b/b0001.tga',
+      'Cut/_sheet/cut.tga',
+    ];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    // path -> index -> path が必ず元に戻ること。
+    // ここが崩れると、選んだ行と光る行がずれる
+    for (const path of listA) {
+      const idx = s().indexOfFileForView(path, 0);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(s().resolveFileNameForView(idx, 0)).toBe(path);
+    }
+  });
+
+  it('数字を含まないファイルが混ざっても並びが安定する', () => {
+    const listA = ['Cut/_sheet/cut.tga', 'Cut/_go/a0002.tga', 'Cut/_go/a0001.tga'];
+    s().setFolderHandleA(null, 'Cut', listA);
+    const first = s().mergedFrameNumbers.slice();
+
+    // 入力順を変えても同じ並びになること (比較関数が全順序であること)
+    s().setFolderHandleA(null, 'Cut', ['Cut/_go/a0001.tga', 'Cut/_sheet/cut.tga', 'Cut/_go/a0002.tga']);
+    expect(s().mergedFrameNumbers).toEqual(first);
+
+    // 連番は数値順で先に並ぶ
+    expect(s().mergedFrameNumbers.slice(0, 2)).toEqual(['0001', '0002']);
+  });
+
+  it('Win B 側も自分のファイルへ解決される', () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a0001.tga', 'dirA/a0002.tga']);
+    s().setFolderHandleB(null, 'dirB', ['dirB/b_go0001.tga', 'dirB/b_go0002.tga']);
+
+    for (const path of s().fileListB) {
+      const idx = s().indexOfFileForView(path, 1);
+      expect(s().resolveFileNameForView(idx, 1)).toBe(path);
+    }
+  });
+
+  it('対応するファイルが無い位置は -1 を返す (別の行を光らせない)', () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a0001.tga']);
+    expect(s().indexOfFileForView('dirA/does_not_exist.tga', 0)).toBe(-1);
+  });
+});
+
 describe('file スライス — コマ送り', () => {
   beforeEach(() => {
     s().setFolderHandleA(null, 'dirA', ['0001.tga', '0002.tga', '0003.tga']);
@@ -657,6 +723,84 @@ describe('file スライス — リネーム', () => {
 
     expect(result.ok).toBe(true);
     expect(result.renamed).toBe(0);
+  });
+});
+
+describe('file スライス — 複製と削除', () => {
+  /** getFile / createWritable / removeEntry を持つディレクトリの模擬 */
+  function makeDir(files: string[]) {
+    const contents = new Map(files.map((f) => [f, `content:${f}`]));
+    const dir: any = {
+      name: 'dirA',
+      contents,
+      getFileHandle: async (n: string, opts?: any) => {
+        if (!contents.has(n)) {
+          if (!opts?.create) throw new Error(`no file: ${n}`);
+          contents.set(n, '');
+        }
+        return {
+          getFile: async () => ({ arrayBuffer: async () => contents.get(n) }),
+          createWritable: async () => ({
+            write: async (body: any) => contents.set(n, body),
+            close: async () => {},
+          }),
+        };
+      },
+      removeEntry: async (n: string) => {
+        if (!contents.has(n)) throw new Error(`no file: ${n}`);
+        contents.delete(n);
+      },
+      getDirectoryHandle: async (n: string) => { throw new Error(`no dir: ${n}`); },
+    };
+    return dir;
+  }
+
+  const namesOf = (dir: any) => Array.from(dir.contents.keys()).sort();
+
+  function setup(files: string[]) {
+    const dir = makeDir(files);
+    s().setFolderHandleA(dir, 'dirA', files.slice(), new Map(files.map((f) => [f, new File([], f)])));
+    return dir;
+  }
+
+  it('複製は元ファイルを残したまま _copy を作る', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga']);
+
+    const result = await s().duplicateFiles(0, ['A0001.tga', 'A0002.tga']);
+
+    expect(result.ok).toBe(true);
+    expect(namesOf(dir)).toEqual(['A0001.tga', 'A0001_copy.tga', 'A0002.tga', 'A0002_copy.tga']);
+    // 中身が元と同じであること
+    expect(dir.contents.get('A0001_copy.tga')).toBe('content:A0001.tga');
+    // 一覧にも反映される
+    expect(s().fileListA).toContain('A0001_copy.tga');
+  });
+
+  it('複製を繰り返しても既存を潰さない', async () => {
+    const dir = setup(['A0001.tga']);
+
+    await s().duplicateFiles(0, ['A0001.tga']);
+    await s().duplicateFiles(0, ['A0001.tga']);
+
+    expect(namesOf(dir)).toEqual(['A0001.tga', 'A0001_copy.tga', 'A0001_copy2.tga']);
+  });
+
+  it('削除すると実体と一覧の両方から消える', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga', 'A0003.tga']);
+
+    const result = await s().deleteFiles(0, ['A0001.tga', 'A0003.tga']);
+
+    expect(result.ok).toBe(true);
+    expect(result.renamed).toBe(2);
+    expect(namesOf(dir)).toEqual(['A0002.tga']);
+    expect(s().fileListA).toEqual(['A0002.tga']);
+  });
+
+  it('書き込み可能なフォルダが無ければ何もしない', async () => {
+    s().setFolderHandleA(null, 'dirA', ['A0001.tga']);
+
+    expect((await s().duplicateFiles(0, ['A0001.tga'])).ok).toBe(false);
+    expect((await s().deleteFiles(0, ['A0001.tga'])).ok).toBe(false);
   });
 });
 
