@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { Download, Upload, Plus, Trash2, Maximize2, Minimize2, Pin } from 'lucide-react';
-import { useFastDraggable } from '../../hooks/useFastDraggable';
-import { useResizableWindow } from '../../hooks/useResizableWindow';
+import { useFloatingWindow } from '../../hooks/useFloatingWindow';
+import { DockPlaceholder } from '../common/DockPlaceholder';
+import { FloatingPortal } from '../common/FloatingPortal';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 
 export const ColorChart: React.FC = () => {
@@ -31,18 +32,23 @@ export const ColorChart: React.FC = () => {
   const [newColorHex, setNewColorHex] = useState('#FF0000');
   const [showAddForm, setShowAddForm] = useState(false);
 
-  // ⚡ 画像previewウィンドウと同仕様の超高速 Direct DOM GPU ドラッグフック
-  const { targetRef, dragHandlers, currentPos, setPosition } = useFastDraggable<HTMLDivElement>({
-    initialX: Math.max(20, window.innerWidth - 360),
-    initialY: 120,
-    enabled: isColorChartFloating,
-  });
-
-  // ⚡ 全四つ角マルチ方向コーナーリサイズフック
-  const { getResizeHandler } = useResizableWindow(targetRef, currentPos, setPosition, {
+  // 引きはがし・移動・リサイズ・ドッキング復帰・重なり順の共通処理
+  const {
+    targetRef,
+    windowStyle,
+    handleHeaderPointerDown,
+    getResizeHandler,
+    isOverDockTarget,
+    bringToFront,
+  } = useFloatingWindow<HTMLDivElement>({
+    id: 'colorChart',
+    isFloating: isColorChartFloating,
+    getIsFloating: () => usePaintStore.getState().isColorChartFloating,
+    toggleFloating: toggleColorChartFloating,
+    dockTargetId: 'colorChart-dock-target',
     minWidth: 260,
     minHeight: 180,
-    enabled: isColorChartFloating,
+    contentOverflow: 'auto',
   });
 
   // 参照画像からのドラッグ＆ドロップ色登録ハンドラー
@@ -133,26 +139,24 @@ export const ColorChart: React.FC = () => {
   };
 
   return (
+    <>
+      {/* カラーチャートを切り離した跡地 */}
+      {isColorChartFloating && (
+        <DockPlaceholder
+          id="colorChart-dock-target"
+          label="カラーチャート"
+          onRestore={toggleColorChartFloating}
+          isActive={isOverDockTarget}
+        />
+      )}
+
+    {/* 独立表示中は右サイドパネル (スクロールコンテナ) の外へ逃がす。
+        中に置いたままだと transform 更新のたびに再描画が起きて動きが重くなる */}
+    <FloatingPortal enabled={isColorChartFloating}>
     <div
       ref={targetRef}
-      style={
-        isColorChartFloating
-          ? {
-              position: 'fixed',
-              left: 0,
-              top: 0,
-              zIndex: 45,
-              width: '340px',
-              height: '240px',
-              resize: 'both',
-              overflow: 'auto',
-              minWidth: '260px',
-              minHeight: '180px',
-              maxWidth: '85vw',
-              maxHeight: '85vh',
-            }
-          : undefined
-      }
+      style={windowStyle}
+      onPointerDownCapture={bringToFront}
       onMouseUp={(e) => {
         handleDropRegister(e);
       }}
@@ -163,9 +167,10 @@ export const ColorChart: React.FC = () => {
       } select-none ${activeDragColor ? 'ring-2 ring-emerald-500/80 bg-emerald-50/20' : ''}`}
     >
       <div
-        {...(isColorChartFloating ? dragHandlers : {})}
-        className={`text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between ${
-          isColorChartFloating ? 'cursor-move bg-slate-100 dark:bg-slate-800 -mx-2 -mt-2 p-2 rounded-t-md touch-none select-none' : ''
+        onPointerDown={handleHeaderPointerDown}
+        title={isColorChartFloating ? 'ドラッグで移動 / 跡地へドロップで戻す' : 'ドラッグで切り離して独立ウィンドウ化'}
+        className={`text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1.5 border-b border-slate-200 dark:border-slate-700 mb-2 flex items-center justify-between cursor-grab active:cursor-grabbing touch-none select-none ${
+          isColorChartFloating ? 'bg-slate-100 dark:bg-slate-800 -mx-2 -mt-2 p-2 rounded-t-md' : ''
         }`}
       >
         <span title="キー[1]:ノーマル [2]:1影 [3]:ハイライト" className="flex items-center gap-1">
@@ -314,7 +319,9 @@ export const ColorChart: React.FC = () => {
       </div>
 
       {/* ⚡ フローティング時の全4角マルチリサイズグリップ */}
-      {isColorChartFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} />}
+      {isColorChartFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} topOffset={28} />}
     </div>
+    </FloatingPortal>
+    </>
   );
 };

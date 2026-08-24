@@ -215,6 +215,12 @@ export interface ViewSlice {
   openReferenceImage: (fileHandle?: any, fileName?: string, image?: TGAImage) => void
   closeReferenceWindow: () => void
   toggleReferenceFloating: () => void
+  /**
+   * ドッキング中の参照ウィンドウとメイン編集エリアの分割比 (メイン側の取り分)。
+   * 0.15〜0.85 に丸められる。境界線のドラッグで変わる。
+   */
+  mainAreaSplitRatio: number;
+  setMainAreaSplitRatio: (ratio: number) => void;
   setColorSpecLayoutMode: (mode: 'single' | 'split-vertical' | 'split-horizontal') => void
   setAutoRevertTool: (enable: boolean) => void
   setReferenceTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void
@@ -412,8 +418,38 @@ export interface LightTableSlice {
   toggleLightTableSubItemVisible: (id: string) => void;
 }
 
+/** 独立ウィンドウとして切り離せるパネルの識別子 */
+export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart';
+
+export interface FloatingWindowLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** 独立ウィンドウの位置・サイズ・重なり順 */
+export interface WindowSlice {
+  floatingWindows: Record<FloatingWindowId, FloatingWindowLayout>;
+  /** 末尾ほど手前。クリックしたウィンドウを末尾へ動かして最前面にする */
+  floatingWindowOrder: FloatingWindowId[];
+  setFloatingWindowPosition: (id: FloatingWindowId, x: number, y: number) => void;
+  setFloatingWindowSize: (id: FloatingWindowId, width: number, height: number) => void;
+  bringWindowToFront: (id: FloatingWindowId) => void;
+  getWindowZIndex: (id: FloatingWindowId) => number;
+}
+
+
 /** 全スライスを合成したストアの最終形 */
-export interface PaintStore extends UiSlice, ViewSlice, FileSlice, DocumentSlice, ToolSlice, EditSlice, LightTableSlice {}
+export interface PaintStore
+  extends UiSlice,
+    ViewSlice,
+    WindowSlice,
+    FileSlice,
+    DocumentSlice,
+    ToolSlice,
+    EditSlice,
+    LightTableSlice {}
 
 export const defaultColors: PaletteItem[] = [
   { id: '1', name: 'Hair', color: { r: 255, g: 215, b: 0, a: 255, hex: '#FFD700' } },
