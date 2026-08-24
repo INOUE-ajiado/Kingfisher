@@ -20,5 +20,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+
+  /* テストは本番ビルドの型チェック対象から外す (npm run typecheck で別途チェックする) */
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }
