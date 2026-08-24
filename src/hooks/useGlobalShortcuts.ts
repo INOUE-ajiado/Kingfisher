@@ -40,9 +40,13 @@ export const useGlobalShortcuts = () => {
         if (keyLower === 's') {
           e.preventDefault();
           e.stopPropagation();
-          // 保存処理イベントまたはストア保存を発火
-          const saveBtn = document.getElementById('save-current-cell-btn');
-          if (saveBtn) saveBtn.click();
+          // ストアの保存処理を直接呼ぶ (DOM 上のボタン有無に依存しない)
+          usePaintStore
+            .getState()
+            .saveActiveCell()
+            .then((result) => {
+              if (!result.ok) alert(result.message);
+            });
           return;
         }
 

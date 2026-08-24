@@ -3,7 +3,19 @@ import { usePaintStore } from '../../store/usePaintStore';
 import { History, RotateCcw } from 'lucide-react';
 
 export const HistoryPanel: React.FC = () => {
-  const { historyStack, historyIndex, jumpToHistory } = usePaintStore();
+  const {
+    historyStack: historyStackA,
+    historyIndex: historyIndexA,
+    splitHistoryStack,
+    splitHistoryIndex,
+    activeViewIndex,
+    jumpToHistory,
+  } = usePaintStore();
+
+  // 履歴は Win A / Win B で独立している。アクティブなビューのものを表示する。
+  const isSplitActive = activeViewIndex === 1;
+  const historyStack = isSplitActive ? splitHistoryStack : historyStackA;
+  const historyIndex = isSplitActive ? splitHistoryIndex : historyIndexA;
 
   return (
     <div className="bg-white dark:bg-slate-900 flex flex-col select-none p-1.5 min-h-[100px]">
@@ -11,6 +23,9 @@ export const HistoryPanel: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <History className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
           <span>History ({historyStack.length})</span>
+          <span className="text-[9px] font-bold px-1 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+            {isSplitActive ? 'Win B' : 'Win A'}
+          </span>
         </div>
       </div>
 
