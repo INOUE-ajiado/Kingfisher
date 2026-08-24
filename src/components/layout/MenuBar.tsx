@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { decodeTGA } from '../../engine/tga';
+import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { Columns, Link, Link2Off, Pipette, Save } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
@@ -13,7 +13,6 @@ export const MenuBar: React.FC = () => {
   const {
     isDarkMode,
     toggleDarkMode,
-    setCurrentImage,
     setFolderHandleA,
     setFolderFilesA,
     nextCell,
@@ -62,39 +61,10 @@ export const MenuBar: React.FC = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  /**
-   * ディレクトリを再帰的に走査し、ルートからの相対パスをキーにしてファイルを集める。
-   *
-   * ファイルツリーを階層表示するには識別子が `Cat/a/A0001.tga` のような
-   * 相対パスである必要がある。ドラッグ＆ドロップ側は元からこの形式なので、
-   * 「フォルダを開く」も同じ形に揃える。
-   */
-  const collectFilesRecursively = async (
-    dirHandle: any,
-    filesMap: Map<string, File>,
-    currentPath: string
-  ) => {
-    for await (const entry of dirHandle.values()) {
-      const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
-
-      if (entry.kind === 'file') {
-        if (/\.(tga|png|jpg|jpeg)$/i.test(entry.name)) {
-          try {
-            filesMap.set(relPath, await entry.getFile());
-          } catch (e) {
-            console.error(`Failed to read ${relPath}:`, e);
-          }
-        }
-      } else if (entry.kind === 'directory') {
-        await collectFilesRecursively(entry, filesMap, relPath);
-      }
-    }
-  };
-
   const handleOpenFolderDir = async () => {
     if ('showDirectoryPicker' in window) {
       try {
-        const rootHandle = await (window as any).showDirectoryPicker();
+        const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
         const rootName: string = rootHandle.name;
         const subDirs: any[] = [];
 
@@ -103,7 +73,7 @@ export const MenuBar: React.FC = () => {
           if (entry.kind !== 'directory') continue;
 
           const filesMap = new Map<string, File>();
-          await collectFilesRecursively(entry, filesMap, `${rootName}/${entry.name}`);
+          await collectImageFilesRecursively(entry, `${rootName}/${entry.name}`, filesMap);
           if (filesMap.size === 0) continue;
 
           const fileList = Array.from(filesMap.keys()).sort();
@@ -132,11 +102,10 @@ export const MenuBar: React.FC = () => {
 
         // サブフォルダが無く、直下に画像がある場合
         const rootFiles = new Map<string, File>();
-        await collectFilesRecursively(rootHandle, rootFiles, rootName);
+        await collectImageFilesRecursively(rootHandle, rootName, rootFiles);
         if (rootFiles.size > 0) {
           const files = Array.from(rootFiles.keys()).sort();
-          setFolderHandleA(rootHandle, rootName, files);
-          setFolderFilesA(rootName, rootFiles);
+          setFolderHandleA(rootHandle, rootName, files, rootFiles);
           return;
         }
 
@@ -154,28 +123,29 @@ export const MenuBar: React.FC = () => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
+    // ⚠️ キーは webkitRelativePath (ルート名から始まる相対パス)。
+    // ファイル名だけにすると階層違いの同名コマが上書きで消える。
     const filesMap = new Map<string, File>();
     let folderName = 'Loaded_Folder';
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      if (file.name.toLowerCase().endsWith('.tga')) {
-        filesMap.set(file.name, file);
-        if ((file as any).webkitRelativePath) {
-          const parts = (file as any).webkitRelativePath.split('/');
-          if (parts.length > 1) folderName = parts[0];
-        }
-      }
+      if (!isSupportedImageFile(file.name)) continue;
+
+      const relPath: string = (file as any).webkitRelativePath || file.name;
+      filesMap.set(relPath, file);
+
+      const parts = relPath.split('/');
+      if (parts.length > 1) folderName = parts[0];
     }
 
     if (filesMap.size > 0) {
+      // 表示中のコマの読み込みは useFrameLoader が行う。
+      // ここで先頭ファイルを decodeTGA するとすぐ上書きされるうえ、
+      // .png / .jpg を TGA として読んでしまう。
       setFolderFilesA(folderName, filesMap);
-      const firstFile = Array.from(filesMap.values())[0];
-      const buffer = await firstFile.arrayBuffer();
-      const decoded = decodeTGA(buffer);
-      setCurrentImage(decoded);
     } else {
-      alert('選択したフォルダに .tga ファイルが見つかりませんでした。');
+      alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
     }
   };
 

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import {
   floodFill,
   gradientFill,
@@ -68,6 +69,8 @@ export const CellWindow: React.FC = () => {
     toggleReferenceFloating,
     setCustomDropFolderA,
     setCustomDropFolderB,
+    setFolderHandleA,
+    setFolderHandleB,
     canvasBgMatteMode,
     canvasCustomBgColor,
   } = usePaintStore();
@@ -365,7 +368,7 @@ export const CellWindow: React.FC = () => {
       const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
       if (entry.isFile) {
         const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
-        if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+        if (file && isSupportedImageFile(file.name)) {
           fileMap.set(relPath, file);
         }
       } else if (entry.isDirectory) {
@@ -374,6 +377,15 @@ export const CellWindow: React.FC = () => {
     }
   };
 
+  /**
+   * エクスプローラーから Win A / Win B へフォルダを落としたときの読み込み。
+   *
+   * ⚠️ 書き込みたいので getAsFileSystemHandle() を優先する。
+   * webkitGetAsEntry() が返す FileSystemEntry は読み取り専用で、
+   * これしか取らないと「ドロップしたフォルダは保存できない」状態になる。
+   * getAsFileSystemHandle() に対応しない環境 (Firefox / Safari) では
+   * 従来どおりエントリ経由で読み込み、保存だけができない扱いにする。
+   */
   const handleFolderOrFilesNativeDrop = async (e: React.DragEvent, targetWin: 'winA' | 'winB') => {
     e.preventDefault();
     e.stopPropagation();
@@ -382,20 +394,43 @@ export const CellWindow: React.FC = () => {
     resetDragState('winB');
 
     // ⚠️ dataTransfer.items はハンドラを抜けた時点で無効になる。
-    // await を挟む前に、エントリとファイルを同期的に取り出しておく。
+    // await を挟む前に、エントリとハンドルの取得を同期的に始めておく。
     // (従来は 1 件目の処理を await した後で 2 件目を読んでいたため、
     //  複数まとめてドロップすると取りこぼしが起きていた)
     const entries: any[] = [];
+    const handlePromises: Promise<any>[] = [];
     const items = e.dataTransfer.items;
     if (items) {
       for (let i = 0; i < items.length; i++) {
-        const entry = items[i].webkitGetAsEntry?.();
+        const item: any = items[i];
+        if (typeof item.getAsFileSystemHandle === 'function') {
+          handlePromises.push(item.getAsFileSystemHandle().catch(() => null));
+        }
+        const entry = item.webkitGetAsEntry?.();
         if (entry) entries.push(entry);
       }
     }
     const plainFiles: File[] = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
 
+    const isWinA = targetWin === 'winA';
     const fileMap = new Map<string, File>();
+
+    // --- 1. 書き込み可能なディレクトリハンドルが取れる場合 ---
+    const handles = (await Promise.all(handlePromises)).filter(Boolean);
+    const dirHandle = handles.find((h: any) => h?.kind === 'directory') ?? null;
+
+    if (dirHandle) {
+      await collectImageFilesRecursively(dirHandle, dirHandle.name, fileMap);
+      if (fileMap.size > 0) {
+        const fileList = Array.from(fileMap.keys()).sort();
+        // 保存できる経路なので、ハンドルを持つ通常のフォルダとして登録する
+        if (isWinA) setFolderHandleA(dirHandle, dirHandle.name, fileList, fileMap);
+        else setFolderHandleB(dirHandle, dirHandle.name, fileList, fileMap);
+        return;
+      }
+    }
+
+    // --- 2. 読み取り専用のフォールバック (FileSystemEntry / 素のファイル) ---
     let detectedFolderName: string | null = null;
 
     for (const entry of entries) {
@@ -406,7 +441,7 @@ export const CellWindow: React.FC = () => {
         const file: File | null = await new Promise((resolve) =>
           entry.file((f: File) => resolve(f), () => resolve(null))
         );
-        if (file && /\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+        if (file && isSupportedImageFile(file.name)) {
           fileMap.set((file as any).webkitRelativePath || file.name, file);
         }
       }
@@ -414,23 +449,21 @@ export const CellWindow: React.FC = () => {
 
     if (fileMap.size === 0) {
       for (const file of plainFiles) {
-        if (/\.(tga|png|jpg|jpeg)$/i.test(file.name)) {
+        if (isSupportedImageFile(file.name)) {
           fileMap.set((file as any).webkitRelativePath || file.name, file);
         }
       }
     }
 
-    if (fileMap.size > 0) {
-      const fileList = Array.from(fileMap.keys()).sort();
-      const folderTitle = detectedFolderName || (targetWin === 'winA' ? 'ドロップフォルダ A' : 'ドロップフォルダ B');
-      if (targetWin === 'winA') {
-        setCustomDropFolderA(folderTitle, fileMap, fileList);
-      } else {
-        setCustomDropFolderB(folderTitle, fileMap, fileList);
-      }
-    } else {
+    if (fileMap.size === 0) {
       alert('ドロップされた中に画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
+      return;
     }
+
+    const fileList = Array.from(fileMap.keys()).sort();
+    const folderTitle = detectedFolderName || (isWinA ? 'ドロップフォルダ A' : 'ドロップフォルダ B');
+    if (isWinA) setCustomDropFolderA(folderTitle, fileMap, fileList);
+    else setCustomDropFolderB(folderTitle, fileMap, fileList);
   };
 
 

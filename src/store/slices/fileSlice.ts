@@ -240,7 +240,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
   unifiedFileList: [],
 
-  setFolderHandleA: (handle, name, files) =>
+  setFolderHandleA: (handle, name, files, filesMap) =>
     set((state) => {
       // ファイル名の単純和集合ではなく、連番でマージする。
       // A/B でファイル名が異なっても同じフレームとして対応付けられる。
@@ -256,6 +256,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       return {
         folderHandleA: handle,
+        // 前のフォルダの fileMap が残ると、読み込み時に古い実体が優先されてしまう
+        fileMapA: filesMap ?? new Map(),
         folderNameA: name,
         fileListA: files,
         unifiedFileList: unifiedFiles,
@@ -267,7 +269,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       };
     }),
 
-  setFolderHandleB: (handle, name, files) =>
+  setFolderHandleB: (handle, name, files, filesMap) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
       const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
@@ -281,6 +283,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       return {
         folderHandleB: handle,
+        // 前のフォルダの fileMap が残ると、読み込み時に古い実体が優先されてしまう
+        fileMapB: filesMap ?? new Map(),
         folderNameB: name,
         fileListB: files,
         unifiedFileList: unifiedFiles,

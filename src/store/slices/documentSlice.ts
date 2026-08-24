@@ -4,7 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { encodeTGA } from '../../engine/tga';
-import { resolveFileHandle } from '../../engine/fileSystemPath';
+import { resolveFileHandle, ensureWritePermission } from '../../engine/fileSystemPath';
 import { PaintStore, DocumentSlice } from '../types';
 
 /** 1 セルあたりに保持する履歴の最大数 (基準状態「編集前」を含む) */
@@ -149,6 +149,18 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
       return { ok: false, message: `${label} の現在のフレームに対応するファイルが存在しません。` };
     }
 
+    // 既定では読み取り許可しか付いていない (ピッカー・D&D とも)。
+    // ここで昇格しておかないと createWritable() が NotAllowedError になる。
+    if (!(await ensureWritePermission(folderHandle))) {
+      return {
+        ok: false,
+        message:
+          `${label} のフォルダへの書き込みが許可されませんでした。
+` +
+          `保存し直すと許可を求めるダイアログが再度表示されます。`,
+      };
+    }
+
     try {
       const fileHandle = await resolveFileHandle(folderHandle, fileName, get().rootFolderName);
       const writable = await fileHandle.createWritable();
@@ -156,6 +168,18 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
       await writable.close();
 
       invalidateCachedImage(get().getImageCacheKey(view, fileName));
+
+      // ⚠️ 開いた時点の File スナップショット (fileMapA/B) を捨てる。
+      // 残しておくと、ハンドル経由の読み出しが失敗したときに
+      // フォールバックが保存前の内容を返し、保存したのに古い画像が出る。
+      // ここへ到達している = 書き込み可能なハンドルがある、なので消して安全。
+      const staleMap = view === 1 ? get().fileMapB : get().fileMapA;
+      if (staleMap.has(fileName)) {
+        const nextMap = new Map(staleMap);
+        nextMap.delete(fileName);
+        set(view === 1 ? { fileMapB: nextMap } : { fileMapA: nextMap });
+      }
+
       clearDirty(view);
 
       return { ok: true, message: `${label} の [${fileName}] を上書き保存しました。` };

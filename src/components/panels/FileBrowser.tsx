@@ -1,5 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { usePaintStore, SubDirectoryItem, extractFrameNumber } from '../../store/usePaintStore';
+import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network } from 'lucide-react';
 
 export interface FileTreeNode {
@@ -424,28 +425,14 @@ export const FileBrowser: React.FC = () => {
     }
   };
 
-  // 再帰的ディレクトリ走査 (ネストされた階層パスを完全保持)
-  const scanDirectoryRecursively = async (dirHandle: any, currentPath: string, filesMap: Map<string, File>, fileList: string[]) => {
-    for await (const entry of dirHandle.values()) {
-      const entryPath = `${currentPath}/${entry.name}`;
-      if (entry.kind === 'file') {
-        const lower = entry.name.toLowerCase();
-        if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-          fileList.push(entryPath);
-          try {
-            const file = await entry.getFile();
-            filesMap.set(entryPath, file);
-          } catch (e) {
-            console.error('File getFile error:', e);
-          }
-        }
-      } else if (entry.kind === 'directory') {
-        await scanDirectoryRecursively(entry, entryPath, filesMap, fileList);
-      }
-    }
-  };
-
-  // カットフォルダ（ルート）一括読み込み
+  /**
+   * カットフォルダ（ルート）一括読み込み。
+   *
+   * ⚠️ 相対パスは必ずルートフォルダ名から始め、ハンドルはルートを持たせる。
+   * 以前はパスがサブフォルダ名から始まるのにハンドルもサブフォルダだったため、
+   * resolveFileHandle() が「_go の中の _go」を探して必ず失敗し、
+   * 読み込みは filesMap のフォールバックで通るのに保存だけ落ちていた。
+   */
   const handleOpenCutRootFolder = async () => {
     if (!('showDirectoryPicker' in window)) {
       alert('お使いのブラウザはフォルダ一括選択APIに対応していません。');
@@ -453,27 +440,25 @@ export const FileBrowser: React.FC = () => {
     }
 
     try {
-      const rootHandle = await (window as any).showDirectoryPicker();
+      const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+      const rootName: string = rootHandle.name;
       const subDirs: SubDirectoryItem[] = [];
 
       for await (const entry of rootHandle.values()) {
-        if (entry.kind === 'directory') {
-          const filesMap = new Map<string, File>();
-          const fileList: string[] = [];
+        if (entry.kind !== 'directory') continue;
 
-          await scanDirectoryRecursively(entry, entry.name, filesMap, fileList);
+        const filesMap = new Map<string, File>();
+        await collectImageFilesRecursively(entry, `${rootName}/${entry.name}`, filesMap);
+        if (filesMap.size === 0) continue;
 
-          fileList.sort();
-          if (fileList.length > 0) {
-            subDirs.push({
-              name: entry.name,
-              handle: entry,
-              filesMap,
-              fileList,
-              isImageFolder: true,
-            });
-          }
-        }
+        subDirs.push({
+          name: entry.name,
+          // 相対パスで引くため、ハンドルはサブフォルダではなくルートを持たせる
+          handle: rootHandle,
+          filesMap,
+          fileList: Array.from(filesMap.keys()).sort(),
+          isImageFolder: true,
+        });
       }
 
       subDirs.sort((a, b) => {
@@ -483,134 +468,106 @@ export const FileBrowser: React.FC = () => {
       });
 
       if (subDirs.length > 0) {
-        setCutRootFolder(rootHandle, rootHandle.name, subDirs);
-      } else {
-        const filesMap = new Map<string, File>();
-        const fileList: string[] = [];
-        for await (const fileEntry of rootHandle.values()) {
-          if (fileEntry.kind === 'file') {
-            const lower = fileEntry.name.toLowerCase();
-            if (lower.endsWith('.tga') || lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
-              fileList.push(fileEntry.name);
-              const file = await fileEntry.getFile();
-              filesMap.set(fileEntry.name, file);
-            }
-          }
-        }
-        fileList.sort();
-        if (fileList.length > 0) {
-          const directSubDir: SubDirectoryItem = {
-            name: '(Root)',
-            handle: rootHandle,
-            filesMap,
-            fileList,
-            isImageFolder: true,
-          };
-          setCutRootFolder(rootHandle, rootHandle.name, [directSubDir]);
-        } else {
-          alert('選択したフォルダに画像ファイルが見つかりませんでした。');
-        }
+        setCutRootFolder(rootHandle, rootName, subDirs);
+        return;
       }
+
+      // サブフォルダが無く、直下に画像がある場合
+      const rootFiles = new Map<string, File>();
+      await collectImageFilesRecursively(rootHandle, rootName, rootFiles);
+      if (rootFiles.size === 0) {
+        alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
+        return;
+      }
+
+      const directSubDir: SubDirectoryItem = {
+        name: '(Root)',
+        handle: rootHandle,
+        filesMap: rootFiles,
+        fileList: Array.from(rootFiles.keys()).sort(),
+        isImageFolder: true,
+      };
+      setCutRootFolder(rootHandle, rootName, [directSubDir]);
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       console.error('Error opening root cut folder:', err);
     }
   };
 
-  const handleOpenFolderA = async () => {
+  /**
+   * Win A / Win B のフォルダを個別に開く。
+   *
+   * ⚠️ 以前は直下 1 階層しか見ておらず、サブフォルダの中の画像は
+   * ツリーにも出ず読み込めなかった。走査は共通の再帰関数に任せる。
+   * 相対パスは選んだフォルダ名から始め、ハンドルはそのフォルダを渡す。
+   */
+  const openFolderForView = async (view: 0 | 1) => {
+    const inputRef = view === 1 ? fileInputRefB : fileInputRefA;
+
     if ('showDirectoryPicker' in window) {
       try {
-        const handle = await (window as any).showDirectoryPicker();
-        const files: string[] = [];
-        for await (const entry of handle.values()) {
-          if (entry.kind === 'file' && (entry.name.toLowerCase().endsWith('.tga') || entry.name.toLowerCase().endsWith('.jpg'))) {
-            files.push(entry.name);
-          }
-        }
-        files.sort();
-        if (files.length > 0) {
-          setFolderHandleA(handle, handle.name, files);
-          return;
-        } else {
-          alert('選択した Dir A フォルダに画像ファイルが見つかりませんでした。');
+        const handle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+        const filesMap = new Map<string, File>();
+        await collectImageFilesRecursively(handle, handle.name, filesMap);
+
+        if (filesMap.size === 0) {
+          alert(
+            `選択した Dir ${view === 1 ? 'B' : 'A'} フォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。`
+          );
           return;
         }
+
+        const files = Array.from(filesMap.keys()).sort();
+        if (view === 1) setFolderHandleB(handle, handle.name, files, filesMap);
+        else setFolderHandleA(handle, handle.name, files, filesMap);
+        return;
       } catch (err: any) {
         if (err.name === 'AbortError') return;
+        console.error('Error opening folder:', err);
       }
     }
-    fileInputRefA.current?.click();
+
+    inputRef.current?.click();
   };
 
-  const handleOpenFolderB = async () => {
-    if ('showDirectoryPicker' in window) {
-      try {
-        const handle = await (window as any).showDirectoryPicker();
-        const files: string[] = [];
-        for await (const entry of handle.values()) {
-          if (entry.kind === 'file' && (entry.name.toLowerCase().endsWith('.tga') || entry.name.toLowerCase().endsWith('.jpg'))) {
-            files.push(entry.name);
-          }
-        }
-        files.sort();
-        if (files.length > 0) {
-          setFolderHandleB(handle, handle.name, files);
-          return;
-        } else {
-          alert('選択した Dir B フォルダに画像ファイルが見つかりませんでした。');
-          return;
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
+  const handleOpenFolderA = () => openFolderForView(0);
+  const handleOpenFolderB = () => openFolderForView(1);
+
+  /**
+   * showDirectoryPicker が使えない環境向けの <input webkitdirectory> 経路。
+   *
+   * ⚠️ キーには webkitRelativePath (ルートフォルダ名から始まる相対パス) を使う。
+   * ファイル名だけをキーにすると、a/0001.tga と b/0001.tga のように
+   * 階層違いの同名コマが Map で上書きされて片方が消える。
+   */
+  const readFileInput = (fileList: FileList, fallbackName: string) => {
+    const filesMap = new Map<string, File>();
+    let folderName = fallbackName;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (!isSupportedImageFile(file.name)) continue;
+
+      const relPath: string = (file as any).webkitRelativePath || file.name;
+      filesMap.set(relPath, file);
+
+      const parts = relPath.split('/');
+      if (parts.length > 1) folderName = parts[0];
     }
-    fileInputRefB.current?.click();
+
+    return { filesMap, folderName };
   };
 
   const handleFileInputChangeA = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
-    const filesMap = new Map<string, File>();
-    let folderName = 'Folder_A';
-
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      if (file.name.toLowerCase().endsWith('.tga') || file.name.toLowerCase().endsWith('.jpg')) {
-        filesMap.set(file.name, file);
-        if ((file as any).webkitRelativePath) {
-          const parts = (file as any).webkitRelativePath.split('/');
-          if (parts.length > 1) folderName = parts[0];
-        }
-      }
-    }
-
-    if (filesMap.size > 0) {
-      setFolderFilesA(folderName, filesMap);
-    }
+    if (!e.target.files || e.target.files.length === 0) return;
+    const { filesMap, folderName } = readFileInput(e.target.files, 'Folder_A');
+    if (filesMap.size > 0) setFolderFilesA(folderName, filesMap);
   };
 
   const handleFileInputChangeB = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
-    const filesMap = new Map<string, File>();
-    let folderName = 'Folder_B';
-
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      if (file.name.toLowerCase().endsWith('.tga') || file.name.toLowerCase().endsWith('.jpg')) {
-        filesMap.set(file.name, file);
-        if ((file as any).webkitRelativePath) {
-          const parts = (file as any).webkitRelativePath.split('/');
-          if (parts.length > 1) folderName = parts[0];
-        }
-      }
-    }
-
-    if (filesMap.size > 0) {
-      setFolderFilesB(folderName, filesMap);
-    }
+    if (!e.target.files || e.target.files.length === 0) return;
+    const { filesMap, folderName } = readFileInput(e.target.files, 'Folder_B');
+    if (filesMap.size > 0) setFolderFilesB(folderName, filesMap);
   };
 
   // 連動中の相手側への追従はストアが担う (連動開始時のコマ差を保つため)
