@@ -7,10 +7,16 @@
  * ディレクトリを 1 段ずつ辿る必要がある。
  */
 
-/** 相対パスをセグメントへ分解する。先頭がルートフォルダ名なら取り除く */
-export function splitFilePath(path: string, rootFolderName?: string | null): string[] {
+/**
+ * 相対パスをセグメントへ分解する。先頭が起点フォルダ名なら取り除く。
+ *
+ * ⚠️ 起点の候補を複数受け取る。開く経路によってパスの先頭が
+ * 「カットのルート名」だったり「選んだ / ドロップしたフォルダ名」だったりするため、
+ * 呼び出し側は分かっている候補をすべて渡す (最初に一致したものを剥がす)。
+ */
+export function splitFilePath(path: string, ...rootNames: (string | null | undefined)[]): string[] {
   const parts = path.split(/[/\\]/).filter(Boolean);
-  if (parts.length > 1 && rootFolderName && parts[0] === rootFolderName) parts.shift();
+  if (parts.length > 1 && rootNames.some((name) => !!name && parts[0] === name)) parts.shift();
   return parts;
 }
 
@@ -24,7 +30,9 @@ export async function resolveFileHandle(
   rootFolderName?: string | null,
   options?: { create?: boolean }
 ): Promise<any> {
-  const parts = splitFilePath(path, rootFolderName);
+  // ハンドル自身の名前も起点候補にする。パスが「選んだフォルダ名/…」で
+  // 始まる経路 (Open A/B・ドラッグ＆ドロップ) はこれが無いと辿れない。
+  const parts = splitFilePath(path, rootFolderName, rootHandle?.name);
   if (parts.length === 0) throw new Error(`Invalid file path: ${path}`);
 
   let dir = rootHandle;
@@ -78,4 +86,24 @@ export async function collectImageFilesRecursively(
       await collectImageFilesRecursively(entry, entryPath, filesMap);
     }
   }
+}
+
+/**
+ * 書き込み許可を確認し、必要なら要求する。
+ *
+ * showDirectoryPicker() も drag & drop も、既定では読み取り許可しか付かない。
+ * その状態で createWritable() を呼ぶと NotAllowedError になるため、
+ * 保存の直前にここを通す。
+ *
+ * ⚠️ requestPermission() はユーザー操作の直後にしか通らない。
+ * 保存ボタンや Ctrl+S から連なる呼び出しの中で使うこと。
+ */
+export async function ensureWritePermission(handle: any): Promise<boolean> {
+  // 対応していない環境では判定できないので、そのまま書き込みを試させる
+  if (!handle || typeof handle.queryPermission !== 'function') return true;
+
+  const options = { mode: 'readwrite' as const };
+  if ((await handle.queryPermission(options)) === 'granted') return true;
+  if (typeof handle.requestPermission !== 'function') return false;
+  return (await handle.requestPermission(options)) === 'granted';
 }

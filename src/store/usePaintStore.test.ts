@@ -406,6 +406,49 @@ describe('document スライス — 保存後のスナップショット', () =>
   });
 });
 
+describe('document スライス — 書き込み許可', () => {
+  it('許可されなければ書き込みを試さず理由を返す', async () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a_0001.tga']);
+    usePaintStore.setState({
+      folderHandleA: {
+        name: 'dirA',
+        queryPermission: async () => 'prompt',
+        requestPermission: async () => 'denied',
+        getFileHandle: async () => { throw new Error('呼ばれてはいけない'); },
+      },
+      currentImage: makeImage(3),
+      activeViewIndex: 0,
+    });
+
+    const result = await s().saveActiveCell();
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('書き込みが許可されませんでした');
+  });
+
+  it('許可されれば保存へ進む', async () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a_0001.tga']);
+    const written: string[] = [];
+    usePaintStore.setState({
+      folderHandleA: {
+        name: 'dirA',
+        queryPermission: async () => 'prompt',
+        requestPermission: async () => 'granted',
+        // パスの先頭 'dirA' はハンドル名として剥がされるので直下のファイルになる
+        getFileHandle: async (n: string) => {
+          written.push(n);
+          return { createWritable: async () => ({ write: async () => {}, close: async () => {} }) };
+        },
+      },
+      currentImage: makeImage(3),
+      activeViewIndex: 0,
+    });
+
+    const result = await s().saveActiveCell();
+    expect(result.ok).toBe(true);
+    expect(written).toEqual(['a_0001.tga']);
+  });
+});
+
 describe('document スライス — 画像キャッシュ', () => {
   it('キーにフォルダ名が含まれ、別フォルダの同名ファイルと衝突しない', () => {
     s().setFolderHandleA(null, 'cut_A', ['0001.tga']);

@@ -4,6 +4,7 @@ import {
   resolveFileHandle,
   isSupportedImageFile,
   collectImageFilesRecursively,
+  ensureWritePermission,
 } from './fileSystemPath';
 
 /**
@@ -140,5 +141,66 @@ describe('collectImageFilesRecursively', () => {
     };
 
     await expect(resolveFileHandle(resolveRoot, path, 'Cut001')).resolves.toBe(cel);
+  });
+});
+
+describe('splitFilePath — 起点の候補が複数あるとき', () => {
+  it('どれかに一致すれば剥がす', () => {
+    expect(splitFilePath('Retake/b_0001.tga', 'Cut001', 'Retake')).toEqual(['b_0001.tga']);
+    expect(splitFilePath('Cut001/_go/A.tga', 'Cut001', 'Retake')).toEqual(['_go', 'A.tga']);
+  });
+
+  it('どれにも一致しなければ剥がさない', () => {
+    expect(splitFilePath('other/A.tga', 'Cut001', 'Retake')).toEqual(['other', 'A.tga']);
+  });
+});
+
+describe('resolveFileHandle — ハンドル名を起点として使う', () => {
+  const cel = { kind: 'file' };
+  const dropped = {
+    name: 'Retake',
+    getDirectoryHandle: async (n: string) => { throw new Error(`no dir: ${n}`); },
+    getFileHandle: async (n: string) => (n === 'b_0001.tga' ? cel : Promise.reject(new Error('no file'))),
+  };
+
+  it('ドロップしたフォルダ名で始まるパスを辿れる', async () => {
+    // rootFolderName は別のカット名 (または null) でも、
+    // ハンドル自身の名前が起点候補になるので解決できる
+    await expect(resolveFileHandle(dropped, 'Retake/b_0001.tga', null)).resolves.toBe(cel);
+    await expect(resolveFileHandle(dropped, 'Retake/b_0001.tga', 'Cut001')).resolves.toBe(cel);
+  });
+});
+
+describe('ensureWritePermission', () => {
+  it('既に許可済みなら要求しない', async () => {
+    let requested = false;
+    const handle = {
+      queryPermission: async () => 'granted',
+      requestPermission: async () => { requested = true; return 'granted'; },
+    };
+    await expect(ensureWritePermission(handle)).resolves.toBe(true);
+    expect(requested).toBe(false);
+  });
+
+  it('未許可なら readwrite で要求する', async () => {
+    const asked: any[] = [];
+    const handle = {
+      queryPermission: async () => 'prompt',
+      requestPermission: async (o: any) => { asked.push(o); return 'granted'; },
+    };
+    await expect(ensureWritePermission(handle)).resolves.toBe(true);
+    expect(asked).toEqual([{ mode: 'readwrite' }]);
+  });
+
+  it('拒否されたら false', async () => {
+    const handle = {
+      queryPermission: async () => 'prompt',
+      requestPermission: async () => 'denied',
+    };
+    await expect(ensureWritePermission(handle)).resolves.toBe(false);
+  });
+
+  it('API 非対応の環境では書き込みを試させる', async () => {
+    await expect(ensureWritePermission({ name: 'x' })).resolves.toBe(true);
   });
 });

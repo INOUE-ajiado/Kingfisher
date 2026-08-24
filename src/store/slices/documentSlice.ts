@@ -4,7 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { encodeTGA } from '../../engine/tga';
-import { resolveFileHandle } from '../../engine/fileSystemPath';
+import { resolveFileHandle, ensureWritePermission } from '../../engine/fileSystemPath';
 import { PaintStore, DocumentSlice } from '../types';
 
 /** 1 セルあたりに保持する履歴の最大数 (基準状態「編集前」を含む) */
@@ -147,6 +147,18 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     const fileName = resolveFileNameForView(fileIndex, view);
     if (!fileName) {
       return { ok: false, message: `${label} の現在のフレームに対応するファイルが存在しません。` };
+    }
+
+    // 既定では読み取り許可しか付いていない (ピッカー・D&D とも)。
+    // ここで昇格しておかないと createWritable() が NotAllowedError になる。
+    if (!(await ensureWritePermission(folderHandle))) {
+      return {
+        ok: false,
+        message:
+          `${label} のフォルダへの書き込みが許可されませんでした。
+` +
+          `保存し直すと許可を求めるダイアログが再度表示されます。`,
+      };
     }
 
     try {
