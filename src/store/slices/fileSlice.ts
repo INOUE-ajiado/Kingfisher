@@ -3,7 +3,54 @@
  */
 
 import { StateCreator } from 'zustand';
-import { PaintStore, FileSlice, SubDirectoryItem, buildMergedFrameData } from '../types';
+import {
+  PaintStore,
+  FileSlice,
+  SubDirectoryItem,
+  MergedFrameMapItem,
+  buildMergedFrameData,
+} from '../types';
+
+/** そのビューに実体があるコマかどうか */
+function viewHasFile(frameMap: Map<string, MergedFrameMapItem>, frameNumber: string, view: 0 | 1): boolean {
+  const item = frameMap.get(frameNumber);
+  return view === 1 ? !!item?.fileNameB : !!item?.fileNameA;
+}
+
+/**
+ * そのビューに実体があるコマのうち、最初の位置。
+ *
+ * ⚠️ 開いた直後の位置を 0 に固定してはいけない。A と B のコマ番号が
+ * 重ならない場合 (一部のセルだけリテイクを受け取る等)、先頭のコマには
+ * そのビューの実体が無く、ウィンドウが「NO DATA」のままになる。
+ */
+function firstIndexWithFile(
+  frameNumbers: string[],
+  frameMap: Map<string, MergedFrameMapItem>,
+  view: 0 | 1
+): number {
+  const idx = frameNumbers.findIndex((n) => viewHasFile(frameMap, n, view));
+  return idx < 0 ? 0 : idx;
+}
+
+/**
+ * 片側のフォルダだけを差し替えたときに、もう一方が見ていたコマを維持する。
+ * マージし直すと統合リストの並びが変わるため、位置ではなくコマ番号で引き継ぐ。
+ */
+function keepFrameIndex(
+  prevFrameNumbers: string[],
+  prevIndex: number,
+  frameNumbers: string[],
+  frameMap: Map<string, MergedFrameMapItem>,
+  view: 0 | 1
+): number {
+  const prevNumber = prevFrameNumbers[prevIndex];
+  if (prevNumber) {
+    const next = frameNumbers.indexOf(prevNumber);
+    if (next >= 0 && viewHasFile(frameMap, prevNumber, view)) return next;
+  }
+  return firstIndexWithFile(frameNumbers, frameMap, view);
+}
 
 export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set, get) => ({
   // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理 ＆ カット階層ナビゲーション)
@@ -54,8 +101,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
-        splitFileIndex: 0,
+        currentFileIndex: firstIndexWithFile(frameNumbers, frameMap, 0),
+        splitFileIndex: firstIndexWithFile(frameNumbers, frameMap, 1),
       });
     },
 
@@ -67,6 +114,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
 
+      const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
+      const splitFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.splitFileIndex,
+        frameNumbers,
+        frameMap,
+        1
+      );
+
       return {
         selectedSubDirA: dirName,
         folderNameA: dirName || state.rootFolderName || '',
@@ -77,7 +133,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 
@@ -89,6 +146,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
 
+      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
+      const currentFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.currentFileIndex,
+        frameNumbers,
+        frameMap,
+        0
+      );
+
       return {
         selectedSubDirB: dirName,
         folderNameB: dirName || state.rootFolderName || '',
@@ -99,13 +165,23 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        splitFileIndex: 0,
+        splitFileIndex,
+        currentFileIndex,
       };
     }),
 
   setCustomDropFolderA: (folderName, mapA, listA) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
+      const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
+      const splitFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.splitFileIndex,
+        frameNumbers,
+        frameMap,
+        1
+      );
+
       return {
         folderNameA: folderName,
         folderHandleA: null,
@@ -115,13 +191,23 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 
   setCustomDropFolderB: (folderName, mapB, listB) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
+      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
+      const currentFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.currentFileIndex,
+        frameNumbers,
+        frameMap,
+        0
+      );
+
       return {
         folderNameB: folderName,
         folderHandleB: null,
@@ -131,7 +217,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        splitFileIndex: 0,
+        splitFileIndex,
+        currentFileIndex,
       };
     }),
 
@@ -158,6 +245,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       // ファイル名の単純和集合ではなく、連番でマージする。
       // A/B でファイル名が異なっても同じフレームとして対応付けられる。
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(files, state.fileListB);
+      const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
+      const splitFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.splitFileIndex,
+        frameNumbers,
+        frameMap,
+        1
+      );
+
       return {
         folderHandleA: handle,
         folderNameA: name,
@@ -166,14 +262,23 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
-        splitFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 
   setFolderHandleB: (handle, name, files) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
+      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
+      const currentFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.currentFileIndex,
+        frameNumbers,
+        frameMap,
+        0
+      );
+
       return {
         folderHandleB: handle,
         folderNameB: name,
@@ -182,8 +287,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
-        splitFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 
@@ -191,6 +296,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set((state) => {
       const files = Array.from(filesMap.keys()).sort();
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(files, state.fileListB);
+      const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
+      const splitFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.splitFileIndex,
+        frameNumbers,
+        frameMap,
+        1
+      );
+
       return {
         fileMapA: filesMap,
         folderNameA: name,
@@ -199,8 +313,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
-        splitFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 
@@ -208,6 +322,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set((state) => {
       const files = Array.from(filesMap.keys()).sort();
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
+      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
+      const currentFileIndex = keepFrameIndex(
+        state.mergedFrameNumbers,
+        state.currentFileIndex,
+        frameNumbers,
+        frameMap,
+        0
+      );
+
       return {
         fileMapB: filesMap,
         folderNameB: name,
@@ -216,8 +339,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
-        currentFileIndex: 0,
-        splitFileIndex: 0,
+        currentFileIndex,
+        splitFileIndex,
       };
     }),
 

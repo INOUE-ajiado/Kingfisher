@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { usePaintStore } from './usePaintStore';
+import { usePaintStore, extractFrameNumber } from './usePaintStore';
 import { TGAImage } from '../engine/tga';
 import { createUiSlice } from './slices/uiSlice';
 import { createViewSlice } from './slices/viewSlice';
@@ -132,6 +132,87 @@ describe('file スライス — 異名連番のファイル名解決', () => {
   it('片側にしか存在しないフレームは null を返す', () => {
     expect(s().resolveFileNameForView(2, 0)).toBe('a_0003.tga');
     expect(s().resolveFileNameForView(2, 1)).toBeNull();
+  });
+});
+
+describe('file スライス — フォルダを開いた直後の表示コマ', () => {
+  it('B のフレームが A と重ならなくても、Win B が表示できるコマを選ぶ', () => {
+    // A は 0001-0003、あとから B に 0005-0006 だけをドロップする
+    // (一部のセルだけリテイクを受け取る、実際によくある形)
+    s().setFolderHandleA(null, 'dirA', ['a_0001.tga', 'a_0002.tga', 'a_0003.tga']);
+    s().setCustomDropFolderB(
+      'retake',
+      new Map([
+        ['retake/b_0005.tga', new File([], 'b_0005.tga')],
+        ['retake/b_0006.tga', new File([], 'b_0006.tga')],
+      ]),
+      ['retake/b_0005.tga', 'retake/b_0006.tga']
+    );
+
+    // ファイルツリーには B のコマが並ぶ
+    expect(s().mergedFrameNumbers).toEqual(['0001', '0002', '0003', '0005', '0006']);
+
+    // ⚠️ splitFileIndex を 0 に固定すると、そのコマに B の実体が無いため
+    //    Win B が「NO RETAKE DATA」のままになる
+    expect(s().resolveFileNameForView(s().splitFileIndex, 1)).not.toBeNull();
+  });
+
+  it('A 側も同様に、実体のあるコマから始まる', () => {
+    s().setFolderHandleB(null, 'dirB', ['b_0001.tga', 'b_0002.tga']);
+    s().setCustomDropFolderA(
+      'orig',
+      new Map([['orig/a_0004.tga', new File([], 'a_0004.tga')]]),
+      ['orig/a_0004.tga']
+    );
+
+    expect(s().resolveFileNameForView(s().currentFileIndex, 0)).not.toBeNull();
+  });
+});
+
+describe('file スライス — Win B ツリーからの選択', () => {
+  /** FileBrowser の handleSelectFromTreeB と同じ計算 */
+  const clickTreeB = (localIdx: number) => {
+    const path = s().fileListB[localIdx];
+    if (!path) return;
+    const idx = s().mergedFrameNumbers.indexOf(extractFrameNumber(path));
+    s().setSplitFileIndex(idx >= 0 ? idx : localIdx);
+  };
+
+  it('A と B でファイル名が違っても、選んだコマへ Win B が移動する', () => {
+    s().setFolderHandleA(null, 'dirA', ['a_0001.tga', 'a_0002.tga', 'a_0003.tga']);
+    s().setFolderHandleB(null, 'dirB', ['b_go0001.tga', 'b_go0002.tga', 'b_go0003.tga']);
+    s().toggleIsSplitView();
+
+    clickTreeB(2);
+    expect(s().splitFileIndex).toBe(2);
+    expect(s().resolveFileNameForView(s().splitFileIndex, 1)).toBe('b_go0003.tga');
+  });
+
+  it('連動 ON でも Win B は選んだコマへ移動する', () => {
+    s().setFolderHandleA(null, 'dirA', ['a_0001.tga', 'a_0002.tga', 'a_0003.tga']);
+    s().setFolderHandleB(null, 'dirB', ['b_go0001.tga', 'b_go0002.tga', 'b_go0003.tga']);
+    s().toggleIsSplitView();
+    s().toggleSyncMode();
+
+    clickTreeB(2);
+    expect(s().splitFileIndex).toBe(2);
+  });
+
+  it('Win A が空でも Win B は独立して移動できる', () => {
+    s().setCustomDropFolderB(
+      'retake',
+      new Map([
+        ['retake/b_0001.tga', new File([], 'b_0001.tga')],
+        ['retake/b_0002.tga', new File([], 'b_0002.tga')],
+      ]),
+      ['retake/b_0001.tga', 'retake/b_0002.tga']
+    );
+    s().toggleIsSplitView();
+    expect(s().fileListA.length).toBe(0);
+
+    clickTreeB(1);
+    expect(s().splitFileIndex).toBe(1);
+    expect(s().resolveFileNameForView(s().splitFileIndex, 1)).toBe('retake/b_0002.tga');
   });
 });
 

@@ -272,7 +272,16 @@ export const FileBrowser: React.FC = () => {
    * 選択時はファイル名からフレーム番号を取り出し、
    * 統合リスト上の位置へ読み替えてから反映する。
    */
-  const showDualTree = isSplitView && fileListA.length > 0 && fileListB.length > 0;
+  /**
+   * ⚠️ 「両方にファイルがあるとき」を条件にしてはいけない。
+   *
+   * 片側だけフォルダを開いた状態 (Win B にだけ D&D した直後など) では
+   * 統合ツリーが 1 本だけ表示されるが、そのツリーの選択は
+   * setCurrentFileIndex に繋がっているため Win A しか動かない。
+   * 連動 OFF のときは Win B を移動する手段が画面から消える。
+   * 分割表示中は常に 2 本並べ、空の側は空である旨を出す。
+   */
+  const showDualTree = isSplitView;
 
   const treeA = useMemo(() => buildTreeFromPaths(fileListA), [fileListA]);
   const treeB = useMemo(() => buildTreeFromPaths(fileListB), [fileListB]);
@@ -791,6 +800,14 @@ export const FileBrowser: React.FC = () => {
                     {pane.label}
                   </div>
                   <div className="flex-1 overflow-y-auto space-y-0.5">
+                    {pane.nodes.length === 0 && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 px-1 py-2 leading-relaxed select-none">
+                        フォルダが開かれていません。
+                        <br />
+                        {pane.key === 'A' ? 'Open A' : 'Open B'} から選択するか、
+                        {pane.key === 'A' ? 'Win A' : 'Win B'} へフォルダをドロップしてください。
+                      </div>
+                    )}
                     {pane.nodes.map((node) => (
                       <TreeItemNode
                         key={node.path}
