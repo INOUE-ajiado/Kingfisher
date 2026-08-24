@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { usePaintStore, extractFrameNumber } from './usePaintStore';
+import { buildSequentialRenamePlan } from '../engine/renamePlan';
 import { TGAImage } from '../engine/tga';
 import { createUiSlice } from './slices/uiSlice';
 import { createViewSlice } from './slices/viewSlice';
@@ -528,6 +529,134 @@ describe('document スライス — 名前を付けて保存', () => {
     const result = await s().saveActiveCellAs();
     expect(result.ok).toBe(false);
     expect(result.message).toContain('閲覧専用');
+  });
+});
+
+describe('file スライス — リネーム', () => {
+  /**
+   * move() を持つファイルハンドルの模擬。
+   * ⚠️ 実際の move() は同名ファイルを黙って上書きする。中身の同一性を
+   * 追えるようにしておかないと、上書きでデータが消えても気づけない。
+   */
+  function makeDir(files: string[]) {
+    const contents = new Map(files.map((f) => [f, `content:${f}`]));
+    const dir: any = {
+      name: 'dirA',
+      contents,
+      getFileHandle: async (n: string) => {
+        if (!contents.has(n)) throw new Error(`no file: ${n}`);
+        return {
+          move: async (newName: string) => {
+            const body = contents.get(n)!;
+            contents.delete(n);
+            contents.set(newName, body); // 既存があれば上書き (本物と同じ挙動)
+          },
+        };
+      },
+      getDirectoryHandle: async (n: string) => { throw new Error(`no dir: ${n}`); },
+    };
+    return dir;
+  }
+
+  const namesOf = (dir: any) => Array.from(dir.contents.keys()).sort();
+
+  function setup(files: string[]) {
+    const dir = makeDir(files);
+    s().setFolderHandleA(dir, 'dirA', files.slice(), new Map(files.map((f) => [f, new File([], f)])));
+    return dir;
+  }
+
+  it('先頭・末尾テキストと桁数を指定して連番リネームする', async () => {
+    const dir = setup(['A0005.tga', 'A0006.tga', 'A0007.tga']);
+
+    const plan = buildSequentialRenamePlan(s().fileListA, {
+      prefix: 'C001_', suffix: '_go', startNumber: 1, digits: 4,
+    });
+    const result = await s().renameFiles(0, plan);
+
+    expect(result.ok).toBe(true);
+    expect(result.renamed).toBe(3);
+    expect(namesOf(dir)).toEqual(['C001_0001_go.tga', 'C001_0002_go.tga', 'C001_0003_go.tga']);
+    // ストアの一覧も追随する
+    expect(s().fileListA).toEqual(['C001_0001_go.tga', 'C001_0002_go.tga', 'C001_0003_go.tga']);
+  });
+
+  it('番号をずらすだけの入れ替えも成立する', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga', 'A0003.tga']);
+
+    // 1つ繰り上げる: A0001->A0000, A0002->A0001, A0003->A0002
+    const plan = buildSequentialRenamePlan(s().fileListA, {
+      prefix: 'A', suffix: '', startNumber: 0, digits: 4,
+    });
+    const result = await s().renameFiles(0, plan);
+
+    expect(result.ok).toBe(true);
+    expect(namesOf(dir)).toEqual(['A0000.tga', 'A0001.tga', 'A0002.tga']);
+  });
+
+  it('番号を繰り上げても既存のコマを上書きしない', async () => {
+    const dir = setup(['A0001.tga', 'A0002.tga', 'A0003.tga']);
+
+    // 1つ繰り下げる: A0001->A0002, A0002->A0003, A0003->A0004
+    // 順に move() すると A0001 が既存の A0002 を潰してしまう向き
+    const plan = buildSequentialRenamePlan(s().fileListA, {
+      prefix: 'A', suffix: '', startNumber: 2, digits: 4,
+    });
+    const result = await s().renameFiles(0, plan);
+
+    expect(result.ok).toBe(true);
+    expect(namesOf(dir)).toEqual(['A0002.tga', 'A0003.tga', 'A0004.tga']);
+    // 中身が 1 つも失われていないこと (上書きが起きると 3 件未満になる)
+    expect(new Set(dir.contents.values()).size).toBe(3);
+    expect(dir.contents.get('A0002.tga')).toBe('content:A0001.tga');
+    expect(dir.contents.get('A0004.tga')).toBe('content:A0003.tga');
+  });
+
+  it('対象外の既存ファイルと衝突したら 1 件も変更しない', async () => {
+    const dir = setup(['A0001.tga', 'keep.tga']);
+    const before = namesOf(dir);
+
+    const result = await s().renameFiles(0, [
+      { path: 'A0001.tga', from: 'A0001.tga', to: 'keep.tga' },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.renamed).toBe(0);
+    expect(result.message).toContain('衝突');
+    expect(namesOf(dir)).toEqual(before);
+  });
+
+  it('使えない文字が含まれていたら中止する', async () => {
+    const dir = setup(['A0001.tga']);
+
+    const result = await s().renameFiles(0, [
+      { path: 'A0001.tga', from: 'A0001.tga', to: 'bad?name.tga' },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(namesOf(dir)).toEqual(['A0001.tga']);
+  });
+
+  it('書き込み可能なフォルダが無ければ理由を返す', async () => {
+    s().setFolderHandleA(null, 'dirA', ['A0001.tga']);
+
+    const result = await s().renameFiles(0, [
+      { path: 'A0001.tga', from: 'A0001.tga', to: 'B0001.tga' },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toContain('フォルダ');
+  });
+
+  it('名前が変わらなければ何もしない', async () => {
+    setup(['A0001.tga']);
+
+    const result = await s().renameFiles(0, [
+      { path: 'A0001.tga', from: 'A0001.tga', to: 'A0001.tga' },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.renamed).toBe(0);
   });
 });
 

@@ -107,3 +107,55 @@ export async function ensureWritePermission(handle: any): Promise<boolean> {
   if (typeof handle.requestPermission !== 'function') return false;
   return (await handle.requestPermission(options)) === 'granted';
 }
+
+/**
+ * 相対パスの「親ディレクトリのハンドル」と「ファイル名」を返す。
+ * リネームや削除のように、ディレクトリ側の操作が要る場面で使う。
+ */
+export async function resolveParentDirectory(
+  rootHandle: any,
+  path: string,
+  rootFolderName?: string | null
+): Promise<{ dir: any; name: string }> {
+  const parts = splitFilePath(path, rootFolderName, rootHandle?.name);
+  if (parts.length === 0) throw new Error(`Invalid file path: ${path}`);
+
+  let dir = rootHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i]);
+  }
+  return { dir, name: parts[parts.length - 1] };
+}
+
+/**
+ * ファイル名を変更する。
+ *
+ * FileSystemFileHandle.move() があればそれを使う (Chromium 111+)。
+ * 無い環境では「新しい名前でコピー → 元を削除」で代替する。
+ * ⚠️ 代替経路は途中で失敗すると両方残る / 元が消えるので、
+ * 呼び出し側は衝突を事前に潰しておくこと。
+ */
+export async function renameFile(
+  rootHandle: any,
+  path: string,
+  newName: string,
+  rootFolderName?: string | null
+): Promise<void> {
+  const { dir, name } = await resolveParentDirectory(rootHandle, path, rootFolderName);
+  if (name === newName) return;
+
+  const fileHandle = await dir.getFileHandle(name);
+
+  if (typeof fileHandle.move === 'function') {
+    await fileHandle.move(newName);
+    return;
+  }
+
+  const file = await fileHandle.getFile();
+  const buffer = await file.arrayBuffer();
+  const target = await dir.getFileHandle(newName, { create: true });
+  const writable = await target.createWritable();
+  await writable.write(buffer);
+  await writable.close();
+  await dir.removeEntry(name);
+}
