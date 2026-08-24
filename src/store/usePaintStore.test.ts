@@ -217,6 +217,72 @@ describe('file スライス — Win B ツリーからの選択', () => {
   });
 });
 
+describe('file スライス — ツリー選択のインデックス対応', () => {
+  // 報告された症状: 下へ順に選んでいるのに先頭へ戻る / 別フォルダへ飛ぶ /
+  // 一部のファイルが飛ばされる。いずれも「ツリー内の位置」と
+  // 「統合リスト上の位置」の対応が 1 対 1 でないことが原因だった。
+
+  it('番号が重なるサブフォルダがあってもファイルが消えない', () => {
+    const listA = [
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/b/b0001.tga',
+      'Cut/b/b0002.tga',
+    ];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    // 以前は 4 件が 2 件に潰れ、消えた側は選択できなかった
+    expect(s().unifiedFileList.length).toBe(4);
+    expect(s().mergedFrameNumbers.length).toBe(4);
+  });
+
+  it('どのファイルも自分自身の位置へ解決される (往復して一致する)', () => {
+    const listA = [
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/b/b0001.tga',
+      'Cut/_sheet/cut.tga',
+    ];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    // path -> index -> path が必ず元に戻ること。
+    // ここが崩れると、選んだ行と光る行がずれる
+    for (const path of listA) {
+      const idx = s().indexOfFileForView(path, 0);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(s().resolveFileNameForView(idx, 0)).toBe(path);
+    }
+  });
+
+  it('数字を含まないファイルが混ざっても並びが安定する', () => {
+    const listA = ['Cut/_sheet/cut.tga', 'Cut/_go/a0002.tga', 'Cut/_go/a0001.tga'];
+    s().setFolderHandleA(null, 'Cut', listA);
+    const first = s().mergedFrameNumbers.slice();
+
+    // 入力順を変えても同じ並びになること (比較関数が全順序であること)
+    s().setFolderHandleA(null, 'Cut', ['Cut/_go/a0001.tga', 'Cut/_sheet/cut.tga', 'Cut/_go/a0002.tga']);
+    expect(s().mergedFrameNumbers).toEqual(first);
+
+    // 連番は数値順で先に並ぶ
+    expect(s().mergedFrameNumbers.slice(0, 2)).toEqual(['0001', '0002']);
+  });
+
+  it('Win B 側も自分のファイルへ解決される', () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a0001.tga', 'dirA/a0002.tga']);
+    s().setFolderHandleB(null, 'dirB', ['dirB/b_go0001.tga', 'dirB/b_go0002.tga']);
+
+    for (const path of s().fileListB) {
+      const idx = s().indexOfFileForView(path, 1);
+      expect(s().resolveFileNameForView(idx, 1)).toBe(path);
+    }
+  });
+
+  it('対応するファイルが無い位置は -1 を返す (別の行を光らせない)', () => {
+    s().setFolderHandleA(null, 'dirA', ['dirA/a0001.tga']);
+    expect(s().indexOfFileForView('dirA/does_not_exist.tga', 0)).toBe(-1);
+  });
+});
+
 describe('file スライス — コマ送り', () => {
   beforeEach(() => {
     s().setFolderHandleA(null, 'dirA', ['0001.tga', '0002.tga', '0003.tga']);

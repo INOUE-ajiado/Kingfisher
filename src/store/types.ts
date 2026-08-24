@@ -120,31 +120,71 @@ export function extractFrameNumber(fileName: string): string {
   return numMatch ? numMatch[1].padStart(4, '0') : fileName;
 }
 
-// サブフォルダAとサブフォルダBのファイル群から異名連番マージマップを再構築する関数
+/** 相対パスのディレクトリ部分 ("_go/a0001.tga" -> "_go/") */
+function directoryOf(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf(String.fromCharCode(92)));
+  return idx < 0 ? '' : path.slice(0, idx + 1);
+}
+
+/** キーが 0-9 だけで構成されているか (連番として数値順に並べてよいか) */
+function isNumericKey(key: string): boolean {
+  return /^[0-9]+$/.test(key);
+}
+
+/**
+ * A 側 / B 側のファイル群からフレーム対応表を組み立てる。
+ *
+ * ⚠️ 1 ファイルにつき必ず 1 エントリを作ること。
+ * 以前はフレーム番号だけをキーにしていたため、サブフォルダをまたいで
+ * 同じ番号があると (例: _go/a0001.tga と b/b0001.tga) 後勝ちで上書きされ、
+ * ファイルが一覧から消え、ツリーの選択が別フォルダの項目へ飛んでいた。
+ * 番号が埋まっている場合はディレクトリを付けて別キーにする。
+ */
 export function buildMergedFrameData(
   listA: string[],
   listB: string[]
 ): { frameNumbers: string[]; frameMap: Map<string, MergedFrameMapItem>; unifiedFiles: string[] } {
   const frameMap = new Map<string, MergedFrameMapItem>();
 
-  listA.forEach((f) => {
-    const num = extractFrameNumber(f);
-    const item = frameMap.get(num) || { frameNumber: num };
-    item.fileNameA = f;
-    frameMap.set(num, item);
-  });
+  const assign = (path: string, side: 'A' | 'B') => {
+    const num = extractFrameNumber(path);
 
-  listB.forEach((f) => {
-    const num = extractFrameNumber(f);
-    const item = frameMap.get(num) || { frameNumber: num };
-    item.fileNameB = f;
-    frameMap.set(num, item);
-  });
+    // その番号がこちら側でまだ空いていればそのまま使う (A と B の対応づけ)
+    const taken = (key: string) => {
+      const item = frameMap.get(key);
+      if (!item) return false;
+      return side === 'A' ? !!item.fileNameA : !!item.fileNameB;
+    };
 
+    let key = num;
+    if (taken(key)) {
+      const dir = directoryOf(path);
+      key = `${dir}${num}`;
+      let n = 2;
+      while (taken(key)) {
+        key = `${dir}${num}#${n}`;
+        n += 1;
+      }
+    }
+
+    const item = frameMap.get(key) || { frameNumber: key };
+    if (side === 'A') item.fileNameA = path;
+    else item.fileNameB = path;
+    frameMap.set(key, item);
+  };
+
+  listA.forEach((f) => assign(f, 'A'));
+  listB.forEach((f) => assign(f, 'B'));
+
+  // ⚠️ 比較関数は全順序になっていること。
+  // 数値キーと非数値キーが混ざったときに片方だけ localeCompare へ落ちると
+  // 推移律が崩れ、並び順が入力順しだいで変わってしまう。
   const frameNumbers = Array.from(frameMap.keys()).sort((a, b) => {
-    const numA = parseInt(a, 10);
-    const numB = parseInt(b, 10);
-    if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+    const aNum = isNumericKey(a);
+    const bNum = isNumericKey(b);
+    if (aNum && bNum) return parseInt(a, 10) - parseInt(b, 10);
+    if (aNum) return -1;
+    if (bNum) return 1;
     return a.localeCompare(b);
   });
 
@@ -300,6 +340,13 @@ export interface FileSlice {
   prevCell: () => void
   /** 統合フレーム番号から、指定ビュー側の実ファイル名を解決する (異名連番対応) */
   resolveFileNameForView: (index: number, view: 0 | 1) => string | null;
+
+  /**
+   * ファイルの相対パスから、そのビューでの表示位置を求める。
+   * ⚠️ フレーム番号での逆引きは 1 対 1 にならない (番号が重なるサブフォルダ)。
+   * 必ずパスの完全一致で引くこと。見つからなければ -1。
+   */
+  indexOfFileForView: (path: string, view: 0 | 1) => number;
 
   /**
    * ファイル名を変更する。plan は engine/renamePlan で組み立てたもの。

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
-import { usePaintStore, SubDirectoryItem, extractFrameNumber } from '../../store/usePaintStore';
+import { usePaintStore, SubDirectoryItem } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
@@ -283,6 +283,7 @@ export const FileBrowser: React.FC = () => {
     alignSyncFrames,
     isSplitView,
     resolveFileNameForView,
+    indexOfFileForView,
     duplicateFiles,
     deleteFiles,
   } = usePaintStore();
@@ -349,8 +350,19 @@ export const FileBrowser: React.FC = () => {
     });
   }, [fileTreeNodes, treeA, treeB]);
 
+  /**
+   * ツリー内の位置 → 統合リスト上の位置。
+   *
+   * ⚠️ フレーム番号で引かないこと。番号が重なるサブフォルダがあると
+   * 別フォルダの項目に当たり、選択が飛んだり項目が飛ばされたりする。
+   */
   const toUnifiedIndex = (path: string, fallback: number) => {
-    const idx = mergedFrameNumbers.indexOf(extractFrameNumber(path));
+    const idx = indexOfFileForView(path, 0);
+    return idx >= 0 ? idx : fallback;
+  };
+
+  const toUnifiedIndexForView = (path: string, view: 0 | 1, fallback: number) => {
+    const idx = indexOfFileForView(path, view);
     return idx >= 0 ? idx : fallback;
   };
 
@@ -480,7 +492,7 @@ export const FileBrowser: React.FC = () => {
   const handleSelectFromTreeB = (localIdx: number) => {
     const path = fileListB[localIdx];
     if (!path) return;
-    setSplitFileIndex(toUnifiedIndex(path, localIdx));
+    setSplitFileIndex(toUnifiedIndexForView(path, 1, localIdx));
   };
 
   // 各ツリー内で「今表示中のセル」がどれかを求める
@@ -491,22 +503,18 @@ export const FileBrowser: React.FC = () => {
    * 名前だけで引くと、マージ情報が無い読み込み経路で解決できず
    * Win B 側のハイライトが出なくなる。
    */
+  /**
+   * 統合リスト上の位置 → ツリー内の位置。
+   *
+   * ⚠️ パスの完全一致だけで引く。以前はフレーム番号での突き合わせと
+   * 「同じ位置」へのフォールバックがあり、対応が取れないときに
+   * 無関係な行がハイライトされて選択が飛んでいるように見えていた。
+   * 対応するファイルが無いなら -1 (どこもハイライトしない) が正しい。
+   */
   const toLocalIndex = (unifiedIdx: number, list: string[], view: 0 | 1) => {
     if (list.length === 0) return -1;
-
     const name = resolveFileNameForView(unifiedIdx, view);
-    if (name) {
-      const byName = list.indexOf(name);
-      if (byName >= 0) return byName;
-    }
-
-    const frame = mergedFrameNumbers[unifiedIdx];
-    if (frame) {
-      const byFrame = list.findIndex((f) => extractFrameNumber(f) === frame);
-      if (byFrame >= 0) return byFrame;
-    }
-
-    return unifiedIdx < list.length ? unifiedIdx : -1;
+    return name ? list.indexOf(name) : -1;
   };
 
   const activeLocalIdxA = toLocalIndex(currentFileIndex, fileListA, 0);

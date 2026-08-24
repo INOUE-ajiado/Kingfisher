@@ -438,6 +438,19 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
    * 統合リスト上のインデックスから、A側 / B側それぞれの実ファイル名を引く。
    * A と B でファイル名が異なる連番 (異名連番) でも正しい方の名前を返す。
    */
+  indexOfFileForView: (path, view) => {
+    const { mergedFrameNumbers, mergedFrameMap, unifiedFileList } = get();
+
+    for (let i = 0; i < mergedFrameNumbers.length; i++) {
+      const item = mergedFrameMap.get(mergedFrameNumbers[i]);
+      if (!item) continue;
+      if ((view === 1 ? item.fileNameB : item.fileNameA) === path) return i;
+    }
+
+    // マージ情報が無い読み込み経路向けのフォールバック
+    return unifiedFileList.indexOf(path);
+  },
+
   resolveFileNameForView: (index, view) => {
     const { mergedFrameNumbers, mergedFrameMap, unifiedFileList, fileListA, fileListB } = get();
 
