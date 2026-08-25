@@ -38,13 +38,37 @@ export const App: React.FC = () => {
     }
   }, [isDarkMode]);
 
-  // Ctrl+Alt (Win) / Ctrl+Cmd (Mac) で右パネル一括開閉のショートカット
+  /**
+   * Ctrl+Alt (Mac は Cmd+Alt) で右パネルを一括開閉する。
+   *
+   * ⚠️ 修飾キーだけを見て発火させないこと。以前は押されたキーを一切見ておらず、
+   * Ctrl+Alt を押している間はどのキーでもトグルしていた。キーリピートでも
+   * 連打され、入力欄で打っている最中にも反応していた。
+   * 組み合わせが成立した瞬間 (後から押した側の keydown) だけを拾う。
+   * 押す順番はどちらでもよいので、両方の向きを見る。
+   */
   useEffect(() => {
     const handleRightPanelShortcut = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.altKey) {
-        e.preventDefault();
-        toggleRightSidebarOpen();
+      if (e.repeat) return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
       }
+
+      const completesChord =
+        (e.key === 'Alt' && (e.ctrlKey || e.metaKey)) ||
+        ((e.key === 'Control' || e.key === 'Meta') && e.altKey);
+      if (!completesChord) return;
+
+      e.preventDefault();
+      toggleRightSidebarOpen();
     };
     window.addEventListener('keydown', handleRightPanelShortcut);
     return () => window.removeEventListener('keydown', handleRightPanelShortcut);

@@ -107,6 +107,16 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
       };
 
       const handlePointerUp = (upEvt: PointerEvent) => {
+        // ⚠️ 後片付けは早期 return より前に、必ず行うこと。
+        // removeEventListener は addEventListener と capture の指定が一致しないと
+        // 何も外さない。以前は capture: true で登録したものを指定なしで外そうとしており、
+        // リサイズのたびに pointerup / pointercancel が残り続けていた。
+        // 残ったハンドラが次のリサイズの pointerup を先に拾って isResizing を倒すため、
+        // 本来のハンドラが早期 return し、pointermove まで外れずに溜まっていく。
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp, { capture: true });
+        window.removeEventListener('pointercancel', handlePointerUp, { capture: true });
+
         if (!isResizing.current) return;
         isResizing.current = false;
 
@@ -120,10 +130,6 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
           const finalRect = targetRef.current.getBoundingClientRect();
           onCommitRef.current?.(finalRect.width, finalRect.height);
         }
-
-        window.removeEventListener('pointermove', handlePointerMove);
-        window.removeEventListener('pointerup', handlePointerUp);
-        window.removeEventListener('pointercancel', handlePointerUp);
       };
 
       window.addEventListener('pointermove', handlePointerMove, { passive: false });
