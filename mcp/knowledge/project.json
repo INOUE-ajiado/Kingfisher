@@ -4,7 +4,7 @@
   "production": "https://kingfisher-paint-2026.web.app",
   "repository": "git@github.com:INOUE-ajiado/Kingfisher.git",
   "repositoryVisibility": "public",
-  "lastReviewed": "2026-08-25",
+  "lastReviewed": "2026-08-26",
   "techStack": {
     "implemented": [
       "React 18 + TypeScript 5.7 + Vite 6",
@@ -243,6 +243,14 @@
     {
       "symptom": "ツリーの選択が先頭へ巻き戻る / 別フォルダへ飛ぶ / 項目が飛ばされる",
       "cause": "フレーム番号での逆引きが 1 対 1 でなく、対応が取れないと無関係な行にフォールバックしていた"
+    },
+    {
+      "symptom": "サブフォルダをまたいで選んだファイルのリネームが衝突扱いで止まる",
+      "cause": "衝突判定をファイル名だけで見ていた。_go と _ao に同じコマ番号を振る通常の操作が duplicate / exists と誤判定されていた"
+    },
+    {
+      "symptom": "Win B で投げ縄を引くと輪郭線が Win A に出る",
+      "cause": "投げ縄の状態にビューの区別が無く、プレビューの描画が左キャンバス固定だった。塗り自体は Win B に入る"
     }
   ],
   "openIssues": [
@@ -261,7 +269,7 @@
       "id": "winb-tools",
       "severity": "medium",
       "title": "Win B でツールが使えない (実体は複数、順に対処済み・最終確認待ち)",
-      "detail": "『WinB に対してツールを使用しようとすると WinA に判定が吸われる』の報告。原因は 1 つではなく、表示上の誤認 2 件 + ファイル解決の不具合 2 件 + 選択インデックスのズレ 1 件だった。いずれも修正・デプロイ済み。",
+      "detail": "『WinB に対してツールを使用しようとすると WinA に判定が吸われる』の報告。原因は 1 つではなく、表示上の誤認 2 件 + ファイル解決の不具合 2 件 + 選択インデックスのズレ 1 件 + 投げ縄プレビューの左固定 1 件だった。いずれも修正・デプロイ待ち。",
       "verifiedOk": [
         "canvas の ref と handleMouseDown(e, false) の配線",
         "targetImg = isLeftView ? currentImage : splitImage の分岐",
@@ -269,9 +277,11 @@
         "currentImage と splitImage は別オブジェクト (cloneTGAImage を通す)",
         "saveUndoState / jumpToHistory / commitLiveState はすべて activeViewIndex で分岐している",
         "useFloatingWindow の windowStyle はドッキング中 undefined。useFastDraggable は enabled:false で transform を消す",
-        "CellWindow のオーバーレイは全て pointer-events-none"
+        "CellWindow のオーバーレイは全て pointer-events-none",
+        "handleMouseMove / handleMouseUp / handleWheel はすべて isLeftView で分岐している",
+        "setActiveViewIndex は handleMouseDown の先頭で呼ばれ、saveUndoState は get() で新しい値を読む"
       ],
-      "nextStep": "実機で再現するか確認する。まだ起きるなら (1) Win B のタイトルバーに * が付くか (2) 保存ボタンが『未保存 B』になるか を見て、処理が Win B に入っているかを切り分ける。"
+      "nextStep": "実機で再現するか確認する。特に投げ縄 (closedFill / lasso) を Win B で引いて、輪郭線が Win B に出ることを見る。まだ他のツールで起きるなら (1) Win B のタイトルバーに * が付くか (2) 保存ボタンが「未保存 B」になるか を見て切り分ける。"
     },
     {
       "id": "save-as-semantics",
@@ -292,7 +302,22 @@
       "severity": "medium",
       "title": "ColorChart の独立ウィンドウが重い (対策済み・効果未確認)",
       "lastAttempt": "document.body へポータル描画 (FloatingPortal.tsx)。右サイドパネルの overflow-y-auto 内にあると position:fixed でも再描画が起きるため。",
-      "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。"
+      "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。",
+      "investigated": "ColorChart.tsx:68,137 に usePaintStore.setState((state) => ({ ...state })) があり、ストア全体を購読する全パネルを強制再描画する。ただし発火は色のドロップ登録と右クリック登録のみで、ドラッグ中に毎フレーム走る経路ではない。継続的な重さの説明にはならない。"
+    },
+    {
+      "id": "lighttable-left-only",
+      "severity": "low",
+      "title": "ライトテーブル / オニオンスキンが Win A にしか出ない",
+      "detail": "CellWindow の renderCanvasInstance で isLeft && lightTable.enabled と isLeft && lightTable.items.length > 0 に固定されている。意図的な仕様か未確認。",
+      "nextStep": "Win B でもオニオンスキンを見たいかユーザーに確認する。不要ならこの項目を閉じる。"
+    },
+    {
+      "id": "lasso-drag-outside",
+      "severity": "low",
+      "title": "投げ縄をキャンバスの外で離すと isLassoing が残る",
+      "detail": "ドラッグ終了の window リスナー (endDrag) はコメントに「投げ縄」と書いてあるが isLassoing を落としていない。依存配列も [isPanning, isBrushing] なので投げ縄だけの操作では登録すらされない。",
+      "nextStep": "外で離したとき「投げ縄を破棄する」のか「そこで確定して塗る」のか決める。破棄する場合、開始時に積んだ Undo をどうするかも決める必要がある。"
     }
   ]
 }
