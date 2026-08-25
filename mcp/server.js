@@ -24,7 +24,7 @@ import {
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
@@ -156,7 +156,10 @@ function findDeadFiles() {
   for (const file of files) {
     const rel = relative(SRC, file);
     const base = rel.replace(/\.(ts|tsx)$/, '');
-    const name = base.split('/').pop();
+    // ⚠️ 区切り文字で自前に分割しないこと。Windows の relative() は
+    // バックスラッシュ区切りを返すため、'/' だけで分割するとファイル名が取れず、
+    // 下の正規表現が何にも一致せずに全ファイルが「参照ゼロ」として報告されていた。
+    const name = basename(base);
     if (name === 'main' || name === 'App' || name === 'vite-env') continue;
 
     // import 文は拡張子付き ('./AuthGuard.tsx') のこともあるので許容する

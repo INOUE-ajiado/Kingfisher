@@ -19,7 +19,8 @@
     "notImplemented": [
       "Rust / WebAssembly — 存在しない。画像処理は全て素の TypeScript",
       "WebGPU — src/engine/webgpuRenderer.ts は書かれているがどこからも import されていない。実際の描画は Canvas 2D",
-      "SharedArrayBuffer — 未使用。COOP/COEP ヘッダーだけ先に設定済み"
+      "SharedArrayBuffer — 未使用。COOP/COEP ヘッダーだけ先に設定済み",
+      "レイヤー — LayerPanel に一覧を出すだけで描画には一切反映されない。separateLineartLayersGlobal は空のレイヤーを 3 枚足して「分離生成しました」と表示するだけ"
     ]
   },
   "criticalWarnings": [
@@ -154,6 +155,12 @@
       "title": "カットフォルダの走査は scanCutRootFolder に一本化する",
       "detail": "「メニューバー > フォルダを開く」と「ファイルブラウザ > カットフォルダを開く」は src/engine/cutFolder.ts の scanCutRootFolder を通す。自前で走査を書かないこと。以前は 2 箇所に重複しており、(1) サブフォルダが無いフォルダで片方だけ setFolderHandleA を呼んで前のカットのサブフォルダ一覧が残る (2) 画像フォルダ判定に .tga と .png だけの独自正規表現を使い .jpg が漏れる、という食い違いが出ていた。サブフォルダが無い場合も (Root) 1 件として setCutRootFolder を通すこと。",
       "location": "src/engine/cutFolder.ts"
+    },
+    {
+      "id": "encode-restores-white",
+      "title": "encodeTGA は alpha 0 の画素を純白 RGB として書き戻す",
+      "detail": "「RGB(255,255,255) は完全透明 / (254,254,254) は不透明な白」という PaintMan の規約に合わせ、保存時は alpha 0 の画素を RGB(255,255,255) として書く。戻すのは RGB であってアルファではない。消しゴム (paintAlgorithm.ts の drawCircle) は alpha を 0 にするだけで RGB を触らないため、ここで白に戻さないと消した部分が元の色で復活する。src/engine/tga.test.ts が往復を固定している。",
+      "location": "src/engine/tga.ts"
     }
   ],
   "workflow": {
@@ -294,6 +301,22 @@
     {
       "symptom": "メニューバーからサブフォルダの無いフォルダを開くと、前のカットのサブフォルダ一覧がドロップダウンに残る",
       "cause": "その経路だけ setFolderHandleA で済ませていた。setFolderHandleA は rootFolderName / availableSubDirectories / selectedSubDirA を触らない。フォルダ走査が 2 箇所に重複していたのが元"
+    },
+    {
+      "symptom": "消しゴムで消した部分が、保存して開き直すと元の色で復活する",
+      "cause": "encodeTGA が「alpha 0 を白へ戻す」処理を RGB ではなくアルファチャンネルに書いていた。消しゴム (drawCircle) は alpha を 0 にするだけで RGB を残すため、元の色の不透明な画素として保存されていた"
+    },
+    {
+      "symptom": "線画分離で作った 3 枚のレイヤーが、表示切替や削除でまとめて反応する",
+      "cause": "addLayer の ID が Date.now() で、同じミリ秒に 3 回呼ばれて同一 ID になっていた"
+    },
+    {
+      "symptom": "Ctrl+1 でブラウザのタブが切り替わると同時にパレットのタブまで変わる",
+      "cause": "ショートカットの 1 / 2 / 3 とコマ送りキーに修飾キーの判定が無かった"
+    },
+    {
+      "symptom": "kingfisher_dead_files がほぼ全ファイルを「参照ゼロ」と報告する",
+      "cause": "Windows の relative() が返すバックスラッシュ区切りを split('/') で分割しており、ファイル名が取れず正規表現が何にも一致していなかった。path.basename に変更"
     }
   ],
   "openIssues": [
