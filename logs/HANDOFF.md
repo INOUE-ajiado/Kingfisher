@@ -4,9 +4,8 @@
 **まずこのファイルを読み、次に「未解決の課題」から着手してください。**
 
 - リポジトリ: `git@github.com:INOUE-ajiado/Kingfisher.git`
-- 作業ディレクトリ: `/Users/inouemacmini/Desktop/Kingfisher`
 - 本番: https://kingfisher-paint-2026.web.app (Firebase Hosting / project `kingfisher-paint-2026`)
-- 記録日: 2026-08-24
+- 記録日: **2026-08-25** (自宅 PC セッション。前回 2026-08-24 は会社 PC)
 
 ## 🚀 まず MCP を使ってください
 
@@ -14,30 +13,32 @@
 `.mcp.json` を置いてあるので Claude Code が自動で読み込みます。
 
 作業を始めるとき、まず `kingfisher_briefing` を呼んでください。
-プロジェクトの前提・注意事項・未解決の課題がまとめて得られます。
 不具合の調査前は `kingfisher_known_issues`、独自仕様に触れる前は
 `kingfisher_domain_rules` を呼ぶと、このドキュメントを読み込むより確実です。
 
-詳細は `mcp/README.md` を参照してください。
+> ⚠️ `.mcp.json` は Claude Code の **起動時** に読まれます。
+> clone 直後に `claude` を起動すれば認識されます (初回は承認プロンプトが出ます)。
 
 ## このフォルダの中身
 
 | ファイル | 内容 |
 |---|---|
 | `HANDOFF.md` | このファイル。状況と次の一手 |
-| `conversation.md` | 会話の全文 (ユーザー 38 発言 / Claude 138 応答) |
-| `session-raw-transcript.jsonl` | Claude Code の生ログ。ツール実行の詳細を含む (3.8MB) |
+| `conversation.md` | 2026-08-24 の会話全文 (会社 PC / ユーザー 38 発言) |
+| `session-raw-transcript.jsonl` | 同上の生ログ (3.8MB) |
+| `conversation-2026-08-25.md` | 2026-08-25 の会話全文 (自宅 PC / ユーザー 23 発言) |
+| `session-2026-08-25-raw-transcript.jsonl` | 同上の生ログ (2.8MB) |
 
 ---
 
 ## リポジトリの状態
 
-**すべてコミット済み・push 済み・本番デプロイ済みです。** 未コミットの変更はありません。
+**すべてコミット済み・push 済み・本番デプロイ済みです。**
 
 ```bash
 git clone git@github.com:INOUE-ajiado/Kingfisher.git
 cd Kingfisher && npm install
-npm test        # 90 件通ること
+npm test        # 155 件通ること
 npm run dev
 ```
 
@@ -66,46 +67,67 @@ curl -s "https://kingfisher-paint-2026.web.app$JS" | grep -c '2cfbedf50a09b0767c
 
 ## 🔴 未解決の課題 (ここから着手)
 
-### 1. Win B でツールが使えない ← 最優先・原因未確定
+### 1. 2026-08-25 の変更は実機で一度も確認していない ← 最優先
 
-ユーザー報告:「WinB に対してツールを使用しようとすると WinA に判定が吸われる」。
+型チェック・テスト (155 件)・ビルドは通り、**本番へデプロイ済み**。
+しかし File System Access API の実操作 (実フォルダ選択・保存・リネーム・削除) は
+**ブラウザで一度も試していません**。ファイルを直接書き換える機能が多いので、
+**必ずコピーしたフォルダで**確認してください。
 
-**調査済みで正常だったもの**(同じ調査を繰り返さないこと):
+確認する順番:
+
+1. **階層のあるカットフォルダを開いて保存できるか** — 今回いちばん大きく変えた箇所
+2. **D&D したフォルダへ保存できるか** — 新しくできるようになった
+3. **連番リネーム** — 先頭/末尾テキスト・開始番号・桁数
+4. **削除・複製 (コピー)**
+5. **ツリーの選択が飛ばない / 巻き戻らない / 項目が飛ばされないか**
+
+初回の保存・リネーム時に Chrome が書き込み許可を聞きます (これは意図した変更)。
+
+問題があれば `git revert 0bc437d` などで戻せます。
+
+### 2. Win B でツールが使えない (実体は複数、順に対処済み・最終確認待ち)
+
+報告は「WinB に対してツールを使用しようとすると WinA に判定が吸われる」。
+**原因は 1 つではありませんでした。** 見つかった実体は 5 件で、すべて修正済み:
+
+- 閲覧専用の通知が単一の真偽値で、Win B で弾かれたのに Win A にも出ていた
+- 独立ウィンドウの枠線が固定色で `activeViewIndex` を反映していなかった
+- フォルダを開いた直後の表示コマを無条件で 0 にしており、B の実体が無いコマを指していた
+- ファイルツリーが片側だけのとき 1 本になり、Win B を移動する手段が無かった
+- ツリーの選択インデックスとフレーム番号の対応が 1 対 1 でなかった
+
+**調査済みで正常だったもの** (同じ調査を繰り返さないこと):
+
 - `<canvas ref={rightCanvasRef} onMouseDown={(e) => handleMouseDown(e, false)}>` の配線
 - `targetImg = isLeftView ? currentImage : splitImage` の分岐
-- Win A は Win B の DOM 上の親ではない (兄弟)
-- `saveUndoState` は `activeViewIndex` を見るので Win B 側に積まれる
+- Win A は Win B の **DOM 上・React ツリー上のどちらでも親ではない** (兄弟)。
+  `CellWindow` はポータルを使っていないので、イベントが Win A へ抜ける経路は無い
+- `currentImage` と `splitImage` は別オブジェクト (`cloneTGAImage` を通している)
+- `saveUndoState` / `jumpToHistory` / `commitLiveState` はすべて `activeViewIndex` で分岐
+- `useFloatingWindow` の `windowStyle` はドッキング中 `undefined`。
+  `useFastDraggable` は `enabled:false` で `transform` を消している
+- `CellWindow` のオーバーレイは 6 箇所すべて `pointer-events-none`
 
-**直前に打った手** (ユーザー未確認):
-- Win B のキャンバスにも閲覧専用の通知バナーを追加 (Win A にしか無かった)
-- 「NO CELL DATA」カードの `pointer-events-auto` を除去 (クリックを吸っていた)
+**まだ起きる場合の切り分け**: Win B のタイトルバーに `*` が付くか / 保存ボタンが
+「未保存 B」になるか。付くなら処理は Win B に入っており、表示側の問題。
 
-**次にユーザーへ確認すべきこと**:
-- Win B クリック時にオレンジの通知が出るか → 出れば `isReadOnly`(TGA 以外) が原因
-- Win B に「NO CELL DATA」が出ていないか → 出ていれば `splitImage` が null
-- Win B のタイトルバーに `🔒 閲覧専用` バッジが出ていないか
-- Win B クリック後に保存ボタンが `未保存 B` に変わるか (変われば処理は走っている)
+### 3. 「名前を付けて保存」の仕様 (判断待ち)
 
-`handleMouseDown` で右クリックのパンより後・ツール分岐より前にある早期 return は
-`isReadOnly` ガードだけ。ここが最有力。
+書き出し先は開いているフォルダの連番に含まれないため、**元ファイルの未保存状態を
+クリアしていません**。一般的なアプリは保存先を編集対象に切り替えますが、Kingfisher は
+フォルダの連番が UI 全体を駆動しているため踏み込んでいません。意図に合うか確認が要ります。
 
-### 2. ColorChart の独立ウィンドウが重い ← 対策済みだが効果未確認
+### 4. Firefox / Safari では D&D したフォルダを保存できない
+
+書き込み可能なハンドルを得る `getAsFileSystemHandle()` が Chromium 系のみ。
+非対応環境では読み込みだけできる扱いにしています。仕様として許容するか判断してください。
+
+### 5. ColorChart の独立ウィンドウが重い (対策済み・効果未確認)
 
 `document.body` へポータル描画するようにした (`FloatingPortal.tsx`)。
-理由: ColorChart だけが右サイドパネル (`overflow-y-auto`) の内側にあり、
-`position: fixed` でもスクロール領域の一部として扱われて再描画が起きるため。
-
 **まだ重い場合**は見立てが外れているので、DevTools の Performance で
 1フレームの内訳を実測してから判断すること。推測で手を打たないこと。
-
-### 3. 動作未確認のまま溜まっている修正
-
-以下はすべて実装・テスト済みだが、ユーザーの実機確認が取れていない。
-
-- 「フォルダを開く」のツリー表示 (相対パス化)。**保存が壊れていないか要確認**
-- D&D の安定化 (点滅・取りこぼし)
-- ズーム維持 / 境界線ドラッグ / ファイルツリーの A・B 並列表示
-- 連動仕様の変更 / オニオンスキンの右パネル集約
 
 ---
 
@@ -128,11 +150,12 @@ curl -s "https://kingfisher-paint-2026.web.app$JS" | grep -c '2cfbedf50a09b0767c
 - 原因が確定できないときは、ユーザーに**ツール不要の判定方法**を提示する
   (例: カーソルの形、保存ボタンの色、履歴パネルの増加)
 - 修正したら `npx tsc --noEmit` → `npm test` → `npm run build` を必ず通す
-- 意図的にコードを壊してテストが落ちることを確認する検証が有効だった
+- **意図的にコードを壊してテストが落ちることを確認する検証が有効**
+  (2026-08-25 はこれで、2 段階リネームを外すと 3 ファイルが 1 つに潰れることを発見した)
 
 ---
 
-## アーキテクチャ (2026-08-24 時点)
+## アーキテクチャ (2026-08-25 時点)
 
 ```
 src/
@@ -140,12 +163,14 @@ src/
 │   ├── paintAlgorithm.ts       塗り (隙間閉じ・含み塗り・拡張縮小)
 │   ├── tga.ts                  TGA デコード/エンコード (純白=透明)
 │   ├── imageDecode.ts          拡張子を問わない読み込み・複製
-│   ├── fileSystemPath.ts       相対パス → ファイルハンドル解決
+│   ├── fileSystemPath.ts       相対パス解決・再帰走査・拡張子判定
+│   │                           リネーム/コピー/削除・書き込み許可
+│   ├── renamePlan.ts           リネーム計画 (連番・衝突検出・複製名)
 │   ├── rasterTrace / vectorTrace / pegStabilizer
 │   └── webgpuRenderer.ts       ⚠️ 未接続・保留 (触っても影響なし)
 ├── store/
-│   ├── usePaintStore.ts        スライスを合成するだけ (31行)
-│   ├── types.ts                全型定義
+│   ├── usePaintStore.ts        スライスを合成するだけ (33行)
+│   ├── types.ts                全型定義 + buildMergedFrameData
 │   └── slices/                 ui / view / window / file / document / tool / edit / lightTable
 ├── hooks/
 │   ├── useFloatingWindow.ts    引きはがし・移動・リサイズ・ドッキング・重なり順
@@ -154,27 +179,32 @@ src/
 │   └── useFastDraggable / useResizableWindow / useGlobalShortcuts
 └── components/
     ├── panels/  CellWindow(主画面) / ReferenceCanvasView / FileBrowser / ColorChart / …
-    └── common/  DockPlaceholder / FloatingPortal / CornerResizeHandles / AuthGuard
+    ├── modals/  RenameModal / ExportVector / ExportTrace / Preferences / …
+    └── common/  ContextMenu / DockPlaceholder / FloatingPortal / CornerResizeHandles / AuthGuard
 ```
 
 ### 独自仕様で間違えやすい点
 
+`kingfisher_domain_rules` に構造化して入れてあります。特に踏みやすいのは次の 4 つ:
+
 - **純白 RGB(255,255,255) = 透明 (α=0)。** 保存時は α=0 を純白へ戻す
-- **ファイル識別子は相対パス** (`Cat/_go/A0001.tga`)。ツリー階層表示のため。
-  `getFileHandle()` は名前1つしか受け取れないので `resolveFileHandle()` を使うこと
-- **A/B は異名連番**。ファイル名から `extractFrameNumber` でフレーム番号を取り出して対応付ける。
-  ビューごとの実ファイル名は `resolveFileNameForView(index, view)` で解決する
-- **左右連動はコマ差を保つ。** `syncFrameOffset` = splitFileIndex - currentFileIndex
+- **パスの起点とフォルダハンドルの起点を必ず揃える。**
+  ずれると読み込みは fileMap のフォールバックで通り、**保存だけが落ちる**ので気づきにくい
+- **フレーム対応表は 1 ファイル 1 エントリ。** 番号が重なるサブフォルダで潰れると、
+  ツリーの選択が飛ぶ・巻き戻る・項目が飛ばされる
+- **`move()` は同名を黙って上書きする。** 連番リネームは一時名を経由する 2 段階で
 
 ### テスト
 
-`npm test` で 90 件。`src/**/*.test.ts` を vitest が拾う。
+`npm test` で 155 件。`src/**/*.test.ts` を vitest が拾う。
 `tsconfig.json` はテストを除外しているのでビルドは止まらない。
 テスト込みの型チェックは `npm run typecheck`。
 
 ---
 
 ## これまでに直した主な不具合 (再発したら参照)
+
+`kingfisher_known_issues` が同じ一覧を返します。
 
 | 症状 | 原因 |
 |---|---|
@@ -190,3 +220,15 @@ src/
 | D&D で 101 枚目以降が欠落 | readEntries() の 100 件制限を繰り返していなかった |
 | D&D で複数選択が取りこぼされる | await を挟んだ後に dataTransfer.items を読んでいた |
 | コマ送りでズームが戻る | 画像が変わるたびに自動フィットしていた |
+| ファイルツリーがフラットになる | フォルダを開く経路が相対パスを持たず 1 階層しか走査していなかった |
+| Win B のファイルツリーが出ない | 統合リスト (A 側の代表名) から 1 本だけ組み立てていた |
+| Win B に画像が出ない (ツリーには並ぶ) | 開いた直後の表示コマを無条件で 0 にしていた |
+| Win B のツリーで選んでも移動しない | ツリーを 2 本出す条件が「両方にファイルがある」だった |
+| Win B を触ると Win A が反応したように見える | 閲覧専用の通知が単一の真偽値で両方に出ていた |
+| サブフォルダの画像がツリーに出ない | Open A/B が直下 1 階層しか走査していなかった |
+| .png が経路によって見えたり見えなかったり | 拡張子の判定が 5 箇所に散っていた |
+| 階層のあるカットで保存だけ失敗 | folderHandle にサブフォルダのハンドルを持たせていた |
+| 保存したのに古い画像が出る | 開いた時点の File スナップショットが fileMap に残っていた |
+| 別フォルダの同名コマが消える | `<input webkitdirectory>` のキーがファイル名だけだった |
+| 名前を付けて保存が上書きになる | メニューもショートカットも上書き保存と同じハンドラだった |
+| ツリーの選択が飛ぶ・巻き戻る・飛ばされる | フレーム番号での逆引きが 1 対 1 でなかった |

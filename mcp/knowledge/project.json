@@ -4,8 +4,7 @@
   "production": "https://kingfisher-paint-2026.web.app",
   "repository": "git@github.com:INOUE-ajiado/Kingfisher.git",
   "repositoryVisibility": "public",
-  "lastReviewed": "2026-08-24",
-
+  "lastReviewed": "2026-08-25",
   "techStack": {
     "implemented": [
       "React 18 + TypeScript 5.7 + Vite 6",
@@ -14,7 +13,7 @@
       "Canvas 2D API による描画 (putImageData → drawImage)",
       "File System Access API (ゼロ・アップロード)",
       "Web Workers (TGA デコード / ベクター・ラスタートレース)",
-      "vitest (テスト 90 件)",
+      "vitest (テスト 155 件)",
       "Firebase Hosting (COOP/COEP ヘッダー付き)"
     ],
     "notImplemented": [
@@ -23,7 +22,6 @@
       "SharedArrayBuffer — 未使用。COOP/COEP ヘッダーだけ先に設定済み"
     ]
   },
-
   "criticalWarnings": [
     {
       "id": "docs-are-not-spec",
@@ -54,7 +52,6 @@
       "howToApply": "git checkout -b improve/<topic> から始める。"
     }
   ],
-
   "domainRules": [
     {
       "id": "white-is-transparent",
@@ -103,13 +100,36 @@
       "title": "独立ウィンドウの位置は element.style.transform へ直接書く",
       "detail": "再描画を挟まないための高速化。React の管理外なので、ドッキングへ戻すときに明示的に消さないとパネルがズレたまま残る。位置・サイズ・重なり順はストア (windowSlice) が保持する。",
       "location": "src/hooks/useFastDraggable.ts, src/hooks/useFloatingWindow.ts"
+    },
+    {
+      "id": "path-root-matches-handle",
+      "title": "パスの起点とフォルダハンドルの起点を必ず揃える",
+      "detail": "ファイル識別子はルートからの相対パス。resolveFileHandle() はその先頭からディレクトリを 1 段ずつ辿るので、ストアが持つ folderHandleA/B は『そのパスの起点』でなければならない。サブフォルダのハンドルを持たせたまま『_go/A0001.tga』を渡すと『_go の中の _go』を探して必ず失敗する。読み込みは fileMap のフォールバックで通ってしまい、保存だけが落ちるので気づきにくい。フォルダを開く経路は 5 つあるので、増やすときも collectImageFilesRecursively と isSupportedImageFile を必ず通すこと。",
+      "location": "src/engine/fileSystemPath.ts, src/components/panels/FileBrowser.tsx, src/components/layout/MenuBar.tsx"
+    },
+    {
+      "id": "frame-map-is-one-to-one",
+      "title": "フレーム対応表は 1 ファイル 1 エントリ。逆引きはパスの完全一致で",
+      "detail": "buildMergedFrameData はフレーム番号をキーにするが、サブフォルダをまたいで同じ番号があると (_go/a0001.tga と b/b0001.tga) 後勝ちで上書きされ、ファイルが一覧から消える。番号が埋まっている場合はディレクトリを付けて別キーにし、必ず 1 対 1 を保つこと。ツリーの位置から統合リストの位置を引くときはフレーム番号で当てず indexOfFileForView() を使う。path → index → path が往復で一致しないと、選んだ行と光る行がずれて『選択が飛ぶ・巻き戻る・項目が飛ばされる』症状になる。",
+      "location": "src/store/types.ts (buildMergedFrameData), src/store/slices/fileSlice.ts (indexOfFileForView)"
+    },
+    {
+      "id": "rename-is-destructive",
+      "title": "リネームは 2 段階。move() は同名を黙って上書きする",
+      "detail": "FileSystemFileHandle.move() は既存の同名ファイルを確認なく上書きする。番号を繰り上げる連番リネーム (A0001→A0002, A0002→A0003) を素直に順次実行すると 1 手目で既存の A0002 が消える。名前が入れ替わる計画は一時名を経由する 2 段階で実行すること。衝突・不正な名前は実行前に検出し、1 件も書き換えずに中止する (部分適用を作らない)。",
+      "location": "src/engine/renamePlan.ts, src/store/slices/fileSlice.ts (renameFiles)"
+    },
+    {
+      "id": "write-permission-is-not-granted",
+      "title": "書き込み許可は既定で付いていない",
+      "detail": "showDirectoryPicker() も drag & drop も既定は読み取り許可のみ。そのまま createWritable() を呼ぶと NotAllowedError になる。保存・リネーム・複製・削除の直前に ensureWritePermission() を通すこと。requestPermission() はユーザー操作の直後にしか通らないため、保存ボタンや Ctrl+S から連なる呼び出しの中で使う。",
+      "location": "src/engine/fileSystemPath.ts (ensureWritePermission)"
     }
   ],
-
   "workflow": {
     "commands": {
       "dev": "npm run dev",
-      "test": "npm test",
+      "test": "npm test  # 155 件",
       "typecheckWithTests": "npm run typecheck",
       "build": "npm run build",
       "deploy": "npm run build && firebase deploy --only hosting --project kingfisher-paint-2026"
@@ -127,37 +147,145 @@
       "意図的にコードを壊してテストが落ちることを確認する検証が有効"
     ]
   },
-
   "knownFixedBugs": [
-    { "symptom": "Ctrl+S が効かない", "cause": "存在しない DOM 要素をクリックしようとしていた" },
-    { "symptom": "Win B の保存が別ファイルに書かれる", "cause": "保存先に A 側の代表名を使っていた" },
-    { "symptom": "Win B の Undo が効かない", "cause": "splitImage がコンポーネントのローカル state だった" },
-    { "symptom": "Ctrl+Z が 2 手戻る / 1 手目が戻せない", "cause": "履歴の基準状態が無く undo の条件がずれていた" },
-    { "symptom": "コマ送りで編集が消える", "cause": "未保存の確認が無かった" },
-    { "symptom": "隙間閉じが効かない", "cause": "UI から値は渡るが floodFill が参照していなかった" },
-    { "symptom": "線をクリックすると全面が塗り潰される", "cause": "透明画素を常に通り抜け可能にしていた" },
-    { "symptom": "ドッキングに戻すとパネルがズレる", "cause": "直接書いた transform を消していなかった" },
-    { "symptom": "D&D が点滅して挿入できない", "cause": "ハイライト時に flex-1 が外れて要素が縮んでいた" },
-    { "symptom": "D&D で 101 枚目以降が欠落", "cause": "readEntries() の 100 件制限を繰り返していなかった" },
-    { "symptom": "D&D で複数選択が取りこぼされる", "cause": "await を挟んだ後に dataTransfer.items を読んでいた" },
-    { "symptom": "コマ送りでズームが戻る", "cause": "画像が変わるたびに自動フィットしていた" },
-    { "symptom": "ファイルツリーがフラットになる", "cause": "フォルダを開く経路が相対パスを持たず 1 階層しか走査していなかった" },
-    { "symptom": "Win B のファイルツリーが出ない", "cause": "統合リスト (A 側の代表名) から 1 本だけ組み立てていた" }
+    {
+      "symptom": "Ctrl+S が効かない",
+      "cause": "存在しない DOM 要素をクリックしようとしていた"
+    },
+    {
+      "symptom": "Win B の保存が別ファイルに書かれる",
+      "cause": "保存先に A 側の代表名を使っていた"
+    },
+    {
+      "symptom": "Win B の Undo が効かない",
+      "cause": "splitImage がコンポーネントのローカル state だった"
+    },
+    {
+      "symptom": "Ctrl+Z が 2 手戻る / 1 手目が戻せない",
+      "cause": "履歴の基準状態が無く undo の条件がずれていた"
+    },
+    {
+      "symptom": "コマ送りで編集が消える",
+      "cause": "未保存の確認が無かった"
+    },
+    {
+      "symptom": "隙間閉じが効かない",
+      "cause": "UI から値は渡るが floodFill が参照していなかった"
+    },
+    {
+      "symptom": "線をクリックすると全面が塗り潰される",
+      "cause": "透明画素を常に通り抜け可能にしていた"
+    },
+    {
+      "symptom": "ドッキングに戻すとパネルがズレる",
+      "cause": "直接書いた transform を消していなかった"
+    },
+    {
+      "symptom": "D&D が点滅して挿入できない",
+      "cause": "ハイライト時に flex-1 が外れて要素が縮んでいた"
+    },
+    {
+      "symptom": "D&D で 101 枚目以降が欠落",
+      "cause": "readEntries() の 100 件制限を繰り返していなかった"
+    },
+    {
+      "symptom": "D&D で複数選択が取りこぼされる",
+      "cause": "await を挟んだ後に dataTransfer.items を読んでいた"
+    },
+    {
+      "symptom": "コマ送りでズームが戻る",
+      "cause": "画像が変わるたびに自動フィットしていた"
+    },
+    {
+      "symptom": "ファイルツリーがフラットになる",
+      "cause": "フォルダを開く経路が相対パスを持たず 1 階層しか走査していなかった"
+    },
+    {
+      "symptom": "Win B のファイルツリーが出ない",
+      "cause": "統合リスト (A 側の代表名) から 1 本だけ組み立てていた"
+    },
+    {
+      "symptom": "Win B に画像が出ない (ツリーには並ぶ)",
+      "cause": "フォルダを開いた直後の表示コマを無条件で 0 にしていた。B の実体が無いコマを指していた"
+    },
+    {
+      "symptom": "Win B のツリーで選んでも移動しない",
+      "cause": "ツリーを 2 本出す条件が『A と B の両方にファイルがある』で、片側だけのとき統合ツリー 1 本になり Win A しか動かせなかった"
+    },
+    {
+      "symptom": "Win B を触ると Win A が反応したように見える",
+      "cause": "閲覧専用の通知が単一の真偽値で両ウィンドウに出ていた。独立ウィンドウの枠線も activeViewIndex を反映していなかった"
+    },
+    {
+      "symptom": "サブフォルダの画像がツリーに出ない",
+      "cause": "Open A/B が直下 1 階層しか走査していなかった"
+    },
+    {
+      "symptom": ".png が経路によって見えたり見えなかったりする",
+      "cause": "拡張子の判定が 5 箇所に散っていた (.tga のみ / .tga と .jpg だけ)"
+    },
+    {
+      "symptom": "階層のあるカットで保存だけ失敗する",
+      "cause": "folderHandle にサブフォルダのハンドルを持たせていた (パスの起点と不一致)"
+    },
+    {
+      "symptom": "保存したのに古い画像が出る",
+      "cause": "開いた時点の File スナップショットが fileMap に残り、フォールバックで返っていた"
+    },
+    {
+      "symptom": "別フォルダの同名コマが消える",
+      "cause": "<input webkitdirectory> のキーがファイル名だけだった"
+    },
+    {
+      "symptom": "名前を付けて保存が元ファイルを上書きする",
+      "cause": "メニューもショートカットも上書き保存と同じハンドラに繋がっていた"
+    },
+    {
+      "symptom": "ツリーの選択が先頭へ巻き戻る / 別フォルダへ飛ぶ / 項目が飛ばされる",
+      "cause": "フレーム番号での逆引きが 1 対 1 でなく、対応が取れないと無関係な行にフォールバックしていた"
+    }
   ],
-
   "openIssues": [
     {
-      "id": "winb-tools",
+      "id": "unverified-on-real-app",
       "severity": "high",
-      "title": "Win B でツールが使えない (原因未確定)",
+      "title": "2026-08-25 の変更は実機で一度も確認していない",
+      "detail": "型チェック・テスト・ビルドは通っているが、File System Access API の実操作 (実フォルダ選択・保存・リネーム・削除) はブラウザで試していない。すべて本番へデプロイ済み。",
+      "verifiedOk": [
+        "npx tsc --noEmit / npm test (155 件) / npm run build",
+        "本番バンドルのパスワードハッシュ照合 (デプロイの都度)"
+      ],
+      "nextStep": "コピーしたフォルダで (1) 階層のあるカットの保存 (2) D&D したフォルダへの保存 (3) 連番リネーム (4) 削除 (5) ツリーの選択が飛ばないこと を順に確認する。問題があれば git revert 0bc437d で戻せる。"
+    },
+    {
+      "id": "winb-tools",
+      "severity": "medium",
+      "title": "Win B でツールが使えない (実体は複数、順に対処済み・最終確認待ち)",
+      "detail": "『WinB に対してツールを使用しようとすると WinA に判定が吸われる』の報告。原因は 1 つではなく、表示上の誤認 2 件 + ファイル解決の不具合 2 件 + 選択インデックスのズレ 1 件だった。いずれも修正・デプロイ済み。",
       "verifiedOk": [
         "canvas の ref と handleMouseDown(e, false) の配線",
         "targetImg = isLeftView ? currentImage : splitImage の分岐",
-        "Win A は Win B の DOM 上の親ではない (兄弟)",
-        "saveUndoState は activeViewIndex を見るので Win B 側に積まれる"
+        "Win A は Win B の DOM 上・React ツリー上の親ではない (兄弟)。CellWindow はポータルを使っていない",
+        "currentImage と splitImage は別オブジェクト (cloneTGAImage を通す)",
+        "saveUndoState / jumpToHistory / commitLiveState はすべて activeViewIndex で分岐している",
+        "useFloatingWindow の windowStyle はドッキング中 undefined。useFastDraggable は enabled:false で transform を消す",
+        "CellWindow のオーバーレイは全て pointer-events-none"
       ],
-      "lastAttempt": "Win B にも閲覧専用の通知バナーを追加。NO CELL DATA カードの pointer-events-auto を除去。ユーザー未確認。",
-      "nextStep": "Win B クリック時に (1) オレンジの通知が出るか (2) NO CELL DATA が出ているか (3) 保存ボタンが未保存 B に変わるか を確認する。readonly-guard が最有力。"
+      "nextStep": "実機で再現するか確認する。まだ起きるなら (1) Win B のタイトルバーに * が付くか (2) 保存ボタンが『未保存 B』になるか を見て、処理が Win B に入っているかを切り分ける。"
+    },
+    {
+      "id": "save-as-semantics",
+      "severity": "low",
+      "title": "名前を付けて保存の後、元ファイルを未保存のまま残す仕様でよいか",
+      "detail": "書き出し先は開いているフォルダの連番に含まれないため、isDirty をクリアしていない。一般的なアプリは保存先を編集対象に切り替えるが、Kingfisher はフォルダの連番が UI 全体を駆動しているため踏み込んでいない。",
+      "nextStep": "ユーザーの意図を確認する。切り替える仕様にするなら、表示中のカットごと変わる点をどう扱うか決める必要がある。"
+    },
+    {
+      "id": "dnd-save-chromium-only",
+      "severity": "low",
+      "title": "Firefox / Safari では D&D したフォルダを保存できない",
+      "detail": "書き込み可能なハンドルを得る getAsFileSystemHandle() が Chromium 系のみ。非対応環境では webkitGetAsEntry() で読み込み、保存だけができない扱いにしている。",
+      "nextStep": "仕様として許容するか判断する。もともと File System Access API 前提で Chromium 系が対象。"
     },
     {
       "id": "colorchart-lag",
