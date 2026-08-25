@@ -142,6 +142,12 @@
       "title": "投げ縄の履歴は開始時ではなく確定の直前に積む",
       "detail": "投げ縄 (closedFill / lasso) は塗るかどうかが離した時点まで決まらないため、saveUndoState は handleMouseUp で closedAreaFill を呼ぶ直前に呼ぶ。開始時に積むとクリックしただけで履歴が増え「未保存」になる。またキャンバスの外で離した場合は塗らずに破棄するが、window の pointerup は canvas の onMouseUp より先に来るため、e.target がそのビューの canvas なら何もしないこと (無条件に打ち切ると通常の塗りが消える)。",
       "location": "src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "lighttable-win-a-only",
+      "title": "ライトテーブル / オニオンスキンは Win A 専用",
+      "detail": "renderCanvasInstance の描画は isLeft && lightTable.enabled と isLeft && lightTable.items.length > 0 で左キャンバスに限定している。2026-08-26 にユーザー判断で仕様として確定した。Win B へ広げる変更や、アクティブな側へ出す変更を提案しないこと。",
+      "location": "src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -317,13 +323,6 @@
       "lastAttempt": "document.body へポータル描画 (FloatingPortal.tsx)。右サイドパネルの overflow-y-auto 内にあると position:fixed でも再描画が起きるため。",
       "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。",
       "investigated": "ColorChart.tsx:68,137 に usePaintStore.setState((state) => ({ ...state })) があり、ストア全体を購読する全パネルを強制再描画する。ただし発火は色のドロップ登録と右クリック登録のみで、ドラッグ中に毎フレーム走る経路ではない。継続的な重さの説明にはならない。"
-    },
-    {
-      "id": "lighttable-left-only",
-      "severity": "low",
-      "title": "ライトテーブル / オニオンスキンが Win A にしか出ない",
-      "detail": "CellWindow の renderCanvasInstance で isLeft && lightTable.enabled と isLeft && lightTable.items.length > 0 に固定されている。意図的な仕様か未確認。",
-      "nextStep": "Win B でもオニオンスキンを見たいかユーザーに確認する。不要ならこの項目を閉じる。"
     }
   ]
 }
