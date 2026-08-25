@@ -124,6 +124,18 @@
       "title": "書き込み許可は既定で付いていない",
       "detail": "showDirectoryPicker() も drag & drop も既定は読み取り許可のみ。そのまま createWritable() を呼ぶと NotAllowedError になる。保存・リネーム・複製・削除の直前に ensureWritePermission() を通すこと。requestPermission() はユーザー操作の直後にしか通らないため、保存ボタンや Ctrl+S から連なる呼び出しの中で使う。",
       "location": "src/engine/fileSystemPath.ts (ensureWritePermission)"
+    },
+    {
+      "id": "save-as-keeps-original-dirty",
+      "title": "名前を付けて保存は、元ファイルを未保存のまま残す",
+      "detail": "書き出し先は開いているフォルダの連番に含まれないため、保存しても元ファイルの isDirty をクリアしない。フォルダの連番が UI 全体を駆動している以上、保存先を編集対象へ切り替えると表示中のカットごと変わってしまう。2026-08-26 にユーザー判断でこの挙動を仕様として確定した。ユーザーからの再依頼が無い限り、一般的なアプリに合わせる変更を提案しないこと。",
+      "location": "src/store/slices/documentSlice.ts"
+    },
+    {
+      "id": "chromium-only-by-design",
+      "title": "対象ブラウザは Chromium 系。他では D&D したフォルダを保存できない",
+      "detail": "書き込み可能なハンドルを得る getAsFileSystemHandle() が Chromium 系のみ。非対応環境ではwebkitGetAsEntry() で読み込み、保存だけができない扱いにしている。もともと File System Access API 前提の構成であり、2026-08-26 にユーザー判断で仕様として確定した。Firefox / Safari 対応や、そのための警告 UI を提案しないこと。",
+      "location": "src/components/panels/FileBrowser.tsx, src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -282,20 +294,6 @@
         "setActiveViewIndex は handleMouseDown の先頭で呼ばれ、saveUndoState は get() で新しい値を読む"
       ],
       "nextStep": "実機で再現するか確認する。特に投げ縄 (closedFill / lasso) を Win B で引いて、輪郭線が Win B に出ることを見る。まだ他のツールで起きるなら (1) Win B のタイトルバーに * が付くか (2) 保存ボタンが「未保存 B」になるか を見て切り分ける。"
-    },
-    {
-      "id": "save-as-semantics",
-      "severity": "low",
-      "title": "名前を付けて保存の後、元ファイルを未保存のまま残す仕様でよいか",
-      "detail": "書き出し先は開いているフォルダの連番に含まれないため、isDirty をクリアしていない。一般的なアプリは保存先を編集対象に切り替えるが、Kingfisher はフォルダの連番が UI 全体を駆動しているため踏み込んでいない。",
-      "nextStep": "ユーザーの意図を確認する。切り替える仕様にするなら、表示中のカットごと変わる点をどう扱うか決める必要がある。"
-    },
-    {
-      "id": "dnd-save-chromium-only",
-      "severity": "low",
-      "title": "Firefox / Safari では D&D したフォルダを保存できない",
-      "detail": "書き込み可能なハンドルを得る getAsFileSystemHandle() が Chromium 系のみ。非対応環境では webkitGetAsEntry() で読み込み、保存だけができない扱いにしている。",
-      "nextStep": "仕様として許容するか判断する。もともと File System Access API 前提で Chromium 系が対象。"
     },
     {
       "id": "colorchart-lag",
