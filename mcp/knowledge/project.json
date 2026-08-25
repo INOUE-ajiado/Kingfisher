@@ -148,6 +148,12 @@
       "title": "ライトテーブル / オニオンスキンは Win A 専用",
       "detail": "renderCanvasInstance の描画は isLeft && lightTable.enabled と isLeft && lightTable.items.length > 0 で左キャンバスに限定している。2026-08-26 にユーザー判断で仕様として確定した。Win B へ広げる変更や、アクティブな側へ出す変更を提案しないこと。",
       "location": "src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "cut-folder-scan-single-source",
+      "title": "カットフォルダの走査は scanCutRootFolder に一本化する",
+      "detail": "「メニューバー > フォルダを開く」と「ファイルブラウザ > カットフォルダを開く」は src/engine/cutFolder.ts の scanCutRootFolder を通す。自前で走査を書かないこと。以前は 2 箇所に重複しており、(1) サブフォルダが無いフォルダで片方だけ setFolderHandleA を呼んで前のカットのサブフォルダ一覧が残る (2) 画像フォルダ判定に .tga と .png だけの独自正規表現を使い .jpg が漏れる、という食い違いが出ていた。サブフォルダが無い場合も (Root) 1 件として setCutRootFolder を通すこと。",
+      "location": "src/engine/cutFolder.ts"
     }
   ],
   "workflow": {
@@ -284,6 +290,10 @@
     {
       "symptom": "投げ縄ツールでクリックしただけ (ドラッグ無し) でも履歴が 1 つ増えて「未保存」になる",
       "cause": "saveUndoState を投げ縄の開始時に呼んでいた。塗るかどうかは離すまで決まらないので、確定の直前に呼ぶ"
+    },
+    {
+      "symptom": "メニューバーからサブフォルダの無いフォルダを開くと、前のカットのサブフォルダ一覧がドロップダウンに残る",
+      "cause": "その経路だけ setFolderHandleA で済ませていた。setFolderHandleA は rootFolderName / availableSubDirectories / selectedSubDirA を触らない。フォルダ走査が 2 箇所に重複していたのが元"
     }
   ],
   "openIssues": [
