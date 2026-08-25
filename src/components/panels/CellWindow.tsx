@@ -16,6 +16,7 @@ import { useFrameLoader, useCellPrefetch, useOnionSkinFrames } from '../../hooks
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
+import { RollViewer } from './RollViewer';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -55,6 +56,8 @@ export const CellWindow: React.FC = () => {
     saveUndoState,
     isPlaying,
     fps,
+    roll,
+    toggleRollFloating,
     showGrid,
     showRuler,
     showUnpaintedFlash,
@@ -1456,6 +1459,28 @@ export const CellWindow: React.FC = () => {
               />
             )}
             <ReferenceCanvasView onDockHoverChange={setIsReferenceOverDock} />
+          </div>
+        )}
+
+        {/* 撮影上がりロールの再生ウィンドウ。参照ウィンドウと同じくドッキング / 切り離しができる */}
+        {roll.isOpen && (
+          <div
+            className={
+              roll.isFloating
+                ? 'flex-shrink-0 flex flex-col'
+                : 'flex-1 flex flex-col min-w-[280px]'
+            }
+          >
+            {roll.isFloating && (
+              <DockPlaceholder
+                id="roll-dock-target"
+                label="ロール"
+                onRestore={toggleRollFloating}
+                isActive={false}
+                variant="strip-v"
+              />
+            )}
+            <RollViewer />
           </div>
         )}
       </div>
