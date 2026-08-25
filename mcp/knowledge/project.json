@@ -161,6 +161,12 @@
       "title": "encodeTGA は alpha 0 の画素を純白 RGB として書き戻す",
       "detail": "「RGB(255,255,255) は完全透明 / (254,254,254) は不透明な白」という PaintMan の規約に合わせ、保存時は alpha 0 の画素を RGB(255,255,255) として書く。戻すのは RGB であってアルファではない。消しゴム (paintAlgorithm.ts の drawCircle) は alpha を 0 にするだけで RGB を触らないため、ここで白に戻さないと消した部分が元の色で復活する。src/engine/tga.test.ts が往復を固定している。",
       "location": "src/engine/tga.ts"
+    },
+    {
+      "id": "listener-capture-must-match",
+      "title": "removeEventListener は addEventListener と capture の指定を一致させる",
+      "detail": "capture: true で登録したリスナーは、capture を指定しない removeEventListener では外れない。ドラッグ系の後片付けは早期 return より前に、必ず実行すること。残ったハンドラが次のドラッグのイベントを先に拾ってフラグを倒すと、本来のハンドラが早期 return して他のリスナーまで外れなくなる。",
+      "location": "src/hooks/useResizableWindow.ts"
     }
   ],
   "workflow": {
@@ -325,6 +331,14 @@
     {
       "symptom": "再生中に FPS スライダーを動かしても速度が変わらない",
       "cause": "setInterval の間隔は生成時にしか決まらないのに、fps が useEffect の依存配列に入っていなかった"
+    },
+    {
+      "symptom": "独立ウィンドウをリサイズするたびに window のリスナーが溜まっていく",
+      "cause": "capture: true で登録した pointerup / pointercancel を capture 指定なしで removeEventListener していた。残ったハンドラが次のリサイズの pointerup を先に拾って isResizing を倒すため、本来のハンドラが早期 return し pointermove も外れなくなっていた"
+    },
+    {
+      "symptom": "Ctrl+Alt を押していると、どのキーを打っても右パネルが開閉する",
+      "cause": "押されたキーを一切見ずに修飾キーだけで判定していた。キーリピートでも連打され、入力欄で打っている最中にも反応していた"
     }
   ],
   "openIssues": [
