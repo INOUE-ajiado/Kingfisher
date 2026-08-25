@@ -54,6 +54,7 @@ export const CellWindow: React.FC = () => {
     folderNameB,
     saveUndoState,
     isPlaying,
+    fps,
     showGrid,
     showRuler,
     showUnpaintedFlash,
@@ -604,18 +605,30 @@ export const CellWindow: React.FC = () => {
     return () => { isSubscribed = false; };
   }, [isSplitView, splitFileIndex, loadFrameForView, setSplitImage]);
 
-  // アニメーション再生
+  /**
+   * アニメーション再生。
+   *
+   * ⚠️ fps は依存配列に入れること。setInterval の間隔は生成時にしか決まらないので、
+   * 依存から外すと再生中に FPS スライダーを動かしても次に停止するまで効かない。
+   */
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
       const { currentFileIndex, unifiedFileList, setCurrentFileIndex } = usePaintStore.getState();
-      const nextIdx = (currentFileIndex + 1) % unifiedFileList.length;
-      setCurrentFileIndex(nextIdx);
-    }, (1000 / usePaintStore.getState().fps) * toolOptions.frameHold);
+
+      // ⚠️ 空リストのまま剰余を取ると NaN になる。currentFileIndex が NaN になると
+      // NaN === NaN が false のため毎回 set が通り、履歴を消し続けたまま復帰できない。
+      // 再生ボタンはフォルダを開いていなくても押せるので、ここで必ず弾く。
+      const total = unifiedFileList.length;
+      if (total === 0) return;
+
+      const current = Number.isInteger(currentFileIndex) ? currentFileIndex : -1;
+      setCurrentFileIndex((current + 1) % total);
+    }, (1000 / Math.max(1, fps)) * toolOptions.frameHold);
 
     return () => clearInterval(interval);
-  }, [isPlaying, toolOptions.frameHold]);
+  }, [isPlaying, fps, toolOptions.frameHold]);
 
   // キャンバス描画
   const renderCanvasInstance = useCallback(

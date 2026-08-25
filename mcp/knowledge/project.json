@@ -317,6 +317,14 @@
     {
       "symptom": "kingfisher_dead_files がほぼ全ファイルを「参照ゼロ」と報告する",
       "cause": "Windows の relative() が返すバックスラッシュ区切りを split('/') で分割しており、ファイル名が取れず正規表現が何にも一致していなかった。path.basename に変更"
+    },
+    {
+      "symptom": "フォルダを開かずに再生を押すと、以降どのコマも表示できなくなる",
+      "cause": "空リストのまま (currentFileIndex + 1) % 0 を取って NaN になっていた。NaN === NaN が false のため毎 tick で set が通り、履歴を消し続けたまま復帰できなかった"
+    },
+    {
+      "symptom": "再生中に FPS スライダーを動かしても速度が変わらない",
+      "cause": "setInterval の間隔は生成時にしか決まらないのに、fps が useEffect の依存配列に入っていなかった"
     }
   ],
   "openIssues": [
