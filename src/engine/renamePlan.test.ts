@@ -180,6 +180,75 @@ describe('衝突の検出', () => {
   });
 });
 
+/**
+ * ファイルツリーの選択はサブフォルダをまたげる (Shift 範囲選択は再帰的な
+ * フラットリストを切り出す) ので、複数ディレクトリにまたがる計画が普通に来る。
+ * 名前だけで衝突を見ると、通常の運用が誤って止められる。
+ */
+describe('サブフォルダをまたぐ計画の衝突', () => {
+  it('別ディレクトリで同じ名前になっても duplicate にしない', () => {
+    // _go と _ao に同じコマ番号を振るのは仕上げでは普通の操作
+    const plan = [
+      { path: '_go/1.tga', from: '1.tga', to: 'A0001.tga' },
+      { path: '_ao/1.tga', from: '1.tga', to: 'A0001.tga' },
+    ];
+
+    expect(findRenameConflicts(plan, ['_go/1.tga', '_ao/1.tga'])).toEqual([]);
+  });
+
+  it('同じディレクトリの中の重複は今までどおり duplicate', () => {
+    const plan = [
+      { path: '_go/1.tga', from: '1.tga', to: 'A0001.tga' },
+      { path: '_go/2.tga', from: '2.tga', to: 'A0001.tga' },
+      { path: '_ao/1.tga', from: '1.tga', to: 'A0001.tga' },
+    ];
+
+    expect(findRenameConflicts(plan, ['_go/1.tga', '_go/2.tga', '_ao/1.tga'])).toEqual([
+      { to: 'A0001.tga', reason: 'duplicate' },
+    ]);
+  });
+
+  it('別ディレクトリにある同名の既存ファイルを exists にしない', () => {
+    // 計画が _go と _ao にまたがっていても、_ao/X.tga は _go の rename と無関係
+    const plan = [
+      { path: '_go/1.tga', from: '1.tga', to: 'X.tga' },
+      { path: '_ao/1.tga', from: '1.tga', to: 'Y.tga' },
+    ];
+
+    expect(findRenameConflicts(plan, ['_go/1.tga', '_ao/1.tga', '_ao/X.tga'])).toEqual([]);
+  });
+
+  it('同じディレクトリの既存ファイルは今までどおり exists', () => {
+    const plan = [
+      { path: '_go/1.tga', from: '1.tga', to: 'X.tga' },
+      { path: '_ao/1.tga', from: '1.tga', to: 'Y.tga' },
+    ];
+
+    expect(findRenameConflicts(plan, ['_go/1.tga', '_ao/1.tga', '_go/X.tga'])).toEqual([
+      { to: 'X.tga', reason: 'exists' },
+    ]);
+  });
+
+  it('別ディレクトリの同名を入れ替えとみなして 2 段階にしない', () => {
+    // 不要な 2 段階は、途中で失敗したとき __kf_rename_ の一時名を残す
+    const plan = [
+      { path: '_go/A0001.tga', from: 'A0001.tga', to: 'A0002.tga' },
+      { path: '_ao/A0002.tga', from: 'A0002.tga', to: 'A0003.tga' },
+    ];
+
+    expect(needsTwoPhaseRename(plan)).toBe(false);
+  });
+
+  it('同じディレクトリの入れ替えは今までどおり 2 段階', () => {
+    const plan = [
+      { path: '_go/A0001.tga', from: 'A0001.tga', to: 'A0002.tga' },
+      { path: '_go/A0002.tga', from: 'A0002.tga', to: 'A0003.tga' },
+    ];
+
+    expect(needsTwoPhaseRename(plan)).toBe(true);
+  });
+});
+
 describe('変化しない項目の除外', () => {
   it('名前が同じものは落とす', () => {
     const plan = [
@@ -209,5 +278,16 @@ describe('複製の名前', () => {
     // 同じ名前を 2 回複製しても、2 つ目は _copy2 になる
     const plan = buildDuplicatePlan(['a/A0001.tga', 'a/A0001.tga'], ['a/A0001.tga']);
     expect(plan.map((i) => i.to)).toEqual(['A0001_copy.tga', 'A0001_copy2.tga']);
+  });
+
+  it('別ディレクトリの同名では番号を飛ばさない', () => {
+    // _ao に A0001_copy.tga があっても、_go 側は _copy から始まる
+    const plan = buildDuplicatePlan(['_go/A0001.tga'], ['_go/A0001.tga', '_ao/A0001_copy.tga']);
+    expect(plan.map((i) => i.to)).toEqual(['A0001_copy.tga']);
+  });
+
+  it('同じディレクトリの同名では今までどおり番号を伸ばす', () => {
+    const plan = buildDuplicatePlan(['_go/A0001.tga'], ['_go/A0001.tga', '_go/A0001_copy.tga']);
+    expect(plan.map((i) => i.to)).toEqual(['A0001_copy2.tga']);
   });
 });

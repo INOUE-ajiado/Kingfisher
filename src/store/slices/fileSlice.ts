@@ -6,7 +6,6 @@ import { StateCreator } from 'zustand';
 import { renameFile, copyFile, deleteFile, ensureWritePermission } from '../../engine/fileSystemPath';
 import {
   buildDuplicatePlan,
-  replaceBaseName as _replaceBaseName,
   findInvalidNames,
   findRenameConflicts,
   needsTwoPhaseRename,
@@ -609,7 +608,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     try {
       for (const item of plan) {
         await copyFile(folderHandle, item.path, item.to, state.rootFolderName);
-        created.push(_replaceBaseName(item.path, item.to));
+        created.push(replaceBaseName(item.path, item.to));
       }
     } catch (err: any) {
       console.error('Failed to duplicate:', err);
