@@ -42,6 +42,9 @@ export const MenuBar: React.FC = () => {
     referenceCanvas,
     openReferenceImage,
     closeReferenceWindow,
+    roll,
+    openRollWindow,
+    closeRollWindow,
     toggleReferenceFloating,
     colorSpecLayoutMode,
     setColorSpecLayoutMode,
@@ -141,6 +144,43 @@ export const MenuBar: React.FC = () => {
     }
   };
 
+  /**
+   * ファイル選択ダイアログを開くショートカットは、ハンドラのあるここで拾う。
+   *
+   * ⚠️ useGlobalShortcuts へ持っていかないこと。ピッカーを開く処理は MenuBar 側にあり、
+   * 向こうで実装すると二重管理になる。
+   * ⚠️ Shift の有無で必ず分けること。見ないと Ctrl+Shift+O (フォルダを開く) が
+   * Ctrl+O (参照画像として開く) に流れる。以前は両方とも環境設定モーダルを開いていた。
+   */
+  const openHandlersRef = useRef({ dir: handleOpenFolderDir, ref: handleOpenReference });
+  openHandlersRef.current = { dir: handleOpenFolderDir, ref: handleOpenReference };
+
+  useEffect(() => {
+    const handleOpenShortcut = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.key.toLowerCase() !== 'o') return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) openHandlersRef.current.dir();
+      else openHandlersRef.current.ref();
+    };
+
+    document.addEventListener('keydown', handleOpenShortcut, { capture: true });
+    return () => document.removeEventListener('keydown', handleOpenShortcut, { capture: true });
+  }, []);
+
   // 保存処理はストア (saveActiveCell) に一本化されている。
   // アクティブビューの画像を、そのビュー側の実ファイル名へ書き戻す。
   const handleSave = async () => {
@@ -238,6 +278,12 @@ export const MenuBar: React.FC = () => {
           shortcut: '',
           checked: referenceCanvas.isOpen,
           action: () => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage()),
+        },
+        {
+          label: '撮影ロールを表示 (.mov / .mp4)',
+          shortcut: '',
+          checked: roll.isOpen,
+          action: () => (roll.isOpen ? closeRollWindow() : openRollWindow()),
         },
         {
           label: '参照画面: 垂直分割',

@@ -16,6 +16,11 @@ export const useGlobalShortcuts = () => {
     toggleShowUnpaintedFlash,
     referenceCanvas,
     toggleReferenceFloating,
+    setActiveModal,
+    zoomIn,
+    zoomOut,
+    resetCanvasTransform,
+    toggleShowRuler,
   } = usePaintStore();
 
   useEffect(() => {
@@ -59,11 +64,56 @@ export const useGlobalShortcuts = () => {
         return;
       }
 
-      // Ctrl + O (通常: ローカルファイルを開く → 変更: 参照画像として開くモーダル/ダイアログ)
-      if (keyLower === 'o') {
+      // ⚠️ Ctrl+O / Ctrl+Shift+O はここで扱わない。
+      // メニューでは「参照画像として開く」「フォルダを開く」に割り当てられており、
+      // どちらもファイル選択ダイアログを開く MenuBar 側の処理が要るため、そちらで拾う。
+      // 以前はここで環境設定モーダルを開いており、しかも Shift を見ていなかったので
+      // Ctrl+Shift+O (フォルダを開く) まで環境設定に流れていた。
+
+      // Ctrl + K (環境設定 & 画像補正)
+      if (keyLower === 'k') {
         e.preventDefault();
         e.stopPropagation();
-        usePaintStore.getState().setActiveModal('preferences');
+        setActiveModal('preferences');
+        return;
+      }
+
+      // Ctrl + H (全セル一括色置換)
+      if (keyLower === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveModal('replaceColor');
+        return;
+      }
+
+      // Ctrl + R (ルーラーの表示切替)
+      if (keyLower === 'r') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleShowRuler();
+        return;
+      }
+
+      // Ctrl + 1 (等倍表示 100%)
+      if (keyLower === '1') {
+        e.preventDefault();
+        e.stopPropagation();
+        resetCanvasTransform();
+        return;
+      }
+
+      // Ctrl + + / Ctrl + - (ズームイン / ズームアウト)
+      // '+' は US 配列では Shift+'='、JIS 配列では Shift+';'。e.key で吸収する
+      if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
+        e.preventDefault();
+        e.stopPropagation();
+        zoomIn();
+        return;
+      }
+      if (e.key === '-' || e.code === 'NumpadSubtract') {
+        e.preventDefault();
+        e.stopPropagation();
+        zoomOut();
         return;
       }
 
@@ -181,5 +231,10 @@ export const useGlobalShortcuts = () => {
     toggleShowUnpaintedFlash,
     referenceCanvas,
     toggleReferenceFloating,
+    setActiveModal,
+    zoomIn,
+    zoomOut,
+    resetCanvasTransform,
+    toggleShowRuler,
   ]);
 };

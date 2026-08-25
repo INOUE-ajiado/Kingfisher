@@ -8,6 +8,9 @@
 
 import { TGAImage } from '../engine/tga';
 import { RenamePlanItem } from '../engine/renamePlan';
+import { CodecInfo as VideoCodecInfo } from '../engine/videoSource';
+
+export type { VideoCodecInfo };
 
 export type ToolType = 
   | 'pointer' 
@@ -501,8 +504,40 @@ export interface LightTableSlice {
   toggleLightTableSubItemVisible: (id: string) => void;
 }
 
+/** 撮影上がりロールの読み込み状態 */
+export type RollStatus = 'idle' | 'ready' | 'unsupported' | 'error';
+
+export interface RollState {
+  isOpen: boolean;
+  isFloating: boolean;
+  fileName: string;
+  /** 元ファイル。再生に失敗したときコーデックを調べ直すために持っておく (実データは読まない) */
+  file: File | null;
+  /** <video> に渡す blob URL。差し替え・終了のたびに必ず revoke する */
+  objectUrl: string | null;
+  status: RollStatus;
+  /** 再生できないときにユーザーへ出す説明 */
+  message: string;
+  codec: VideoCodecInfo | null;
+  /** コマ送りの基準。実再生から推定し、外れたら手動で指定できる */
+  fps: number;
+  fpsSource: 'default' | 'auto' | 'manual';
+}
+
+export interface RollSlice {
+  roll: RollState
+  openRollWindow: () => void
+  closeRollWindow: () => void
+  toggleRollFloating: () => void
+  /** ロールを読み込む。デコードはブラウザに任せるのでここでは中身を読まない */
+  loadRollFile: (file: File) => void
+  /** <video> が再生を拒否したときに呼ぶ。コーデックを調べて理由を出す */
+  reportRollPlaybackFailure: () => Promise<void>
+  setRollFps: (fps: number, source: 'auto' | 'manual') => void
+}
+
 /** 独立ウィンドウとして切り離せるパネルの識別子 */
-export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart';
+export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart' | 'roll';
 
 export interface FloatingWindowLayout {
   x: number;
@@ -546,7 +581,8 @@ export interface PaintStore
     DocumentSlice,
     ToolSlice,
     EditSlice,
-    LightTableSlice {}
+    LightTableSlice,
+    RollSlice {}
 
 export const defaultColors: PaletteItem[] = [
   { id: '1', name: 'Hair', color: { r: 255, g: 215, b: 0, a: 255, hex: '#FFD700' } },

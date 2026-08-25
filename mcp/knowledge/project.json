@@ -14,7 +14,8 @@
       "File System Access API (ゼロ・アップロード)",
       "Web Workers (TGA デコード / ベクター・ラスタートレース)",
       "vitest (テスト 155 件)",
-      "Firebase Hosting (COOP/COEP ヘッダー付き)"
+      "Firebase Hosting (COOP/COEP ヘッダー付き)",
+      "撮影上がりロール (.mov / .mp4) の再生 — ネイティブ <video>。デコードは自前でやらない"
     ],
     "notImplemented": [
       "Rust / WebAssembly — 存在しない。画像処理は全て素の TypeScript",
@@ -167,6 +168,18 @@
       "title": "removeEventListener は addEventListener と capture の指定を一致させる",
       "detail": "capture: true で登録したリスナーは、capture を指定しない removeEventListener では外れない。ドラッグ系の後片付けは早期 return より前に、必ず実行すること。残ったハンドラが次のドラッグのイベントを先に拾ってフラグを倒すと、本来のハンドラが早期 return して他のリスナーまで外れなくなる。",
       "location": "src/hooks/useResizableWindow.ts"
+    },
+    {
+      "id": "roll-native-playback-only",
+      "title": "ロール再生はブラウザのネイティブデコーダに任せる",
+      "detail": "デコードを自前でやらないことがこの機能の設計の要。ハードウェア再生になり、バンドルもメモリも増えない (追加は約 14KB)。ffmpeg.wasm は約 30MB 増で CPU デコードのため、2026-08-26 にユーザー判断で「積まない」と決めている。再生できないコーデックはコーデック名と ffmpeg の変換コマンドを出して変換を促す。ffmpeg.wasm やブラウザ内変換を提案しないこと。",
+      "location": "src/engine/videoSource.ts, src/store/slices/rollSlice.ts"
+    },
+    {
+      "id": "roll-mime-and-codecs",
+      "title": ".mov は MIME を付け替える。ProRes は原理的に再生できない",
+      "detail": "実測 (2026-08-26 / 本番の Chrome): video/quicktime は canPlayType が空を返すため、File をそのまま <video> に渡しても再生できない。file.slice(0, file.size, \"video/mp4\") でデータをコピーせず MIME だけ差し替えること (new Blob([file]) は全体をメモリへ載せる)。H.264 / VP9 / AV1 は再生可。ProRes (apcn/apch/ap4h 等)・DNxHD・非圧縮は <video>・MSE・WebCodecs のいずれも非対応。HEVC は環境依存。",
+      "location": "src/engine/videoSource.ts"
     }
   ],
   "workflow": {

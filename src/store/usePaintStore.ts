@@ -18,6 +18,7 @@ import { createDocumentSlice } from './slices/documentSlice';
 import { createToolSlice } from './slices/toolSlice';
 import { createEditSlice } from './slices/editSlice';
 import { createLightTableSlice } from './slices/lightTableSlice';
+import { createRollSlice } from './slices/rollSlice';
 
 export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createUiSlice(...a),
@@ -28,6 +29,7 @@ export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createToolSlice(...a),
   ...createEditSlice(...a),
   ...createLightTableSlice(...a),
+  ...createRollSlice(...a),
 }));
 
 export * from './types';
