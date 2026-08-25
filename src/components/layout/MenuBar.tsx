@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
+import { isSupportedImageFile } from '../../engine/fileSystemPath';
+import { scanCutRootFolder } from '../../engine/cutFolder';
 import { Columns, Pipette, Save } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
@@ -13,7 +14,6 @@ export const MenuBar: React.FC = () => {
   const {
     isDarkMode,
     toggleDarkMode,
-    setFolderHandleA,
     setFolderFilesA,
     nextCell,
     prevCell,
@@ -67,50 +67,20 @@ export const MenuBar: React.FC = () => {
       try {
         const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
         const rootName: string = rootHandle.name;
-        const subDirs: any[] = [];
 
-        // 直下のディレクトリごとに、その配下すべてを再帰的に集める
-        for await (const entry of rootHandle.values()) {
-          if (entry.kind !== 'directory') continue;
+        // ⚠️ 走査は共通の関数に任せる。ここで自前に組み立てると、
+        // ファイルブラウザ側の「カットフォルダを開く」と結果が食い違う
+        const subDirs = await scanCutRootFolder(rootHandle, rootName);
 
-          const filesMap = new Map<string, File>();
-          await collectImageFilesRecursively(entry, `${rootName}/${entry.name}`, filesMap);
-          if (filesMap.size === 0) continue;
-
-          const fileList = Array.from(filesMap.keys()).sort();
-          const isImageFolder = fileList.some((f) => /\.(tga|png)$/i.test(f));
-
-          subDirs.push({
-            name: entry.name,
-            // 相対パスで引くため、ハンドルはサブフォルダではなくルートを持たせる
-            handle: rootHandle,
-            filesMap,
-            fileList,
-            isImageFolder,
-          });
-        }
-
-        subDirs.sort((a, b) => {
-          if (a.name.startsWith('_') && !b.name.startsWith('_')) return -1;
-          if (!a.name.startsWith('_') && b.name.startsWith('_')) return 1;
-          return a.name.localeCompare(b.name);
-        });
-
-        if (subDirs.length > 0) {
-          usePaintStore.getState().setCutRootFolder(rootHandle, rootName, subDirs);
+        if (subDirs.length === 0) {
+          alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
           return;
         }
 
-        // サブフォルダが無く、直下に画像がある場合
-        const rootFiles = new Map<string, File>();
-        await collectImageFilesRecursively(rootHandle, rootName, rootFiles);
-        if (rootFiles.size > 0) {
-          const files = Array.from(rootFiles.keys()).sort();
-          setFolderHandleA(rootHandle, rootName, files, rootFiles);
-          return;
-        }
-
-        alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
+        // サブフォルダが無い場合も (Root) 1 件として setCutRootFolder を通す。
+        // setFolderHandleA だけで済ませると rootFolderName や
+        // availableSubDirectories が前のカットのまま残る
+        usePaintStore.getState().setCutRootFolder(rootHandle, rootName, subDirs);
         return;
       } catch (e: any) {
         if (e.name === 'AbortError') return;

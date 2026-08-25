@@ -1,6 +1,7 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
-import { usePaintStore, SubDirectoryItem } from '../../store/usePaintStore';
+import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
+import { scanCutRootFolder } from '../../engine/cutFolder';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
@@ -606,52 +607,16 @@ export const FileBrowser: React.FC = () => {
     try {
       const rootHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
       const rootName: string = rootHandle.name;
-      const subDirs: SubDirectoryItem[] = [];
 
-      for await (const entry of rootHandle.values()) {
-        if (entry.kind !== 'directory') continue;
+      // ⚠️ 走査は共通の関数に任せる。メニューバー側と同じ結果になるように
+      const subDirs = await scanCutRootFolder(rootHandle, rootName);
 
-        const filesMap = new Map<string, File>();
-        await collectImageFilesRecursively(entry, `${rootName}/${entry.name}`, filesMap);
-        if (filesMap.size === 0) continue;
-
-        subDirs.push({
-          name: entry.name,
-          // 相対パスで引くため、ハンドルはサブフォルダではなくルートを持たせる
-          handle: rootHandle,
-          filesMap,
-          fileList: Array.from(filesMap.keys()).sort(),
-          isImageFolder: true,
-        });
-      }
-
-      subDirs.sort((a, b) => {
-        if (a.name.startsWith('_') && !b.name.startsWith('_')) return -1;
-        if (!a.name.startsWith('_') && b.name.startsWith('_')) return 1;
-        return a.name.localeCompare(b.name);
-      });
-
-      if (subDirs.length > 0) {
-        setCutRootFolder(rootHandle, rootName, subDirs);
-        return;
-      }
-
-      // サブフォルダが無く、直下に画像がある場合
-      const rootFiles = new Map<string, File>();
-      await collectImageFilesRecursively(rootHandle, rootName, rootFiles);
-      if (rootFiles.size === 0) {
+      if (subDirs.length === 0) {
         alert('選択したフォルダに画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
         return;
       }
 
-      const directSubDir: SubDirectoryItem = {
-        name: '(Root)',
-        handle: rootHandle,
-        filesMap: rootFiles,
-        fileList: Array.from(rootFiles.keys()).sort(),
-        isImageFolder: true,
-      };
-      setCutRootFolder(rootHandle, rootName, [directSubDir]);
+      setCutRootFolder(rootHandle, rootName, subDirs);
     } catch (err: any) {
       if (err.name === 'AbortError') return;
       console.error('Error opening root cut folder:', err);
