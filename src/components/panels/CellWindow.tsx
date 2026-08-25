@@ -116,7 +116,7 @@ export const CellWindow: React.FC = () => {
   /**
    * ドラッグ操作を canvas の外で離した時の取りこぼし対策。
    *
-   * パン・ブラシ・投げ縄の終了は canvas の onMouseUp だけに任せていたため、
+   * パン・ブラシの終了は canvas の onMouseUp だけに任せていたため、
    * キャンバスの外へ出てからボタンを離すと状態が「押しっぱなし」のまま残り、
    * 以降の左クリックがすべてパン扱いになって描画ツールが反応しなくなる。
    * window 側でも確実に終了させる。
@@ -137,6 +137,38 @@ export const CellWindow: React.FC = () => {
       window.removeEventListener('pointercancel', endDrag);
     };
   }, [isPanning, isBrushing]);
+
+  /**
+   * 投げ縄をキャンバスの外で離したときの取りこぼし対策。
+   *
+   * 上の endDrag は isLassoing を落としていない (依存配列も [isPanning, isBrushing]
+   * なので投げ縄だけの操作では登録すらされない)。そのため外で離すと
+   * 「投げ縄を引いている」状態が残り、ボタンを押していないのにカーソルへ
+   * 輪郭線が付いてきてしまう。
+   *
+   * ⚠️ キャンバス上で離した分はここで触らないこと。pointerup は onMouseUp より
+   * 先に来るため、無条件に打ち切ると通常の塗りが実行されなくなる。
+   * 外で離した場合は塗らずに破棄する (キャンバス上で離したときだけ塗る、という
+   * 従来の意図をそのまま保つ)。履歴は確定の直前に積むので、破棄しても
+   * 履歴や「未保存」の表示は汚れない。
+   */
+  useEffect(() => {
+    if (!isLassoing) return;
+
+    const cancelLasso = (e: Event) => {
+      const canvas = lassoView === 1 ? rightCanvasRef.current : leftCanvasRef.current;
+      if (canvas && e.target === canvas) return;
+      setIsLassoing(false);
+      setLassoPoints([]);
+    };
+
+    window.addEventListener('pointerup', cancelLasso);
+    window.addEventListener('pointercancel', cancelLasso);
+    return () => {
+      window.removeEventListener('pointerup', cancelLasso);
+      window.removeEventListener('pointercancel', cancelLasso);
+    };
+  }, [isLassoing, lassoView]);
 
   /**
    * ウィンドウからフォーカスが外れている間に Space を離すと keyup が届かず、
@@ -958,7 +990,9 @@ export const CellWindow: React.FC = () => {
         .toUpperCase()}`;
       setCurrentColor({ ...sampled, hex });
     } else if (activeTool === 'closedFill' || activeTool === 'lasso') {
-      saveUndoState('閉領域フィル');
+      // ⚠️ ここで saveUndoState を呼ばないこと。投げ縄は塗るかどうかが
+      // 離した時点まで決まらない。開始時に積むと、ドラッグせずクリックしただけで
+      // 履歴が 1 つ増え「未保存」になってしまう。確定の直前に積む。
       setIsLassoing(true);
       setLassoView(viewIdx);
       setLassoPoints([{ x, y }]);
@@ -1023,6 +1057,7 @@ export const CellWindow: React.FC = () => {
     if (isLassoing && lassoView === (isLeftView ? 0 : 1) && targetImg) {
       setIsLassoing(false);
       if (lassoPoints.length > 2) {
+        saveUndoState('閉領域フィル');
         closedAreaFill(
           targetImg.data,
           targetImg.width,
