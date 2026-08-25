@@ -100,6 +100,15 @@ export const CellWindow: React.FC = () => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [lassoPoints, setLassoPoints] = useState<{ x: number; y: number }[]>([]);
   const [isLassoing, setIsLassoing] = useState(false);
+  /**
+   * 投げ縄をどちらのウィンドウで引いているか。
+   *
+   * ⚠️ 以前は投げ縄の状態にビューの区別が無く、プレビューの描画が
+   * 左キャンバスに固定されていた。そのため Win B でドラッグすると
+   * B には何も出ず、輪郭線が Win A に現れる。塗り自体は B に入るのに
+   * 「Win B の操作が Win A に吸われた」ようにしか見えなかった。
+   */
+  const [lassoView, setLassoView] = useState<0 | 1>(0);
   const [isBrushing, setIsBrushing] = useState(false);
   const [lastPos, setLastPos] = useState<{ x: number; y: number } | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
@@ -818,7 +827,7 @@ export const CellWindow: React.FC = () => {
       }
 
       // 5. Lasso Preview
-      if (isLeft && lassoPoints.length > 1) {
+      if (lassoView === (isLeft ? 0 : 1) && lassoPoints.length > 1) {
         ctx.strokeStyle = '#2563EB';
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 4]);
@@ -831,7 +840,7 @@ export const CellWindow: React.FC = () => {
         ctx.setLineDash([]);
       }
     },
-    [prevImage, nextImage, onionFramesMap, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, pegStabilizer]
+    [prevImage, nextImage, onionFramesMap, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, lassoView, pegStabilizer]
   );
 
   useEffect(() => {
@@ -951,6 +960,7 @@ export const CellWindow: React.FC = () => {
     } else if (activeTool === 'closedFill' || activeTool === 'lasso') {
       saveUndoState('閉領域フィル');
       setIsLassoing(true);
+      setLassoView(viewIdx);
       setLassoPoints([{ x, y }]);
     }
   };
@@ -992,7 +1002,7 @@ export const CellWindow: React.FC = () => {
       );
       setLastPos({ x, y });
       triggerRender();
-    } else if (isLassoing) {
+    } else if (isLassoing && lassoView === (isLeftView ? 0 : 1)) {
       setLassoPoints((prev) => [...prev, { x, y }]);
       triggerRender();
     }
@@ -1010,7 +1020,7 @@ export const CellWindow: React.FC = () => {
     }
 
     const targetImg = isLeftView ? currentImage : splitImage;
-    if (isLassoing && targetImg) {
+    if (isLassoing && lassoView === (isLeftView ? 0 : 1) && targetImg) {
       setIsLassoing(false);
       if (lassoPoints.length > 2) {
         closedAreaFill(
