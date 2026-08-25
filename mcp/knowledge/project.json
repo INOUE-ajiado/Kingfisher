@@ -136,6 +136,12 @@
       "title": "対象ブラウザは Chromium 系。他では D&D したフォルダを保存できない",
       "detail": "書き込み可能なハンドルを得る getAsFileSystemHandle() が Chromium 系のみ。非対応環境ではwebkitGetAsEntry() で読み込み、保存だけができない扱いにしている。もともと File System Access API 前提の構成であり、2026-08-26 にユーザー判断で仕様として確定した。Firefox / Safari 対応や、そのための警告 UI を提案しないこと。",
       "location": "src/components/panels/FileBrowser.tsx, src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "lasso-undo-on-commit",
+      "title": "投げ縄の履歴は開始時ではなく確定の直前に積む",
+      "detail": "投げ縄 (closedFill / lasso) は塗るかどうかが離した時点まで決まらないため、saveUndoState は handleMouseUp で closedAreaFill を呼ぶ直前に呼ぶ。開始時に積むとクリックしただけで履歴が増え「未保存」になる。またキャンバスの外で離した場合は塗らずに破棄するが、window の pointerup は canvas の onMouseUp より先に来るため、e.target がそのビューの canvas なら何もしないこと (無条件に打ち切ると通常の塗りが消える)。",
+      "location": "src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -264,6 +270,14 @@
     {
       "symptom": "Win B で投げ縄を引くと輪郭線が Win A に出る",
       "cause": "投げ縄の状態にビューの区別が無く、プレビューの描画が左キャンバス固定だった。塗り自体は Win B に入る"
+    },
+    {
+      "symptom": "投げ縄をキャンバスの外で離すと、ボタンを押していないのに輪郭線がカーソルに付いてくる",
+      "cause": "ドラッグ終了の window リスナーが isLassoing を落としておらず、依存配列も [isPanning, isBrushing] で投げ縄だけの操作では登録すらされていなかった"
+    },
+    {
+      "symptom": "投げ縄ツールでクリックしただけ (ドラッグ無し) でも履歴が 1 つ増えて「未保存」になる",
+      "cause": "saveUndoState を投げ縄の開始時に呼んでいた。塗るかどうかは離すまで決まらないので、確定の直前に呼ぶ"
     }
   ],
   "openIssues": [
@@ -310,13 +324,6 @@
       "title": "ライトテーブル / オニオンスキンが Win A にしか出ない",
       "detail": "CellWindow の renderCanvasInstance で isLeft && lightTable.enabled と isLeft && lightTable.items.length > 0 に固定されている。意図的な仕様か未確認。",
       "nextStep": "Win B でもオニオンスキンを見たいかユーザーに確認する。不要ならこの項目を閉じる。"
-    },
-    {
-      "id": "lasso-drag-outside",
-      "severity": "low",
-      "title": "投げ縄をキャンバスの外で離すと isLassoing が残る",
-      "detail": "ドラッグ終了の window リスナー (endDrag) はコメントに「投げ縄」と書いてあるが isLassoing を落としていない。依存配列も [isPanning, isBrushing] なので投げ縄だけの操作では登録すらされない。",
-      "nextStep": "外で離したとき「投げ縄を破棄する」のか「そこで確定して塗る」のか決める。破棄する場合、開始時に積んだ Undo をどうするかも決める必要がある。"
     }
   ]
 }
