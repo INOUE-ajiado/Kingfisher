@@ -103,6 +103,11 @@ export function findInvalidNames(plan: RenamePlanItem[]): RenamePlanItem[] {
   });
 }
 
+/** 変更後の位置 (ディレクトリ + 新しい名前) をルートからの相対パスで表す */
+function targetPath(item: RenamePlanItem): string {
+  return replaceBaseName(item.path, item.to);
+}
+
 /**
  * 実行前に衝突を洗い出す。
  *
@@ -111,6 +116,12 @@ export function findInvalidNames(plan: RenamePlanItem[]): RenamePlanItem[] {
  *
  * 計画の中で「別のファイルの元の名前」と衝突するのは、番号をずらすだけの
  * リネームで普通に起きる。これは一時名を経由すれば成立するので衝突としない。
+ *
+ * ⚠️ 比較は必ず「ファイル名」ではなく「変更後の相対パス」で行う。
+ * ファイルツリーの選択はサブフォルダをまたげる (Shift 範囲選択は再帰的な
+ * フラットリストを切り出す) ため、名前だけで比べると `_go/` と `_ao/` に
+ * 同じコマ番号を付ける通常の運用が衝突と誤判定され、操作全体が止まる。
+ * リネームはフォルダを移動しないので、衝突は同じディレクトリの中でしか起きない。
  */
 export function findRenameConflicts(
   plan: RenamePlanItem[],
@@ -120,24 +131,17 @@ export function findRenameConflicts(
 
   const seen = new Set<string>();
   for (const item of plan) {
-    if (seen.has(item.to)) conflicts.push({ to: item.to, reason: 'duplicate' });
-    seen.add(item.to);
+    const target = targetPath(item);
+    if (seen.has(target)) conflicts.push({ to: item.to, reason: 'duplicate' });
+    seen.add(target);
   }
 
-  // 同じディレクトリにある、リネーム対象ではないファイル
+  // リネーム対象ではない既存ファイル。移動しないので相対パスのまま突き合わせる
   const movingFrom = new Set(plan.map((i) => i.path));
-  const outsiders = new Set(
-    existingPaths.filter((p) => !movingFrom.has(p)).map((p) => baseName(p))
-  );
+  const outsiders = new Set(existingPaths.filter((p) => !movingFrom.has(p)));
 
-  const planDirs = new Set(plan.map((i) => replaceBaseName(i.path, '')));
   for (const item of plan) {
-    if (!outsiders.has(item.to)) continue;
-    // 別ディレクトリの同名は衝突しない
-    const collides = existingPaths.some(
-      (p) => !movingFrom.has(p) && baseName(p) === item.to && planDirs.has(replaceBaseName(p, ''))
-    );
-    if (collides) conflicts.push({ to: item.to, reason: 'exists' });
+    if (outsiders.has(targetPath(item))) conflicts.push({ to: item.to, reason: 'exists' });
   }
 
   return conflicts;
@@ -146,10 +150,13 @@ export function findRenameConflicts(
 /**
  * 計画の中で名前が入れ替わる (別のファイルの元名を奪う) かどうか。
  * true なら一時名を経由する 2 段階リネームが必要。
+ *
+ * ここも同じディレクトリの中だけを見る。別フォルダの同名を入れ替えとみなすと
+ * 不要な 2 段階リネームになり、途中で失敗したとき一時名のファイルが残る。
  */
 export function needsTwoPhaseRename(plan: RenamePlanItem[]): boolean {
-  const sources = new Set(plan.map((i) => i.from));
-  return plan.some((i) => i.to !== i.from && sources.has(i.to));
+  const sources = new Set(plan.map((i) => i.path));
+  return plan.some((i) => i.to !== i.from && sources.has(targetPath(i)));
 }
 
 /** 実際に名前が変わる項目だけを残す */
@@ -179,10 +186,23 @@ export function buildDuplicateName(fileName: string, existingNames: Iterable<str
 /**
  * 複数ファイルの複製計画を組み立てる。
  * 生成した名前も「使用済み」に加えていくので、計画内で衝突しない。
+ *
+ * 使用済みの判定はディレクトリごとに分ける。全ファイル名をひとまとめにすると、
+ * 無関係な別フォルダに同名があるだけで `_copy2`, `_copy3` と番号が飛ぶ。
  */
 export function buildDuplicatePlan(paths: string[], existingPaths: string[]): RenamePlanItem[] {
-  const taken = new Set(existingPaths.map(baseName));
+  const takenByDir = new Map<string, Set<string>>();
+  const namesIn = (path: string): Set<string> => {
+    const dir = replaceBaseName(path, '');
+    let names = takenByDir.get(dir);
+    if (!names) takenByDir.set(dir, (names = new Set()));
+    return names;
+  };
+
+  for (const p of existingPaths) namesIn(p).add(baseName(p));
+
   return paths.map((path) => {
+    const taken = namesIn(path);
     const from = baseName(path);
     const to = buildDuplicateName(from, taken);
     taken.add(to);
