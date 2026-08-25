@@ -146,12 +146,22 @@ export function encodeTGA(image: TGAImage): ArrayBuffer {
     const b = data[i + 2];
     const a = data[i + 3];
 
-    // BGRA format for TGA
-    bytes[dstOffset] = b;
-    bytes[dstOffset + 1] = g;
-    bytes[dstOffset + 2] = r;
-    // If fully transparent alpha 0, write back as pure white RGB
-    bytes[dstOffset + 3] = a === 0 ? 255 : a;
+    // BGRA format for TGA.
+    // ⚠️ alpha 0 の画素は「白 = 透明」の規約に従って純白へ戻す。戻すのは RGB であって
+    // アルファではない。以前はアルファに 255 を書いており、RGB は元の色のまま残った。
+    // 消しゴム (drawCircle) は alpha を 0 にするだけで RGB を触らないため、
+    // 消した部分が「元の色の不透明な画素」として保存され、読み直すと復活していた。
+    if (a === 0) {
+      bytes[dstOffset] = 255;
+      bytes[dstOffset + 1] = 255;
+      bytes[dstOffset + 2] = 255;
+      bytes[dstOffset + 3] = 255;
+    } else {
+      bytes[dstOffset] = b;
+      bytes[dstOffset + 1] = g;
+      bytes[dstOffset + 2] = r;
+      bytes[dstOffset + 3] = a;
+    }
     dstOffset += 4;
   }
 

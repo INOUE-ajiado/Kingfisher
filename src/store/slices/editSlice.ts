@@ -6,6 +6,15 @@ import { StateCreator } from 'zustand';
 import { convertWhiteToAlphaMatting } from '../../engine/paintAlgorithm';
 import { PaintStore, EditSlice } from '../types';
 
+/**
+ * レイヤー ID の採番。
+ *
+ * ⚠️ Date.now() を使わないこと。separateLineartLayersGlobal は addLayer を
+ * 3 回続けて呼ぶので、同じミリ秒に入ると 3 枚とも同じ ID になり、
+ * 表示切替や削除が 3 枚まとめて効いてしまう (React のキーも重複する)。
+ */
+let layerSeq = 0;
+
 export const createEditSlice: StateCreator<PaintStore, [], [], EditSlice> = (set, get) => ({
   replaceColorGlobal: (targetHex: string, newHex: string) => {
     const { triggerRender, saveUndoState, getActiveImage } = get();
@@ -117,7 +126,10 @@ export const createEditSlice: StateCreator<PaintStore, [], [], EditSlice> = (set
 
   addLayer: (name) =>
     set((state) => ({
-      layers: [...state.layers, { id: Date.now().toString(), name, visible: true, opacity: 100, locked: false }],
+      layers: [
+        ...state.layers,
+        { id: `layer-${(layerSeq += 1)}`, name, visible: true, opacity: 100, locked: false },
+      ],
     })),
 
   deleteLayer: (id) =>

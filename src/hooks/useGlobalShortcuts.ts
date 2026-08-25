@@ -53,108 +53,116 @@ export const useGlobalShortcuts = () => {
 
         // Ctrl + F (通常: ページ内検索 → 変更: 未塗り漏れ点滅表示 Unpainted Flash)
         if (keyLower === 'f') {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleShowUnpaintedFlash();
-          return;
-        }
+        e.preventDefault();
+        e.stopPropagation();
+        toggleShowUnpaintedFlash();
+        return;
+      }
 
-        // Ctrl + O (通常: ローカルファイルを開く → 変更: 参照画像として開くモーダル/ダイアログ)
-        if (keyLower === 'o') {
-          e.preventDefault();
-          e.stopPropagation();
-          usePaintStore.getState().setActiveModal('preferences');
-          return;
-        }
+      // Ctrl + O (通常: ローカルファイルを開く → 変更: 参照画像として開くモーダル/ダイアログ)
+      if (keyLower === 'o') {
+        e.preventDefault();
+        e.stopPropagation();
+        usePaintStore.getState().setActiveModal('preferences');
+        return;
+      }
 
-        // Ctrl + P (通常: 印刷ダイアログ → 変更: 鉛筆ツール)
-        if (keyLower === 'p') {
-          e.preventDefault();
-          e.stopPropagation();
-          setActiveTool('pencil');
-          return;
-        }
+      // Ctrl + P (通常: 印刷ダイアログ → 変更: 鉛筆ツール)
+      if (keyLower === 'p') {
+        e.preventDefault();
+        e.stopPropagation();
+        setActiveTool('pencil');
+        return;
+      }
 
-        // Ctrl + Z / Ctrl + Y (Undo / Redo)
-        if (keyLower === 'z') {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.shiftKey) redo();
-          else undo();
-          return;
-        }
+      // Ctrl + Z / Ctrl + Y (Undo / Redo)
+      if (keyLower === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
 
-        if (keyLower === 'y') {
-          e.preventDefault();
-          e.stopPropagation();
-          redo();
-          return;
-        }
+      if (keyLower === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+        return;
+      }
       }
 
       // 🟢 3. ファンクションキー ＆ 単一キー操作のオーバーライド
+      //
+      // ⚠️ ここから下は修飾キーを押していないときだけ動かす。
+      // 意図した Ctrl 組み合わせは上のブロックですべて return 済みなので、
+      // ここに Ctrl/Alt/Cmd 付きで届くものは「割り当てていない組み合わせ」。
+      // 以前は 1 / 2 / 3 に修飾キーの判定が無く、Ctrl+1 でブラウザのタブが
+      // 切り替わると同時にパレットのタブまで変わっていた。
+      const hasModifier = e.ctrlKey || e.altKey || e.metaKey;
+
       if (e.key === 'F1') {
-        e.preventDefault();
-        e.stopPropagation();
-        window.open('/Kingfisher_Manual.html', '_blank');
-        return;
+      e.preventDefault();
+      e.stopPropagation();
+      window.open('/Kingfisher_Manual.html', '_blank');
+      return;
       }
+
+      if (hasModifier) return;
 
       // コマ送りキー (PageDown / ↓ / テンキー3)
       if (e.key === 'PageDown' || e.key === 'ArrowDown' || e.code === 'Numpad3') {
-        e.preventDefault();
-        nextCell();
-        return;
+      e.preventDefault();
+      nextCell();
+      return;
       }
 
       // コマ戻しキー (PageUp / ↑ / テンキー9)
       if (e.key === 'PageUp' || e.key === 'ArrowUp' || e.code === 'Numpad9') {
-        e.preventDefault();
-        prevCell();
-        return;
+      e.preventDefault();
+      prevCell();
+      return;
       }
 
       // パレットタブ切替 (1: Normal, 2: Shadow, 3: Highlight)
       if (e.key === '1') {
-        setActivePaletteTab('normal');
-        return;
+      setActivePaletteTab('normal');
+      return;
       }
       if (e.key === '2') {
-        setActivePaletteTab('shadow');
-        return;
+      setActivePaletteTab('shadow');
+      return;
       }
       if (e.key === '3') {
-        setActivePaletteTab('highlight');
-        return;
+      setActivePaletteTab('highlight');
+      return;
       }
 
       // 単音ツールキー切替 (F, G, U, B, P, E, N, I, M, L, W, H, Z)
-      if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (keyLower === 'f') {
-          setActiveTool('fill');
-        } else if (keyLower === 'g') {
-          setActiveTool('gradient');
-        } else if (keyLower === 'u') {
-          setActiveTool('closedFill');
-        } else if (keyLower === 'b') {
-          setActiveTool('brush');
-        } else if (keyLower === 'p') {
-          setActiveTool('pencil');
-        } else if (keyLower === 'e') {
-          setActiveTool('eraser');
-        } else if (keyLower === 'n') {
-          setActiveTool('noiseEraser');
-        } else if (keyLower === 'i') {
-          setActiveTool('eyedropper');
-        } else if (keyLower === 'h') {
-          setActiveTool('pan');
-        } else if (keyLower === 'z') {
-          setActiveTool('zoom');
-        } else if (keyLower === 'm') {
-          setActiveTool('pointer');
-        } else if (keyLower === 'l') {
-          setActiveTool('lasso');
-        }
+      if (keyLower === 'f') {
+        setActiveTool('fill');
+      } else if (keyLower === 'g') {
+        setActiveTool('gradient');
+      } else if (keyLower === 'u') {
+        setActiveTool('closedFill');
+      } else if (keyLower === 'b') {
+        setActiveTool('brush');
+      } else if (keyLower === 'p') {
+        setActiveTool('pencil');
+      } else if (keyLower === 'e') {
+        setActiveTool('eraser');
+      } else if (keyLower === 'n') {
+        setActiveTool('noiseEraser');
+      } else if (keyLower === 'i') {
+        setActiveTool('eyedropper');
+      } else if (keyLower === 'h') {
+        setActiveTool('pan');
+      } else if (keyLower === 'z') {
+        setActiveTool('zoom');
+      } else if (keyLower === 'm') {
+        setActiveTool('pointer');
+      } else if (keyLower === 'l') {
+        setActiveTool('lasso');
       }
     };
 
