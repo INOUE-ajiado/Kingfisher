@@ -189,7 +189,19 @@
       "修正後は tsc / test / build を必ず通す",
       "意図的にコードを壊してテストが落ちることを確認する検証が有効",
       "修正のたびにマージで止めず、デプロイと GitHub への push まで行う (2026-08-26 ユーザー指示)"
-    ]
+    ],
+    "browserSmokeTest": {
+      "why": "ファイル選択ダイアログは自動化できないが、それ以外は実ブラウザで確認できる。「実機でしか確認できない」と諦める前にここを使うこと。",
+      "how": [
+        "Node 22 には WebSocket が内蔵されているので、追加の依存なしで CDP を叩ける",
+        "chrome.exe --headless=new --remote-debugging-port=9222 --user-data-dir=<一時ディレクトリ> about:blank",
+        "http://127.0.0.1:9222/json/list から page ターゲットの webSocketDebuggerUrl を取る",
+        "Runtime.enable / Page.enable のあと Page.navigate、localStorage に 'kingfisher_auth_token_v1' = パスワードハッシュ を入れて再読み込みすると AuthGuard を通過できる",
+        "Runtime.evaluate で DOM を調べ、Input.dispatchKeyEvent でショートカットを叩ける",
+        "Runtime.exceptionThrown と Runtime.consoleAPICalled を拾えばコンソールのエラーも検出できる"
+      ],
+      "cannotCover": "showDirectoryPicker / showSaveFilePicker のネイティブダイアログ。フォルダを開く・保存・リネーム・削除の実操作だけは人手が要る。"
+    }
   },
   "knownFixedBugs": [
     {
@@ -346,12 +358,17 @@
       "id": "unverified-on-real-app",
       "severity": "high",
       "title": "2026-08-25 の変更は実機で一度も確認していない",
-      "detail": "型チェック・テスト・ビルドは通っているが、File System Access API の実操作 (実フォルダ選択・保存・リネーム・削除) はブラウザで試していない。すべて本番へデプロイ済み。",
+      "detail": "ブラウザで動くところまでは 2026-08-26 にヘッドレス Chrome で確認済み。残るのは File System Access API のネイティブダイアログを伴う操作 (実フォルダ選択・保存・リネーム・削除) のみで、これは人手でしか確認できない。",
       "verifiedOk": [
         "npx tsc --noEmit / npm test (155 件) / npm run build",
-        "本番バンドルのパスワードハッシュ照合 (デプロイの都度)"
+        "本番バンドルのパスワードハッシュ照合 (デプロイの都度)",
+        "npx tsc --noEmit / npm test (181 件) / npm run build",
+        "本番ビルドをヘッドレス Chrome で読み込み、メイン UI が描画されコンソールのエラー・警告がゼロであること (2026-08-26)",
+        "本番ビルドで Ctrl+Alt+<文字> が右パネルを開閉しないこと / Ctrl+Alt の成立でトグルすること (2026-08-26)",
+        "フォルダ未オープンで再生を押しても UI が壊れず NaN が出ないこと (2026-08-26)",
+        "消しゴム・ゴミ取り・バケツ塗りが encodeTGA / decodeTGA の往復を越えて保持されること (saveRoundTrip.test.ts)"
       ],
-      "nextStep": "コピーしたフォルダで (1) 階層のあるカットの保存 (2) D&D したフォルダへの保存 (3) 連番リネーム (4) 削除 (5) ツリーの選択が飛ばないこと を順に確認する。問題があれば git revert 0bc437d で戻せる。"
+      "nextStep": "コピーしたフォルダで (1) 階層のあるカットの保存 (2) D&D したフォルダへの保存 (3) 連番リネーム (4) サブフォルダをまたぐ複数選択のリネーム (5) 削除・複製 (6) ツリーの選択が飛ばないこと (7) 消しゴム→保存→開き直しで消えたままか を順に確認する。"
     },
     {
       "id": "winb-tools",
