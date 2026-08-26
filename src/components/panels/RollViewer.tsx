@@ -156,8 +156,13 @@ export const RollViewer: React.FC = React.memo(() => {
   const togglePlay = () => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) video.play().catch(() => undefined);
-    else video.pause();
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    // ⚠️ 握り潰さないこと。ボタンからの再生はユーザー操作なので普通は通るが、
+    // 自動再生ポリシーで弾かれると「押しても何も起きない」だけになり原因が追えない。
+    video.play().catch((err) => console.error('Failed to play roll:', err));
   };
 
   /** コマ送り。再生中なら止めてから動かす */
