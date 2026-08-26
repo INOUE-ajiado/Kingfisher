@@ -219,30 +219,34 @@ export function estimateFps(mediaTimes: number[]): number | null {
 /** ドロップされたフォルダを何段まで潜って動画を探すか */
 const DROP_SEARCH_DEPTH = 3;
 
-async function firstVideoInDirectoryHandle(dir: any, depth = 0): Promise<File | null> {
-  const videos: any[] = [];
+/** フォルダの中から見つかった動画 1 本 */
+export interface DroppedVideo {
+  /** フォルダ名から始まる相対パス。ツリー表示の識別子に使う */
+  path: string;
+  file: File;
+}
+
+async function collectFromDirectoryHandle(
+  dir: any,
+  basePath: string,
+  found: DroppedVideo[],
+  depth = 0
+): Promise<void> {
   const subdirs: any[] = [];
 
   for await (const entry of dir.values()) {
+    const entryPath = basePath ? `${basePath}/${entry.name}` : entry.name;
     if (entry.kind === 'file') {
-      if (isVideoFile(entry.name)) videos.push(entry);
+      if (isVideoFile(entry.name)) found.push({ path: entryPath, file: await entry.getFile() });
     } else if (entry.kind === 'directory') {
-      subdirs.push(entry);
+      subdirs.push({ handle: entry, path: entryPath });
     }
   }
 
-  if (videos.length > 0) {
-    videos.sort((a, b) => compareNatural(a.name, b.name));
-    return videos[0].getFile();
-  }
-  if (depth >= DROP_SEARCH_DEPTH) return null;
-
-  subdirs.sort((a, b) => compareNatural(a.name, b.name));
+  if (depth >= DROP_SEARCH_DEPTH) return;
   for (const sub of subdirs) {
-    const found = await firstVideoInDirectoryHandle(sub, depth + 1);
-    if (found) return found;
+    await collectFromDirectoryHandle(sub.handle, sub.path, found, depth + 1);
   }
-  return null;
 }
 
 /** FileSystemFileEntry から File を取り出す (取れなければ null) */
@@ -250,76 +254,114 @@ function entryToFile(entry: any): Promise<File | null> {
   return new Promise((resolve) => entry.file((f: File) => resolve(f), () => resolve(null)));
 }
 
-async function firstVideoInDirectoryEntry(dirEntry: any, depth = 0): Promise<File | null> {
+async function collectFromDirectoryEntry(
+  dirEntry: any,
+  basePath: string,
+  found: DroppedVideo[],
+  depth = 0
+): Promise<void> {
   const entries = await readAllDirectoryEntries(dirEntry.createReader());
 
-  const videos = entries.filter((e: any) => e.isFile && isVideoFile(e.name));
-  if (videos.length > 0) {
-    videos.sort((a: any, b: any) => compareNatural(a.name, b.name));
-    return entryToFile(videos[0]);
+  for (const entry of entries) {
+    if (!entry.isFile || !isVideoFile(entry.name)) continue;
+    const file = await entryToFile(entry);
+    if (file) found.push({ path: `${basePath}/${entry.name}`, file });
   }
-  if (depth >= DROP_SEARCH_DEPTH) return null;
 
-  const subdirs = entries.filter((e: any) => e.isDirectory);
-  subdirs.sort((a: any, b: any) => compareNatural(a.name, b.name));
-  for (const sub of subdirs) {
-    const found = await firstVideoInDirectoryEntry(sub, depth + 1);
-    if (found) return found;
+  if (depth >= DROP_SEARCH_DEPTH) return;
+  for (const entry of entries) {
+    if (!entry.isDirectory) continue;
+    await collectFromDirectoryEntry(entry, `${basePath}/${entry.name}`, found, depth + 1);
   }
-  return null;
+}
+
+/** パスの階層の深さ */
+function depthOf(path: string): number {
+  return path.split('/').length;
+}
+
+/**
+ * ドロップされたものの中から、動画ファイルをすべて集める。
+ *
+ * ⚠️ dataTransfer.files だけを見ないこと。フォルダを落とした場合そこには
+ * フォルダ自体しか入っておらず、中の .mov / .mp4 は見えない。
+ * ⚠️ 呼び出し側は items の読み取りを同期的に済ませてから渡すこと。
+ * dataTransfer.items はハンドラを抜けた時点で無効になる。
+ *
+ * 並びは「浅い階層が先、その中は自然順」。1 本だけ開く場合の先頭も
+ * この順序で決まるので、直下に置かれたロールが優先される。
+ */
+export async function collectDroppedVideoFiles(
+  plainFiles: File[],
+  handles: any[],
+  entries: any[]
+): Promise<DroppedVideo[]> {
+  const found: DroppedVideo[] = [];
+
+  for (const file of plainFiles) {
+    if (isVideoFile(file.name)) found.push({ path: file.name, file });
+  }
+
+  for (const handle of handles) {
+    if (handle?.kind === 'file' && isVideoFile(handle.name)) {
+      found.push({ path: handle.name, file: await handle.getFile() });
+    }
+  }
+  for (const handle of handles) {
+    if (handle?.kind !== 'directory') continue;
+    try {
+      await collectFromDirectoryHandle(handle, handle.name, found);
+    } catch (e) {
+      console.error('Failed to scan dropped folder for video:', e);
+    }
+  }
+
+  if (found.length === 0) {
+    for (const entry of entries) {
+      if (!entry?.isFile || !isVideoFile(entry.name)) continue;
+      const file = await entryToFile(entry);
+      if (file) found.push({ path: entry.name, file });
+    }
+    for (const entry of entries) {
+      if (!entry?.isDirectory) continue;
+      try {
+        await collectFromDirectoryEntry(entry, entry.name, found);
+      } catch (e) {
+        console.error('Failed to scan dropped folder for video:', e);
+      }
+    }
+  }
+
+  // 同じファイルを 2 度拾わない (ハンドルとエントリの両方が取れる環境がある)
+  const seen = new Set<string>();
+  const unique = found.filter((v) => (seen.has(v.path) ? false : (seen.add(v.path), true)));
+
+  return unique.sort((a, b) => {
+    const d = depthOf(a.path) - depthOf(b.path);
+    return d !== 0 ? d : compareNatural(a.path, b.path);
+  });
 }
 
 /**
  * ドロップされたものの中から、最初に見つかる動画ファイルを 1 つ返す。
- *
- * ⚠️ dataTransfer.files だけを見ないこと。フォルダを落とした場合、そこには
- * フォルダ自体しか入っておらず、中の .mov / .mp4 は見えない。
- * 「ロールの入ったフォルダを落としたのに開けない」のはこれが原因になる。
- *
- * ⚠️ 呼び出し側は items の読み取りを同期的に済ませてから渡すこと。
- * dataTransfer.items はハンドラを抜けた時点で無効になる。
- *
- * 同じ場所に複数あるときは自然順の先頭を開く。深さは DROP_SEARCH_DEPTH まで。
+ * 並びの決め方は collectDroppedVideoFiles と同じ。
  */
 export async function findDroppedVideoFile(
   plainFiles: File[],
   handles: any[],
   entries: any[]
 ): Promise<File | null> {
-  const direct = plainFiles.filter((f) => isVideoFile(f.name));
-  if (direct.length > 0) {
-    direct.sort((a, b) => compareNatural(a.name, b.name));
-    return direct[0];
-  }
+  const all = await collectDroppedVideoFiles(plainFiles, handles, entries);
+  return all[0]?.file ?? null;
+}
 
-  for (const handle of handles) {
-    if (handle?.kind === 'file' && isVideoFile(handle.name)) return handle.getFile();
-  }
-  for (const handle of handles) {
-    if (handle?.kind !== 'directory') continue;
-    try {
-      const found = await firstVideoInDirectoryHandle(handle);
-      if (found) return found;
-    } catch (e) {
-      console.error('Failed to scan dropped folder for video:', e);
-    }
-  }
-
-  for (const entry of entries) {
-    if (entry?.isFile && isVideoFile(entry.name)) {
-      const file = await entryToFile(entry);
-      if (file) return file;
-    }
-  }
-  for (const entry of entries) {
-    if (!entry?.isDirectory) continue;
-    try {
-      const found = await firstVideoInDirectoryEntry(entry);
-      if (found) return found;
-    } catch (e) {
-      console.error('Failed to scan dropped folder for video:', e);
-    }
-  }
-
-  return null;
+/**
+ * 集めたロールが共通して属するフォルダ名。
+ * 単体ファイルを落とした場合など、共通の起点が無ければ空文字。
+ */
+export function commonRootName(videos: DroppedVideo[]): string {
+  if (videos.length === 0) return '';
+  const roots = videos.map((v) => (v.path.includes('/') ? v.path.split('/')[0] : ''));
+  const first = roots[0];
+  return first && roots.every((r) => r === first) ? first : '';
 }

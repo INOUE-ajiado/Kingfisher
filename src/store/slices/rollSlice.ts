@@ -8,6 +8,7 @@
 
 import { StateCreator } from 'zustand';
 import { PaintStore, RollSlice, RollState } from '../types';
+import { DroppedVideo } from '../../engine/videoSource';
 import { toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
 
 /** 推定できるまでのコマ送りの既定値。日本のアニメは 24fps 基準 */
@@ -17,6 +18,9 @@ const initialRoll: RollState = {
   isOpen: false,
   isFloating: false,
   fileName: '',
+  folderName: '',
+  files: [],
+  currentPath: null,
   file: null,
   objectUrl: null,
   status: 'idle',
@@ -45,6 +49,35 @@ function conversionHint(fileName: string): string {
   );
 }
 
+/**
+ * 1 本のロールを開いた状態を組み立てる。
+ *
+ * ⚠️ 前の blob URL は必ず手放すこと。数 GB のロールを何本も開く使い方をするので、
+ * revoke し忘れるとページを閉じるまで解放されない。
+ * ⚠️ new Blob([file]) にしないこと。ファイル全体をメモリへ載せてしまう。
+ * toPlayableBlob は範囲もデータもそのままに MIME だけ差し替える。
+ */
+function openVideo(roll: RollState, video: DroppedVideo): { roll: RollState } {
+  releaseUrl(roll.objectUrl);
+
+  return {
+    roll: {
+      ...roll,
+      isOpen: true,
+      fileName: video.file.name,
+      currentPath: video.path,
+      file: video.file,
+      objectUrl: URL.createObjectURL(toPlayableBlob(video.file)),
+      // まず再生させてみる。コーデックの詮索は失敗してからで十分
+      status: 'ready',
+      message: '',
+      codec: null,
+      fps: DEFAULT_FPS,
+      fpsSource: 'default',
+    },
+  };
+}
+
 export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set, get) => ({
   roll: initialRoll,
 
@@ -60,30 +93,39 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
   toggleRollFloating: () =>
     set((state) => ({ roll: { ...state.roll, isFloating: !state.roll.isFloating } })),
 
-  loadRollFile: (file) =>
+  loadRollFile: (file) => set((state) => openVideo(state.roll, { path: file.name, file })),
+
+  /**
+   * フォルダの中で見つかったロールをまとめて受け取り、先頭を開く。
+   *
+   * 1 つのフォルダに複数のロールが入っている運用があるので、一覧を保持して
+   * ツリーから選んだり順に送ったりできるようにする。
+   */
+  loadRollFiles: (videos, folderName) =>
     set((state) => {
-      releaseUrl(state.roll.objectUrl);
-
-      // ⚠️ new Blob([file]) にしないこと。ファイル全体をメモリへ載せてしまう。
-      // toPlayableBlob は範囲もデータもそのままに MIME だけ差し替える。
-      const objectUrl = URL.createObjectURL(toPlayableBlob(file));
-
-      return {
-        roll: {
-          ...state.roll,
-          isOpen: true,
-          fileName: file.name,
-          file,
-          objectUrl,
-          // まず再生させてみる。コーデックの詮索は失敗してからで十分
-          status: 'ready',
-          message: '',
-          codec: null,
-          fps: DEFAULT_FPS,
-          fpsSource: 'default',
-        },
-      };
+      if (videos.length === 0) return state;
+      const opened = openVideo(state.roll, videos[0]);
+      return { roll: { ...opened.roll, folderName, files: videos } };
     }),
+
+  selectRollFile: (path) =>
+    set((state) => {
+      if (path === state.roll.currentPath) return state;
+      const target = state.roll.files.find((v) => v.path === path);
+      if (!target) return state;
+      const opened = openVideo(state.roll, target);
+      return { roll: { ...opened.roll, folderName: state.roll.folderName, files: state.roll.files } };
+    }),
+
+  stepRoll: (delta) => {
+    const { files, currentPath } = get().roll;
+    if (files.length <= 1) return;
+
+    const at = files.findIndex((v) => v.path === currentPath);
+    const next = Math.max(0, Math.min(files.length - 1, (at < 0 ? 0 : at) + delta));
+    if (next === at) return;
+    get().selectRollFile(files[next].path);
+  },
 
   /**
    * <video> が再生を拒否したときに呼ぶ。

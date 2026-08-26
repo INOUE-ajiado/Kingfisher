@@ -3,48 +3,11 @@ import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder } from '../../engine/cutFolder';
 import { sortNatural } from '../../engine/naturalOrder';
+import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
+import { RollFileTree } from './RollFileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
-
-export interface FileTreeNode {
-  name: string;
-  path: string;
-  isFolder: boolean;
-  fileIndex?: number;
-  children?: FileTreeNode[];
-}
-
-function buildTreeFromPaths(paths: string[]): FileTreeNode[] {
-  const root: FileTreeNode[] = [];
-
-  paths.forEach((fullPath, originalIdx) => {
-    const parts = fullPath.split(/[/\\]/);
-    let currentLevel = root;
-
-    parts.forEach((part, index) => {
-      const isLast = index === parts.length - 1;
-      let existingNode = currentLevel.find((node) => node.name === part);
-
-      if (!existingNode) {
-        existingNode = {
-          name: part,
-          path: parts.slice(0, index + 1).join('/'),
-          isFolder: !isLast,
-          fileIndex: isLast ? originalIdx : undefined,
-          children: isLast ? undefined : [],
-        };
-        currentLevel.push(existingNode);
-      }
-
-      if (!isLast && existingNode.children) {
-        currentLevel = existingNode.children;
-      }
-    });
-  });
-
-  return root;
-}
 
 /** ツリー内のフォルダのパスを、階層の深さに関係なくすべて集める */
 function collectFolderPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): Set<string> {
@@ -1078,6 +1041,8 @@ export const FileBrowser: React.FC = () => {
           </table>
         )}
       </div>
+
+      <RollFileTree />
 
       <input
         type="file"

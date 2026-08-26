@@ -9,12 +9,12 @@
 import { TGAImage } from '../engine/tga';
 import { RenamePlanItem } from '../engine/renamePlan';
 import { compareNatural } from '../engine/naturalOrder';
-import { CodecInfo as VideoCodecInfo } from '../engine/videoSource';
+import { CodecInfo as VideoCodecInfo, DroppedVideo } from '../engine/videoSource';
 import { PaneLayout, PaneId } from '../engine/paneLayout';
 
 export type { PaneLayout, PaneId };
 
-export type { VideoCodecInfo };
+export type { VideoCodecInfo, DroppedVideo };
 
 export type ToolType = 
   | 'pointer' 
@@ -524,6 +524,12 @@ export interface RollState {
   isOpen: boolean;
   isFloating: boolean;
   fileName: string;
+  /** 読み込んだフォルダの名前 (単体ファイルなら空) */
+  folderName: string;
+  /** フォルダの中で見つかったロール一覧。ツリー表示と順送りに使う */
+  files: DroppedVideo[];
+  /** 今開いているロールの相対パス */
+  currentPath: string | null;
   /** 元ファイル。再生に失敗したときコーデックを調べ直すために持っておく (実データは読まない) */
   file: File | null;
   /** <video> に渡す blob URL。差し替え・終了のたびに必ず revoke する */
@@ -542,8 +548,14 @@ export interface RollSlice {
   openRollWindow: () => void
   closeRollWindow: () => void
   toggleRollFloating: () => void
-  /** ロールを読み込む。デコードはブラウザに任せるのでここでは中身を読まない */
+  /** ロールを 1 本だけ読み込む。デコードはブラウザに任せるのでここでは中身を読まない */
   loadRollFile: (file: File) => void
+  /** フォルダの中で見つかったロールをまとめて受け取り、先頭を開く */
+  loadRollFiles: (videos: DroppedVideo[], folderName: string) => void
+  /** 一覧の中から 1 本を選んで開く */
+  selectRollFile: (path: string) => void
+  /** 一覧の中で前後のロールへ移る */
+  stepRoll: (delta: number) => void
   /** <video> が再生を拒否したときに呼ぶ。コーデックを調べて理由を出す */
   reportRollPlaybackFailure: () => Promise<void>
   setRollFps: (fps: number, source: 'auto' | 'manual') => void

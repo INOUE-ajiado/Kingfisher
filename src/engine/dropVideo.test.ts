@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findDroppedVideoFile } from './videoSource';
+import { findDroppedVideoFile, collectDroppedVideoFiles } from './videoSource';
 
 /**
  * ドロップされたものの中から動画を見つける。
@@ -116,5 +116,63 @@ describe('ドロップされた動画の検出', () => {
 
   it('何も無ければ null', async () => {
     expect(await findDroppedVideoFile([], [], [])).toBeNull();
+  });
+});
+
+describe('フォルダ内のロールをすべて集める', () => {
+  it('直下の動画をパス付きで並べる', async () => {
+    const dir = dirHandle('Roll', [
+      fileHandle('c10.mp4'),
+      fileHandle('c2.mp4'),
+      fileHandle('c1.mp4'),
+      fileHandle('memo.txt'),
+    ]);
+
+    const found = await collectDroppedVideoFiles([], [dir], []);
+
+    expect(found.map((v) => v.path)).toEqual(['Roll/c1.mp4', 'Roll/c2.mp4', 'Roll/c10.mp4']);
+  });
+
+  it('サブフォルダの中も集め、浅い階層を先に並べる', async () => {
+    const dir = dirHandle('Roll', [
+      dirHandle('old', [fileHandle('a.mp4')]),
+      fileHandle('z.mp4'),
+    ]);
+
+    const found = await collectDroppedVideoFiles([], [dir], []);
+
+    expect(found.map((v) => v.path)).toEqual(['Roll/z.mp4', 'Roll/old/a.mp4']);
+  });
+
+  it('1 本だけ開くときの先頭は、この並びの先頭と一致する', async () => {
+    const dir = dirHandle('Roll', [dirHandle('old', [fileHandle('a.mp4')]), fileHandle('z.mp4')]);
+
+    const all = await collectDroppedVideoFiles([], [dir], []);
+    const first = await findDroppedVideoFile([], [dir], []);
+
+    expect(first?.name).toBe(all[0].file.name);
+  });
+
+  it('動画が無ければ空', async () => {
+    const dir = dirHandle('Cut001', [fileHandle('a0001.tga')]);
+    await expect(collectDroppedVideoFiles([], [dir], [])).resolves.toEqual([]);
+  });
+
+  it('読み取り専用エントリ経由でも集められる', async () => {
+    const entry = dirEntry('Roll', [fileEntry('b.mov'), fileEntry('a.mov'), fileEntry('memo.txt')]);
+
+    const found = await collectDroppedVideoFiles([], [], [entry]);
+
+    expect(found.map((v) => v.path)).toEqual(['Roll/a.mov', 'Roll/b.mov']);
+  });
+
+  it('同じファイルを 2 度拾わない', async () => {
+    // ハンドルとエントリの両方が取れる環境がある
+    const dir = dirHandle('Roll', [fileHandle('a.mp4')]);
+    const entry = dirEntry('Roll', [fileEntry('a.mp4')]);
+
+    const found = await collectDroppedVideoFiles([], [dir], [entry]);
+
+    expect(found.map((v) => v.path)).toEqual(['Roll/a.mp4']);
   });
 });
