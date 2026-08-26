@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSupportedImageFile } from '../../engine/fileSystemPath';
-import { scanCutRootFolder } from '../../engine/cutFolder';
+import { scanCutRootFolder, ROOT_SUBDIR_NAME } from '../../engine/cutFolder';
 import { Columns, Pipette, Save } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
@@ -80,9 +80,16 @@ export const MenuBar: React.FC = () => {
           return;
         }
 
-        // サブフォルダが無い場合も (Root) 1 件として setCutRootFolder を通す。
-        // setFolderHandleA だけで済ませると rootFolderName や
-        // availableSubDirectories が前のカットのまま残る
+        // ⚠️ サブフォルダが無いフォルダを setCutRootFolder へ流さないこと。
+        // あちらは A と B の両方を組み直すので Win B が空になり、
+        // 2 画面で開いて連動させる使い方ができなくなる。
+        const isPlainFolder = subDirs.length === 1 && subDirs[0].name === ROOT_SUBDIR_NAME;
+        if (isPlainFolder) {
+          const root = subDirs[0];
+          usePaintStore.getState().openPlainFolderAsA(rootHandle, rootName, root.fileList, root.filesMap);
+          return;
+        }
+
         usePaintStore.getState().setCutRootFolder(rootHandle, rootName, subDirs);
         return;
       } catch (e: any) {

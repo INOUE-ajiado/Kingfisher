@@ -77,6 +77,28 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
   mergedFrameMap: new Map(),
 
+  /**
+   * サブフォルダを持たないフォルダを Win A として開く。
+   *
+   * ⚠️ setCutRootFolder に流さないこと。あちらは A と B の両方を組み直すので、
+   * サブフォルダが (Root) 1 つだけだと Win B が空になり、
+   * 2 画面で開いて連動させる使い方ができなくなる。
+   * ⚠️ かといって setFolderHandleA を呼ぶだけでも駄目で、前に開いたカットの
+   * サブフォルダ一覧が残る。ドロップダウンに前のカットの _go / _ao が並び、
+   * 選ぶとそちらのファイルへ飛んでしまう。ここで両方を面倒みる。
+   */
+  openPlainFolderAsA: (handle, name, files, filesMap) => {
+    set({
+      rootFolderHandle: handle,
+      rootFolderName: name,
+      availableSubDirectories: [],
+      selectedSubDirA: null,
+      selectedSubDirB: null,
+    });
+    // Win B の一覧・ハンドルには触れない
+    get().setFolderHandleA(handle, name, files, filesMap);
+  },
+
   setCutRootFolder: (rootHandle, rootName, subDirs) => {
     // 初期状態で _go や a, b 等の画像フォルダをデフォルトで自動選択
     let defaultDirA: SubDirectoryItem | undefined = subDirs.find((d) => d.name === '_go' || d.name === 'a');
