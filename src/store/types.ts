@@ -520,20 +520,22 @@ export interface LightTableSlice {
 /** 撮影上がりロールの読み込み状態 */
 export type RollStatus = 'idle' | 'ready' | 'unsupported' | 'error';
 
-export interface RollState {
+/** ロールを出せる面。修正前 / 修正後を並べて見比べるために 2 面ある */
+export type RollId = 'rollA' | 'rollB';
+
+export const ROLL_IDS: RollId[] = ['rollA', 'rollB'];
+
+/** 1 つの面の再生状態 */
+export interface RollViewState {
   isOpen: boolean;
   isFloating: boolean;
   fileName: string;
-  /** 読み込んだフォルダの名前 (単体ファイルなら空) */
-  folderName: string;
-  /** フォルダの中で見つかったロール一覧。ツリー表示と順送りに使う */
-  files: DroppedVideo[];
-  /** 今開いているロールの相対パス */
-  currentPath: string | null;
   /** 元ファイル。再生に失敗したときコーデックを調べ直すために持っておく (実データは読まない) */
   file: File | null;
   /** <video> に渡す blob URL。差し替え・終了のたびに必ず revoke する */
   objectUrl: string | null;
+  /** 今開いているロールの相対パス */
+  currentPath: string | null;
   status: RollStatus;
   /** 再生できないときにユーザーへ出す説明 */
   message: string;
@@ -543,31 +545,55 @@ export interface RollState {
   fpsSource: 'default' | 'auto' | 'manual';
 }
 
+export interface RollState {
+  /**
+   * 開いたフォルダで見つかった映像の一覧。
+   * ⚠️ 2 面で共有する。ツリーは 1 本しか出ないので、面ごとに持つと食い違う。
+   */
+  files: DroppedVideo[];
+  folderName: string;
+  /** 面ごとの再生状態 */
+  views: Record<RollId, RollViewState>;
+  /** ツリーから選んだときに開く面 */
+  activeId: RollId;
+  /** 2 面の再生を連動させるか */
+  sync: boolean;
+  /** 連動を開始した時点の時刻差 (B - A、秒) */
+  syncOffset: number;
+}
+
 export interface RollSlice {
   roll: RollState
-  openRollWindow: () => void
-  closeRollWindow: () => void
-  toggleRollFloating: () => void
+  openRollWindow: (id: RollId) => void
+  closeRollWindow: (id: RollId) => void
+  toggleRollFloating: (id: RollId) => void
+  /** ツリーから選んだときに開く面を決める */
+  setActiveRollId: (id: RollId) => void
   /** ロールを 1 本だけ読み込む。デコードはブラウザに任せるのでここでは中身を読まない */
-  loadRollFile: (file: File) => void
+  loadRollFile: (id: RollId, file: File) => void
   /** フォルダの中で見つかったロールをまとめて受け取り、先頭を開く */
-  loadRollFiles: (videos: DroppedVideo[], folderName: string) => void
+  loadRollFiles: (id: RollId, videos: DroppedVideo[], folderName: string) => void
   /**
    * 一覧だけ登録して開かない。フォルダを開いた時点では映像を再生せず、
    * ツリーから選ばれたときに初めて開くため
    */
   setRollFolderFiles: (videos: DroppedVideo[], folderName: string) => void
   /** 一覧の中から 1 本を選んで開く */
-  selectRollFile: (path: string) => void
+  selectRollFile: (id: RollId, path: string) => void
   /** 一覧の中で前後のロールへ移る */
-  stepRoll: (delta: number) => void
+  stepRoll: (id: RollId, delta: number) => void
   /** <video> が再生を拒否したときに呼ぶ。コーデックを調べて理由を出す */
-  reportRollPlaybackFailure: () => Promise<void>
-  setRollFps: (fps: number, source: 'auto' | 'manual') => void
+  reportRollPlaybackFailure: (id: RollId) => Promise<void>
+  setRollFps: (id: RollId, fps: number, source: 'auto' | 'manual') => void
+  /**
+   * 2 面の再生を連動させる / やめる。
+   * 開始時の時刻差 (B - A、秒) を渡すと、その差を保ったまま追従する。
+   */
+  toggleRollSync: (offset?: number) => void
 }
 
 /** 独立ウィンドウとして切り離せるパネルの識別子 */
-export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart' | 'roll';
+export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart' | 'rollA' | 'rollB';
 
 export interface FloatingWindowLayout {
   x: number;

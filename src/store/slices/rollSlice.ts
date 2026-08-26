@@ -1,33 +1,44 @@
 /**
- * 撮影上がりロール (.mov / .mp4) の再生状態。
+ * 撮影上がりロールの再生状態。
  *
  * ⚠️ ここではデコードも読み込みも行わない。ブラウザのネイティブデコーダに任せる
  * ことがこの機能の要で、そうすればハードウェア再生になりメモリも増えない。
- * 状態として持つのは「どのファイルか」「再生できるか」「コマ送りの基準 fps」だけ。
+ *
+ * ⚠️ 映像の一覧 (files) は 2 面で共有する。ツリーは 1 本しか出ないので、
+ * 面ごとに持つとツリーの中身と開ける対象が食い違う。
+ * 面ごとに持つのは再生状態 (views) だけ。
  */
 
 import { StateCreator } from 'zustand';
-import { PaintStore, RollSlice, RollState } from '../types';
-import { DroppedVideo } from '../../engine/videoSource';
-import { toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
+import { PaintStore, RollSlice, RollState, RollViewState, RollId, ROLL_IDS } from '../types';
+import { DroppedVideo, toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
 
 /** 推定できるまでのコマ送りの既定値。日本のアニメは 24fps 基準 */
 const DEFAULT_FPS = 24;
 
+function emptyView(): RollViewState {
+  return {
+    isOpen: false,
+    isFloating: false,
+    fileName: '',
+    file: null,
+    objectUrl: null,
+    currentPath: null,
+    status: 'idle',
+    message: '',
+    codec: null,
+    fps: DEFAULT_FPS,
+    fpsSource: 'default',
+  };
+}
+
 const initialRoll: RollState = {
-  isOpen: false,
-  isFloating: false,
-  fileName: '',
-  folderName: '',
   files: [],
-  currentPath: null,
-  file: null,
-  objectUrl: null,
-  status: 'idle',
-  message: '',
-  codec: null,
-  fps: DEFAULT_FPS,
-  fpsSource: 'default',
+  folderName: '',
+  views: { rollA: emptyView(), rollB: emptyView() },
+  activeId: 'rollA',
+  sync: false,
+  syncOffset: 0,
 };
 
 /**
@@ -52,82 +63,95 @@ function conversionHint(fileName: string): string {
 /**
  * 1 本のロールを開いた状態を組み立てる。
  *
- * ⚠️ 前の blob URL は必ず手放すこと。数 GB のロールを何本も開く使い方をするので、
- * revoke し忘れるとページを閉じるまで解放されない。
  * ⚠️ new Blob([file]) にしないこと。ファイル全体をメモリへ載せてしまう。
  * toPlayableBlob は範囲もデータもそのままに MIME だけ差し替える。
  */
-function openVideo(roll: RollState, video: DroppedVideo): { roll: RollState } {
-  releaseUrl(roll.objectUrl);
+function openedView(view: RollViewState, video: DroppedVideo): RollViewState {
+  releaseUrl(view.objectUrl);
 
   return {
-    roll: {
-      ...roll,
-      isOpen: true,
-      fileName: video.file.name,
-      currentPath: video.path,
-      file: video.file,
-      objectUrl: URL.createObjectURL(toPlayableBlob(video.file)),
-      // まず再生させてみる。コーデックの詮索は失敗してからで十分
-      status: 'ready',
-      message: '',
-      codec: null,
-      fps: DEFAULT_FPS,
-      fpsSource: 'default',
-    },
+    ...view,
+    isOpen: true,
+    fileName: video.file.name,
+    currentPath: video.path,
+    file: video.file,
+    objectUrl: URL.createObjectURL(toPlayableBlob(video.file)),
+    // まず再生させてみる。コーデックの詮索は失敗してからで十分
+    status: 'ready',
+    message: '',
+    codec: null,
+    fps: DEFAULT_FPS,
+    fpsSource: 'default',
   };
+}
+
+/** 1 面だけを差し替えた roll を返す */
+function withView(roll: RollState, id: RollId, next: RollViewState): RollState {
+  return { ...roll, views: { ...roll.views, [id]: next } };
 }
 
 export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set, get) => ({
   roll: initialRoll,
 
-  openRollWindow: () => set((state) => ({ roll: { ...state.roll, isOpen: true } })),
+  openRollWindow: (id) =>
+    set((state) => ({
+      roll: withView({ ...state.roll, activeId: id }, id, { ...state.roll.views[id], isOpen: true }),
+    })),
 
-  closeRollWindow: () =>
+  closeRollWindow: (id) =>
     set((state) => {
-      releaseUrl(state.roll.objectUrl);
-      // ウィンドウの位置・切り離し状態は残し、素材だけ手放す
-      return { roll: { ...initialRoll, isFloating: state.roll.isFloating } };
+      const view = state.roll.views[id];
+      releaseUrl(view.objectUrl);
+      // ウィンドウの切り離し状態は次に開いたときのために残し、素材だけ手放す
+      return { roll: withView(state.roll, id, { ...emptyView(), isFloating: view.isFloating }) };
     }),
 
-  toggleRollFloating: () =>
-    set((state) => ({ roll: { ...state.roll, isFloating: !state.roll.isFloating } })),
+  toggleRollFloating: (id) =>
+    set((state) => ({
+      roll: withView(state.roll, id, {
+        ...state.roll.views[id],
+        isFloating: !state.roll.views[id].isFloating,
+      }),
+    })),
 
-  loadRollFile: (file) => set((state) => openVideo(state.roll, { path: file.name, file })),
+  setActiveRollId: (id) => set((state) => ({ roll: { ...state.roll, activeId: id } })),
 
-  /**
-   * フォルダの中で見つかったロールをまとめて受け取り、先頭を開く。
-   *
-   * 1 つのフォルダに複数のロールが入っている運用があるので、一覧を保持して
-   * ツリーから選んだり順に送ったりできるようにする。
-   */
-  loadRollFiles: (videos, folderName) =>
+  loadRollFile: (id, file) =>
+    set((state) => ({
+      roll: withView(
+        { ...state.roll, activeId: id },
+        id,
+        openedView(state.roll.views[id], { path: file.name, file })
+      ),
+    })),
+
+  loadRollFiles: (id, videos, folderName) =>
     set((state) => {
       if (videos.length === 0) return state;
-      const opened = openVideo(state.roll, videos[0]);
-      return { roll: { ...opened.roll, folderName, files: videos } };
+      const roll = { ...state.roll, files: videos, folderName, activeId: id };
+      return { roll: withView(roll, id, openedView(state.roll.views[id], videos[0])) };
     }),
 
   setRollFolderFiles: (videos, folderName) =>
-    set((state) => ({ roll: { ...state.roll, folderName, files: videos } })),
+    set((state) => ({ roll: { ...state.roll, files: videos, folderName } })),
 
-  selectRollFile: (path) =>
+  selectRollFile: (id, path) =>
     set((state) => {
-      if (path === state.roll.currentPath) return state;
+      if (path === state.roll.views[id].currentPath) return state;
       const target = state.roll.files.find((v) => v.path === path);
       if (!target) return state;
-      const opened = openVideo(state.roll, target);
-      return { roll: { ...opened.roll, folderName: state.roll.folderName, files: state.roll.files } };
+      const roll = { ...state.roll, activeId: id };
+      return { roll: withView(roll, id, openedView(state.roll.views[id], target)) };
     }),
 
-  stepRoll: (delta) => {
-    const { files, currentPath } = get().roll;
+  stepRoll: (id, delta) => {
+    const { files, views } = get().roll;
     if (files.length <= 1) return;
 
-    const at = files.findIndex((v) => v.path === currentPath);
+    const at = files.findIndex((v) => v.path === views[id].currentPath);
     const next = Math.max(0, Math.min(files.length - 1, (at < 0 ? 0 : at) + delta));
     if (next === at) return;
-    get().selectRollFile(files[next].path);
+    get().selectRollFile(id, files[next].path);
   },
 
   /**
@@ -136,13 +160,13 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
    * 「再生できません」だけでは打つ手が分からないので、実際のコーデック名と
    * 変換コマンドまで出す。判別に失敗しても、その旨を返して黙らないこと。
    */
-  reportRollPlaybackFailure: async () => {
-    const { file, fileName } = get().roll;
-    if (!file) return;
+  reportRollPlaybackFailure: async (id) => {
+    const view = get().roll.views[id];
+    if (!view.file) return;
 
     let codec = null;
     try {
-      codec = await probeVideoCodec(file);
+      codec = await probeVideoCodec(view.file);
     } catch (e) {
       console.error('Failed to probe codec:', e);
     }
@@ -150,21 +174,44 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
     const message = codec
       ? `このロールは ${codec.label} (${codec.fourcc}) で書き出されています。\n` +
         `ブラウザにこのコーデックのデコーダが無いため、そのままでは再生できません。\n\n` +
-        conversionHint(fileName)
+        conversionHint(view.fileName)
       : `このファイルを再生できませんでした。コーデックを判別できていません。\n` +
         `ProRes・DNxHD・非圧縮などはブラウザでは再生できません。\n\n` +
-        conversionHint(fileName);
+        conversionHint(view.fileName);
 
     set((state) => ({
-      roll: { ...state.roll, status: codec ? 'unsupported' : 'error', message, codec },
+      roll: withView(state.roll, id, {
+        ...state.roll.views[id],
+        status: codec ? 'unsupported' : 'error',
+        message,
+        codec,
+      }),
     }));
   },
 
-  setRollFps: (fps, source) =>
+  setRollFps: (id, fps, source) =>
     set((state) => {
+      const view = state.roll.views[id];
       // 手動で決めた値を自動推定で上書きしない
-      if (source === 'auto' && state.roll.fpsSource === 'manual') return state;
+      if (source === 'auto' && view.fpsSource === 'manual') return state;
       if (!(fps > 0) || !Number.isFinite(fps)) return state;
-      return { roll: { ...state.roll, fps, fpsSource: source } };
+      return { roll: withView(state.roll, id, { ...view, fps, fpsSource: source }) };
+    }),
+
+  /**
+   * 2 面の再生を連動させる / やめる。
+   *
+   * ⚠️ 連動を始めた時点の時刻差を保つこと。片方を頭出ししてから連動させる使い方が
+   * あるので、強制的に同じ時刻へ合わせると狙って選んだ位置がずれる
+   * (セルの左右連動と同じ考え方)。時刻は再生中の実体から読むため、
+   * 差の計算は呼び出し側 (RollViewer) が渡す。
+   */
+  toggleRollSync: (offset = 0) =>
+    set((state) => {
+      if (state.roll.sync) return { roll: { ...state.roll, sync: false } };
+      const open = ROLL_IDS.filter((id) => state.roll.views[id].isOpen);
+      // 片方しか開いていなければ連動しても意味がない
+      if (open.length < 2) return state;
+      return { roll: { ...state.roll, sync: true, syncOffset: offset } };
     }),
 });

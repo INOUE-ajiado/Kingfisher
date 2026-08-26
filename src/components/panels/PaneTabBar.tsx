@@ -41,9 +41,13 @@ const TONE: Record<PaneId, { active: string; idle: string }> = {
     active: 'bg-teal-600 text-white border-teal-700',
     idle: 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-900',
   },
-  roll: {
+  rollA: {
     active: 'bg-indigo-600 text-white border-indigo-700',
     idle: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900',
+  },
+  rollB: {
+    active: 'bg-violet-600 text-white border-violet-700',
+    idle: 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-900',
   },
 };
 
