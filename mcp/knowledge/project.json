@@ -180,6 +180,12 @@
       "title": ".mov は MIME を付け替える。ProRes は原理的に再生できない",
       "detail": "実測 (2026-08-26 / 本番の Chrome): video/quicktime は canPlayType が空を返すため、File をそのまま <video> に渡しても再生できない。file.slice(0, file.size, \"video/mp4\") でデータをコピーせず MIME だけ差し替えること (new Blob([file]) は全体をメモリへ載せる)。H.264 / VP9 / AV1 は再生可。ProRes (apcn/apch/ap4h 等)・DNxHD・非圧縮は <video>・MSE・WebCodecs のいずれも非対応。HEVC は環境依存。",
       "location": "src/engine/videoSource.ts"
+    },
+    {
+      "id": "roll-drop-routing",
+      "title": "セルの窓に落とされた動画はロールウィンドウへ回す",
+      "detail": "Win A / Win B の D&D は画像フォルダ用だが、撮影ロールをそこへ落とすのは自然な操作で、しかもロールウィンドウを閉じていると落とす先が他に無い。handleFolderOrFilesNativeDrop は画像が 1 枚も無かったとき、dataTransfer.files に動画があれば loadRollFile へ回す (loadRollFile が窓も開く)。ここを「画像が見つかりません」で突き放さないこと。",
+      "location": "src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -385,7 +391,8 @@
         "本番ビルドで Ctrl+Alt+<文字> が右パネルを開閉しないこと / Ctrl+Alt の成立でトグルすること (2026-08-26)",
         "フォルダ未オープンで再生を押しても UI が壊れず NaN が出ないこと (2026-08-26)",
         "消しゴム・ゴミ取り・バケツ塗りが encodeTGA / decodeTGA の往復を越えて保持されること (saveRoundTrip.test.ts)",
-        "撮影ロールの再生を実映像で確認 (2026-08-27): .mp4 と .mov の双方で readyState=4 / 尺 1.966s / 320px / デコードエラー無し、本物のクリックで再生・一時停止・タイムコード更新、コマ送りも前後とも動作"
+        "撮影ロールの再生を実映像で確認 (2026-08-27): .mp4 と .mov の双方で readyState=4 / 尺 1.966s / 320px / デコードエラー無し、本物のクリックで再生・一時停止・タイムコード更新、コマ送りも前後とも動作",
+        "ロールの D&D を実映像で確認 (2026-08-27): ロールウィンドウへの直接ドロップと、ロールウィンドウを閉じた状態で Win A へ落として自動で開く経路の両方が動作"
       ],
       "nextStep": "コピーしたフォルダで (1) 階層のあるカットの保存 (2) D&D したフォルダへの保存 (3) 連番リネーム (4) サブフォルダをまたぐ複数選択のリネーム (5) 削除・複製 (6) ツリーの選択が飛ばないこと (7) 消しゴム→保存→開き直しで消えたままか を順に確認する。"
     },

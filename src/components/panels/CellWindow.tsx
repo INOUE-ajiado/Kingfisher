@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
+import { isVideoFile } from '../../engine/videoSource';
 import {
   floodFill,
   gradientFill,
@@ -58,6 +59,7 @@ export const CellWindow: React.FC = () => {
     fps,
     roll,
     toggleRollFloating,
+    loadRollFile,
     showGrid,
     showRuler,
     showUnpaintedFlash,
@@ -501,7 +503,18 @@ export const CellWindow: React.FC = () => {
     }
 
     if (fileMap.size === 0) {
-      alert('ドロップされた中に画像ファイル (.tga / .png / .jpg) が見つかりませんでした。');
+      // ⚠️ 画像が無いというだけで突き放さないこと。撮影ロールをセルの窓へ落とすのは
+      // 自然な操作で、しかもロールウィンドウを閉じていると落とす先が他に無い。
+      // 動画が入っていればロールとして開いてしまう。
+      const video = plainFiles.find((f) => isVideoFile(f.name));
+      if (video) {
+        loadRollFile(video);
+        return;
+      }
+      alert(
+        'ドロップされた中に画像ファイル (.tga / .png / .jpg) が見つかりませんでした。\n' +
+          '撮影ロールは .mov / .mp4 に対応しています。'
+      );
       return;
     }
 
