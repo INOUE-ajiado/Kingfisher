@@ -198,6 +198,12 @@
       "title": "ファイル一覧の並べ替えは sortNatural を通す",
       "detail": "素の Array.prototype.sort() を使わないこと。辞書順になるため、ゼロ埋めされていない連番が a1, a10, a11, a2 … と並ぶ。src/engine/naturalOrder.ts の sortNatural / compareNatural (Intl.Collator の numeric: true) を使う。照合器は使い回すこと — localeCompare を都度呼ぶと数千コマのカットで遅くなる。ツリーは fileListA / fileListB の順、連番表は unifiedFileList の順を使うので、両方を同じ基準で並べないと表示が食い違う。",
       "location": "src/engine/naturalOrder.ts"
+    },
+    {
+      "id": "dock-tab-on-right-edge",
+      "title": "縦帯の跡地では、戻すタブを右端に縦向きで置く",
+      "detail": "参照ウィンドウ・ロールウィンドウを切り離したときの跡地 (DockPlaceholder の strip-v) は、ドロップ先のタブを帯の右端に縦向きで置く。2026-08-27 にユーザーの指定で上端から変更した。上端に横向きで置くと、編集エリアの右隣にある帯の中で本体から遠く、タブを持って行きにくい。上端へ戻す変更を提案しないこと。",
+      "location": "src/components/common/DockPlaceholder.tsx"
     }
   ],
   "workflow": {
