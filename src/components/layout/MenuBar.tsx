@@ -285,10 +285,16 @@ export const MenuBar: React.FC = () => {
           action: () => (referenceCanvas.isOpen ? closeReferenceWindow() : openReferenceImage()),
         },
         {
-          label: '撮影ロールを表示 (.mov / .mp4)',
+          label: '撮影ロール A を表示 (.mov / .mp4)',
           shortcut: '',
-          checked: roll.isOpen,
-          action: () => (roll.isOpen ? closeRollWindow() : openRollWindow()),
+          checked: roll.views.rollA.isOpen,
+          action: () => (roll.views.rollA.isOpen ? closeRollWindow('rollA') : openRollWindow('rollA')),
+        },
+        {
+          label: '撮影ロール B を表示 (修正前後の見比べ用)',
+          shortcut: '',
+          checked: roll.views.rollB.isOpen,
+          action: () => (roll.views.rollB.isOpen ? closeRollWindow('rollB') : openRollWindow('rollB')),
         },
         {
           label: '参照画面: 垂直分割',

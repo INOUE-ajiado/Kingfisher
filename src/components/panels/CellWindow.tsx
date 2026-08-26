@@ -20,7 +20,8 @@ import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
 import { RollViewer } from './RollViewer';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
-import { PaneId } from '../../engine/paneLayout';
+import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
+import { RollId } from '../../store/types';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -511,7 +512,8 @@ export const CellWindow: React.FC = () => {
       // 入っておらず、中の .mov / .mp4 が見えない。ハンドルとエントリも渡して中を探す。
       const videos = await collectDroppedVideoFiles(plainFiles, handles, entries);
       if (videos.length > 0) {
-        loadRollFiles(videos, commonRootName(videos));
+        // 開く面は「今アクティブなロール」。連動して見比べたい側へ落とせる
+        loadRollFiles(roll.activeId, videos, commonRootName(videos));
         return;
       }
       alert(
@@ -1135,9 +1137,16 @@ export const CellWindow: React.FC = () => {
       winA: true,
       winB: isSplitView,
       reference: referenceCanvas.isOpen,
-      roll: roll.isOpen,
+      rollA: roll.views.rollA.isOpen,
+      rollB: roll.views.rollB.isOpen,
     });
-  }, [isSplitView, referenceCanvas.isOpen, roll.isOpen, syncPaneVisibility]);
+  }, [
+    isSplitView,
+    referenceCanvas.isOpen,
+    roll.views.rollA.isOpen,
+    roll.views.rollB.isOpen,
+    syncPaneVisibility,
+  ]);
 
   // --- 各面の中身。並べる順序はレイアウトが決めるので、ここでは組み立てるだけ ---
 
@@ -1443,18 +1452,19 @@ export const CellWindow: React.FC = () => {
     </>
   );
 
-  const rollPaneContent = (
+  /** ロールは 2 面ある (修正前 / 修正後を並べて見比べるため) */
+  const rollPaneContent = (id: RollId) => (
     <>
-            {roll.isFloating && (
-              <DockPlaceholder
-                id="roll-dock-target"
-                label="ロール"
-                onRestore={toggleRollFloating}
-                isActive={false}
-                variant="strip-v"
-              />
-            )}
-            <RollViewer />
+      {roll.views[id].isFloating && (
+        <DockPlaceholder
+          id={`${id}-dock-target`}
+          label={PANE_LABELS[id]}
+          onRestore={() => toggleRollFloating(id)}
+          isActive={false}
+          variant="strip-v"
+        />
+      )}
+      <RollViewer rollId={id} />
     </>
   );
 
@@ -1462,7 +1472,7 @@ export const CellWindow: React.FC = () => {
     if (pane === 'winA') return winAPaneContent;
     if (pane === 'winB') return winBPaneContent;
     if (pane === 'reference') return referencePaneContent;
-    if (pane === 'roll') return rollPaneContent;
+    if (pane === 'rollA' || pane === 'rollB') return rollPaneContent(pane);
     return null;
   };
 
@@ -1476,7 +1486,7 @@ export const CellWindow: React.FC = () => {
   const closePane = (pane: PaneId) => {
     if (pane === 'winB' && isSplitView) toggleIsSplitView();
     else if (pane === 'reference') closeReferenceWindow();
-    else if (pane === 'roll') closeRollWindow();
+    else if (pane === 'rollA' || pane === 'rollB') closeRollWindow(pane);
   };
 
   /** 一面表示中はその枠だけを、幅いっぱいに出す */
