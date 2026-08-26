@@ -192,6 +192,12 @@
       "title": "単独フォルダを開くときは setCutRootFolder を通さない",
       "detail": "setCutRootFolder は「カットを開き直す」操作で、A と B の両方を組み直す。サブフォルダが 1 つしか無いと defaultDirB が決まらず fileListB が空になるため、片側だけ開き直したいときに使うと Win B の中身が消え、2 画面 + 連動が使えなくなる。サブフォルダを持たないフォルダは openPlainFolderAsA を使うこと (Win B に触れず、前のカットのサブフォルダ一覧だけ捨てる)。なお setFolderHandleA/B はリネーム・複製・削除後の一覧更新にも使われているので、あちらにカット状態を捨てる処理を足してはいけない。",
       "location": "src/store/slices/fileSlice.ts, src/components/layout/MenuBar.tsx"
+    },
+    {
+      "id": "natural-file-order",
+      "title": "ファイル一覧の並べ替えは sortNatural を通す",
+      "detail": "素の Array.prototype.sort() を使わないこと。辞書順になるため、ゼロ埋めされていない連番が a1, a10, a11, a2 … と並ぶ。src/engine/naturalOrder.ts の sortNatural / compareNatural (Intl.Collator の numeric: true) を使う。照合器は使い回すこと — localeCompare を都度呼ぶと数千コマのカットで遅くなる。ツリーは fileListA / fileListB の順、連番表は unifiedFileList の順を使うので、両方を同じ基準で並べないと表示が食い違う。",
+      "location": "src/engine/naturalOrder.ts"
     }
   ],
   "workflow": {
@@ -385,6 +391,10 @@
     {
       "symptom": "2 画面で開いて連動を押しても Win B が動かない (Win B が空になっている)",
       "cause": "メニューの「フォルダを開く」がサブフォルダの無いフォルダも setCutRootFolder に流していた。setCutRootFolder は A と B の両方を組み直すので、サブフォルダが (Root) 1 つだけだと fileListB を空にする。openPlainFolderAsA を新設して Win B に触れない経路にした"
+    },
+    {
+      "symptom": "ファイルツリーの並びが連番順にならない (a1, a10, a11, a2, a3 … のように 1 の次が 10 になる)",
+      "cause": "ファイル一覧を素の Array.prototype.sort() で並べており辞書順になっていた。連番表 (unifiedFileList) はフレーム番号で数値順に並ぶため、ツリーだけ並びが食い違って見えていた。ゼロ埋めが揃っていれば表面化しないが、撮影・仕上げのデータでは揃っていないことが普通にある。Win A と Win B の両方を読み込んだとき (ツリーが 2 本になるとき) に出る"
     }
   ],
   "openIssues": [

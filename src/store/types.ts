@@ -8,6 +8,7 @@
 
 import { TGAImage } from '../engine/tga';
 import { RenamePlanItem } from '../engine/renamePlan';
+import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo } from '../engine/videoSource';
 
 export type { VideoCodecInfo };
@@ -188,7 +189,7 @@ export function buildMergedFrameData(
     if (aNum && bNum) return parseInt(a, 10) - parseInt(b, 10);
     if (aNum) return -1;
     if (bNum) return 1;
-    return a.localeCompare(b);
+    return compareNatural(a, b);
   });
 
   const unifiedFiles: string[] = [];
