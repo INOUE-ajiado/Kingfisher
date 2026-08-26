@@ -235,6 +235,12 @@
       "title": "ロールはフォルダ単位で一覧を持つ",
       "detail": "1 つのフォルダに複数のロールを入れて順に確認する運用があるため、ドロップされたフォルダからは collectDroppedVideoFiles で全部集め、roll.files に持つ。並びは「浅い階層が先、その中は自然順」で、1 本だけ開くときの先頭もこの順序で決まる。⚠️ セルのツリー (TreeItemNode) をロールに使い回さないこと。あちらはコマ番号・複数選択・リネームや削除の右クリックまで抱えており、ロールには当てはまらない。ロールは RollFileTree が担当する。",
       "location": "src/engine/videoSource.ts, src/components/panels/RollFileTree.tsx"
+    },
+    {
+      "id": "tree-dispatches-by-extension",
+      "title": "ファイルツリーが入口。拡張子で表示先を決める",
+      "detail": "2026-08-27 に「窓の型に合わせてファイルを落とす」から「どこへ落としてもフォルダを開き、ツリーから開いたファイルの拡張子で表示先が決まる」へ変えた。ドロップは App の一番外側で受ける (Win A / Win B / ロールの窓は自前の処理で stopPropagation しているので、そこへ落とした分はここへ来ない)。走査は engine/dropFolder.ts の readDroppedFolder に一本化すること。⚠️ 映像を fileListA / unifiedFileList へ混ぜないこと。あちらはフレーム番号で対応づける連番の器で、映像名が混ざるとコマの対応が壊れる。表示用の並びとして後ろに足し、位置が連番の長さを超えたら映像として扱う。セル画像は activeViewIndex の側 (Win A / Win B) へ出す。",
+      "location": "src/App.tsx, src/engine/dropFolder.ts, src/components/panels/FileBrowser.tsx"
     }
   ],
   "workflow": {

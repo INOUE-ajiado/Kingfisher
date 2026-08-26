@@ -108,6 +108,9 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       return { roll: { ...opened.roll, folderName, files: videos } };
     }),
 
+  setRollFolderFiles: (videos, folderName) =>
+    set((state) => ({ roll: { ...state.roll, folderName, files: videos } })),
+
   selectRollFile: (path) =>
     set((state) => {
       if (path === state.roll.currentPath) return state;
