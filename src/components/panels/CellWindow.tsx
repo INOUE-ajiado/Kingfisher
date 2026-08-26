@@ -19,6 +19,8 @@ import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
 import { RollViewer } from './RollViewer';
+import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
+import { PaneId } from '../../engine/paneLayout';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -61,14 +63,22 @@ export const CellWindow: React.FC = () => {
     roll,
     toggleRollFloating,
     loadRollFile,
+    closeRollWindow,
+    closeReferenceWindow,
+    toggleIsSplitView,
+    paneLayout,
+    syncPaneVisibility,
+    setActivePaneInSlot,
+    stackPaneOnSlot,
+    movePaneToPosition,
+    toggleMaximizedPane,
+    setPaneSlotFlex,
     showGrid,
     showRuler,
     showUnpaintedFlash,
     pegStabilizer,
     referenceCanvas,
     colorSpecLayoutMode,
-    mainAreaSplitRatio,
-    setMainAreaSplitRatio,
     isWinAFloating,
     isWinBFloating,
     toggleWinAFloating,
@@ -213,47 +223,54 @@ export const CellWindow: React.FC = () => {
   // ドラッグ中はストアを毎フレーム更新せず、flexGrow を直接書き換える。
   // 確定値は離した時にだけ保存するので、React の再描画が挟まらず滑らかに動く。
   const splitRowRef = useRef<HTMLDivElement | null>(null);
-  const mainAreaRef = useRef<HTMLDivElement | null>(null);
-  const referenceAreaRef = useRef<HTMLDivElement | null>(null);
 
-  const handleSplitterPointerDown = (e: React.PointerEvent) => {
+  /**
+   * 枠と枠のあいだの仕切り。ドラッグで左右の取り分を変える。
+   *
+   * ⚠️ ドラッグ中は DOM の flexGrow を直接書き、離した時だけストアへ確定する。
+   * 毎フレーム state を更新すると、キャンバスを持つ面が付いてこられない。
+   */
+  const handleSlotResizePointerDown = (e: React.PointerEvent, leftId: string, rightId: string) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
 
     const row = splitRowRef.current;
-    if (!row) return;
+    const leftEl = row?.querySelector<HTMLElement>(`[data-slot-id="${leftId}"]`);
+    const rightEl = row?.querySelector<HTMLElement>(`[data-slot-id="${rightId}"]`);
+    if (!leftEl || !rightEl) return;
 
-    const rect = row.getBoundingClientRect();
-    const vertical = isHorizontalSplit;
-    let ratio = mainAreaSplitRatio;
+    const leftFlex = paneLayout.slots.find((sl) => sl.id === leftId)?.flexGrow ?? 1;
+    const rightFlex = paneLayout.slots.find((sl) => sl.id === rightId)?.flexGrow ?? 1;
+    const sum = leftFlex + rightFlex;
 
-    const applyRatio = (value: number) => {
-      ratio = Math.min(0.85, Math.max(0.15, value));
-      if (mainAreaRef.current) mainAreaRef.current.style.flexGrow = String(ratio);
-      if (referenceAreaRef.current) referenceAreaRef.current.style.flexGrow = String(1 - ratio);
-    };
+    const startX = leftEl.getBoundingClientRect().left;
+    const totalPx = leftEl.getBoundingClientRect().width + rightEl.getBoundingClientRect().width;
+    if (totalPx <= 0) return;
+
+    let nextLeft = leftFlex;
+    let nextRight = rightFlex;
 
     const onPointerMove = (ev: PointerEvent) => {
-      const raw = vertical
-        ? (ev.clientY - rect.top) / rect.height
-        : (ev.clientX - rect.left) / rect.width;
-      if (Number.isFinite(raw)) applyRatio(raw);
+      const ratio = Math.min(0.85, Math.max(0.15, (ev.clientX - startX) / totalPx));
+      nextLeft = sum * ratio;
+      nextRight = sum * (1 - ratio);
+      leftEl.style.flexGrow = String(nextLeft);
+      rightEl.style.flexGrow = String(nextRight);
     };
 
     const finish = () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', finish);
       window.removeEventListener('pointercancel', finish);
-      setMainAreaSplitRatio(ratio);
+      setPaneSlotFlex(leftId, nextLeft);
+      setPaneSlotFlex(rightId, nextRight);
     };
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', finish);
     window.addEventListener('pointercancel', finish);
   };
-
-  const resetSplitRatio = () => setMainAreaSplitRatio(0.5);
 
   /**
    * アクティブなウィンドウを示す枠線。
@@ -415,6 +432,10 @@ export const CellWindow: React.FC = () => {
    * 従来どおりエントリ経由で読み込み、保存だけができない扱いにする。
    */
   const handleFolderOrFilesNativeDrop = async (e: React.DragEvent, targetWin: 'winA' | 'winB') => {
+    // ⚠️ タブの移動をここで拾わないこと。ファイルが 1 つも無いので
+    // 「画像ファイルが見つかりませんでした」が出てしまう
+    if (isPaneDrag(e.dataTransfer)) return;
+
     e.preventDefault();
     e.stopPropagation();
 
@@ -1102,34 +1123,26 @@ export const CellWindow: React.FC = () => {
   const isDockedReference = referenceCanvas.isOpen && !referenceCanvas.isFloating;
   const isHorizontalSplit = isDockedReference && colorSpecLayoutMode === 'split-horizontal';
 
-  return (
-    <div
-      ref={containerRef}
-      id="main-workspace-area"
-      className={`flex-1 flex flex-col relative overflow-hidden select-none transition-colors ${
-        canvasBgMatteMode === 'checkerboard'
-          ? 'checkerboard-pattern bg-slate-300 dark:bg-slate-950'
-          : canvasBgMatteMode === 'black'
-          ? 'bg-black'
-          : canvasBgMatteMode === 'white'
-          ? 'bg-white'
-          : canvasBgMatteMode === 'magenta'
-          ? 'bg-[#ff00ff]'
-          : ''
-      }`}
-      style={canvasBgMatteMode === 'custom' ? { backgroundColor: canvasCustomBgColor } : undefined}
-    >
-      {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
-      <div
-        ref={splitRowRef}
-        className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}
-      >
-        {/* メイン編集エリア (Win A / Win B 独立フローティング対応) */}
-        <div
-          ref={mainAreaRef}
-          style={isDockedReference ? { flexGrow: mainAreaSplitRatio, flexBasis: 0, minWidth: 200 } : undefined}
-          className="flex-1 flex overflow-hidden gap-0.5 relative"
-        >
+  /**
+   * 開いている面とレイアウトを揃える。
+   *
+   * ⚠️ 開閉のフラグ (isSplitView / referenceCanvas.isOpen / roll.isOpen) は
+   * 連動やファイル読み込みからも参照されているので、真実の源はあちらのまま。
+   * ここで一方向に流し込むことで、既存のメニューやショートカットを書き換えずに済む。
+   */
+  useEffect(() => {
+    syncPaneVisibility({
+      winA: true,
+      winB: isSplitView,
+      reference: referenceCanvas.isOpen,
+      roll: roll.isOpen,
+    });
+  }, [isSplitView, referenceCanvas.isOpen, roll.isOpen, syncPaneVisibility]);
+
+  // --- 各面の中身。並べる順序はレイアウトが決めるので、ここでは組み立てるだけ ---
+
+  const winAPaneContent = (
+    <>
           {/* 左ビュー (Win A / Dir A) */}
           <div
             ref={winAWindow.targetRef}
@@ -1270,7 +1283,11 @@ export const CellWindow: React.FC = () => {
               isActive={winAWindow.isOverDockTarget}
             />
           )}
+    </>
+  );
 
+  const winBPaneContent = (
+    <>
           {/* 右ビュー (Win B / Dir B / Split View 有効時) */}
           {isSplitView && (
             <div
@@ -1408,42 +1425,11 @@ export const CellWindow: React.FC = () => {
               isActive={winBWindow.isOverDockTarget}
             />
           )}
-        </div>
+    </>
+  );
 
-        {/* メイン編集エリアと参照ウィンドウの境界線 (ドラッグで左右の取り分を調整) */}
-        {isDockedReference && (
-          <div
-            onPointerDown={handleSplitterPointerDown}
-            onDoubleClick={resetSplitRatio}
-            title="ドラッグで表示領域の広さを調整 (ダブルクリックで左右均等に戻す)"
-            className={`flex-shrink-0 z-20 touch-none flex items-center justify-center group bg-slate-300 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 transition-colors ${
-              isHorizontalSplit ? 'h-1.5 w-full cursor-row-resize' : 'w-1.5 h-full cursor-col-resize'
-            }`}
-          >
-            <div
-              className={`bg-slate-500/60 group-hover:bg-white rounded-full transition-colors ${
-                isHorizontalSplit ? 'w-8 h-0.5' : 'h-8 w-0.5'
-              }`}
-            />
-          </div>
-        )}
-
-        {/* 参照ウィンドウ。独立表示中は position:fixed で浮くため、
-            この枠には帯状のドッキング領域だけが残る */}
-        {referenceCanvas.isOpen && (
-          <div
-            ref={referenceAreaRef}
-            style={
-              isDockedReference
-                ? { flexGrow: 1 - mainAreaSplitRatio, flexBasis: 0, minWidth: 200 }
-                : undefined
-            }
-            className={
-              referenceCanvas.isFloating
-                ? `flex-shrink-0 flex ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`
-                : 'flex-1 flex flex-col min-w-[240px]'
-            }
-          >
+  const referencePaneContent = (
+    <>
             {referenceCanvas.isFloating && (
               <DockPlaceholder
                 id="reference-dock-target"
@@ -1454,18 +1440,11 @@ export const CellWindow: React.FC = () => {
               />
             )}
             <ReferenceCanvasView onDockHoverChange={setIsReferenceOverDock} />
-          </div>
-        )}
+    </>
+  );
 
-        {/* 撮影上がりロールの再生ウィンドウ。参照ウィンドウと同じくドッキング / 切り離しができる */}
-        {roll.isOpen && (
-          <div
-            className={
-              roll.isFloating
-                ? 'flex-shrink-0 flex flex-col'
-                : 'flex-1 flex flex-col min-w-[280px]'
-            }
-          >
+  const rollPaneContent = (
+    <>
             {roll.isFloating && (
               <DockPlaceholder
                 id="roll-dock-target"
@@ -1476,8 +1455,92 @@ export const CellWindow: React.FC = () => {
               />
             )}
             <RollViewer />
-          </div>
-        )}
+    </>
+  );
+
+  const renderPane = (pane: PaneId): React.ReactNode => {
+    if (pane === 'winA') return winAPaneContent;
+    if (pane === 'winB') return winBPaneContent;
+    if (pane === 'reference') return referencePaneContent;
+    if (pane === 'roll') return rollPaneContent;
+    return null;
+  };
+
+  /**
+   * タブの × で面を閉じる。
+   *
+   * ⚠️ レイアウトから直接消さないこと。開いているかどうかは従来どおり
+   * 各スライスのフラグが持っており、そちらを動かせば同期でレイアウトも畳まれる。
+   * Win A は編集の主対象なので閉じさせない。
+   */
+  const closePane = (pane: PaneId) => {
+    if (pane === 'winB' && isSplitView) toggleIsSplitView();
+    else if (pane === 'reference') closeReferenceWindow();
+    else if (pane === 'roll') closeRollWindow();
+  };
+
+  /** 一面表示中はその枠だけを、幅いっぱいに出す */
+  const slotsToRender = paneLayout.maximized
+    ? paneLayout.slots
+        .filter((slot) => slot.panes.includes(paneLayout.maximized as PaneId))
+        .map((slot) => ({ ...slot, activePane: paneLayout.maximized as PaneId, flexGrow: 1 }))
+    : paneLayout.slots;
+
+  return (
+    <div
+      ref={containerRef}
+      id="main-workspace-area"
+      className={`flex-1 flex flex-col relative overflow-hidden select-none transition-colors ${
+        canvasBgMatteMode === 'checkerboard'
+          ? 'checkerboard-pattern bg-slate-300 dark:bg-slate-950'
+          : canvasBgMatteMode === 'black'
+          ? 'bg-black'
+          : canvasBgMatteMode === 'white'
+          ? 'bg-white'
+          : canvasBgMatteMode === 'magenta'
+          ? 'bg-[#ff00ff]'
+          : ''
+      }`}
+      style={canvasBgMatteMode === 'custom' ? { backgroundColor: canvasCustomBgColor } : undefined}
+    >
+      {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
+      <div
+        ref={splitRowRef}
+        className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}
+      >
+        {/*
+          作業領域。どの面をどこへ、どう重ねて出すかは paneLayout が持つ。
+          ⚠️ ここに面の順序を直接書かないこと。以前は Win A → Win B → 見本 → ロール の
+          順序が JSX に固定されており、入れ替えも一面表示もできなかった。
+        */}
+        {slotsToRender.map((slot, index) => (
+          <React.Fragment key={slot.id}>
+            <PaneDropGap index={index} onDropPane={movePaneToPosition} />
+            <div
+              data-slot-id={slot.id}
+              className="flex flex-col min-w-0 gap-0.5 overflow-hidden"
+              style={{ flexGrow: slot.flexGrow, flexBasis: 0 }}
+            >
+              <PaneTabBar
+                slot={slot}
+                maximized={paneLayout.maximized}
+                onSelect={(pane) => setActivePaneInSlot(slot.id, pane)}
+                onClose={closePane}
+                onToggleMaximize={toggleMaximizedPane}
+                onDropOnSlot={(pane) => stackPaneOnSlot(pane, slot.id)}
+              />
+              <div className="flex-1 flex min-h-0 gap-0.5">{renderPane(slot.activePane)}</div>
+            </div>
+            {index < slotsToRender.length - 1 && (
+              <div
+                onPointerDown={(e) => handleSlotResizePointerDown(e, slot.id, slotsToRender[index + 1].id)}
+                title="ドラッグで左右の取り分を調整"
+                className="flex-shrink-0 w-1.5 cursor-col-resize touch-none bg-slate-300 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 transition-colors rounded"
+              />
+            )}
+          </React.Fragment>
+        ))}
+        <PaneDropGap index={slotsToRender.length} onDropPane={movePaneToPosition} />
       </div>
     </div>
   );

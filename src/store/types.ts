@@ -10,6 +10,9 @@ import { TGAImage } from '../engine/tga';
 import { RenamePlanItem } from '../engine/renamePlan';
 import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo } from '../engine/videoSource';
+import { PaneLayout, PaneId } from '../engine/paneLayout';
+
+export type { PaneLayout, PaneId };
 
 export type { VideoCodecInfo };
 
@@ -583,6 +586,24 @@ export interface SaveResult {
   cancelled?: boolean;
 }
 
+export interface LayoutSlice {
+  /** 作業領域の並び順・重なり・一面表示 */
+  paneLayout: PaneLayout
+  /** 開いている面とレイアウトを揃える。開閉フラグが変わったときに呼ぶ */
+  syncPaneVisibility: (visible: Record<PaneId, boolean>) => void
+  setActivePaneInSlot: (slotId: string, pane: PaneId) => void
+  /** 面を別の枠へ重ねる (タブとして移す) */
+  stackPaneOnSlot: (pane: PaneId, slotId: string) => void
+  /** 面を独立した枠として、指定の位置へ差し込む */
+  movePaneToPosition: (pane: PaneId, index: number) => void
+  swapPanePositions: (a: PaneId, b: PaneId) => void
+  toggleMaximizedPane: (pane: PaneId) => void
+  setPaneSlotFlex: (slotId: string, flexGrow: number) => void
+  evenOutPaneSlots: () => void
+  /** 開いている面はそのままに、並びだけ既定へ戻す */
+  resetPaneLayout: () => void
+}
+
 export interface PaintStore
   extends UiSlice,
     ViewSlice,
@@ -592,7 +613,8 @@ export interface PaintStore
     ToolSlice,
     EditSlice,
     LightTableSlice,
-    RollSlice {}
+    RollSlice,
+    LayoutSlice {}
 
 export const defaultColors: PaletteItem[] = [
   { id: '1', name: 'Hair', color: { r: 255, g: 215, b: 0, a: 255, hex: '#FFD700' } },
