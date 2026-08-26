@@ -13,6 +13,9 @@
  *     出して変換を促す。
  */
 
+import { readAllDirectoryEntries } from './fileSystemPath';
+import { compareNatural } from './naturalOrder';
+
 /** Kingfisher が再生を試みる動画ファイル */
 export const VIDEO_FILE_PATTERN = /\.(mov|mp4|m4v|webm)$/i;
 
@@ -211,4 +214,112 @@ export function estimateFps(mediaTimes: number[]): number | null {
   );
   if (Math.abs(nearest - raw) / nearest < 0.02) return nearest;
   return Math.round(raw * 1000) / 1000;
+}
+
+/** ドロップされたフォルダを何段まで潜って動画を探すか */
+const DROP_SEARCH_DEPTH = 3;
+
+async function firstVideoInDirectoryHandle(dir: any, depth = 0): Promise<File | null> {
+  const videos: any[] = [];
+  const subdirs: any[] = [];
+
+  for await (const entry of dir.values()) {
+    if (entry.kind === 'file') {
+      if (isVideoFile(entry.name)) videos.push(entry);
+    } else if (entry.kind === 'directory') {
+      subdirs.push(entry);
+    }
+  }
+
+  if (videos.length > 0) {
+    videos.sort((a, b) => compareNatural(a.name, b.name));
+    return videos[0].getFile();
+  }
+  if (depth >= DROP_SEARCH_DEPTH) return null;
+
+  subdirs.sort((a, b) => compareNatural(a.name, b.name));
+  for (const sub of subdirs) {
+    const found = await firstVideoInDirectoryHandle(sub, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** FileSystemFileEntry から File を取り出す (取れなければ null) */
+function entryToFile(entry: any): Promise<File | null> {
+  return new Promise((resolve) => entry.file((f: File) => resolve(f), () => resolve(null)));
+}
+
+async function firstVideoInDirectoryEntry(dirEntry: any, depth = 0): Promise<File | null> {
+  const entries = await readAllDirectoryEntries(dirEntry.createReader());
+
+  const videos = entries.filter((e: any) => e.isFile && isVideoFile(e.name));
+  if (videos.length > 0) {
+    videos.sort((a: any, b: any) => compareNatural(a.name, b.name));
+    return entryToFile(videos[0]);
+  }
+  if (depth >= DROP_SEARCH_DEPTH) return null;
+
+  const subdirs = entries.filter((e: any) => e.isDirectory);
+  subdirs.sort((a: any, b: any) => compareNatural(a.name, b.name));
+  for (const sub of subdirs) {
+    const found = await firstVideoInDirectoryEntry(sub, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * ドロップされたものの中から、最初に見つかる動画ファイルを 1 つ返す。
+ *
+ * ⚠️ dataTransfer.files だけを見ないこと。フォルダを落とした場合、そこには
+ * フォルダ自体しか入っておらず、中の .mov / .mp4 は見えない。
+ * 「ロールの入ったフォルダを落としたのに開けない」のはこれが原因になる。
+ *
+ * ⚠️ 呼び出し側は items の読み取りを同期的に済ませてから渡すこと。
+ * dataTransfer.items はハンドラを抜けた時点で無効になる。
+ *
+ * 同じ場所に複数あるときは自然順の先頭を開く。深さは DROP_SEARCH_DEPTH まで。
+ */
+export async function findDroppedVideoFile(
+  plainFiles: File[],
+  handles: any[],
+  entries: any[]
+): Promise<File | null> {
+  const direct = plainFiles.filter((f) => isVideoFile(f.name));
+  if (direct.length > 0) {
+    direct.sort((a, b) => compareNatural(a.name, b.name));
+    return direct[0];
+  }
+
+  for (const handle of handles) {
+    if (handle?.kind === 'file' && isVideoFile(handle.name)) return handle.getFile();
+  }
+  for (const handle of handles) {
+    if (handle?.kind !== 'directory') continue;
+    try {
+      const found = await firstVideoInDirectoryHandle(handle);
+      if (found) return found;
+    } catch (e) {
+      console.error('Failed to scan dropped folder for video:', e);
+    }
+  }
+
+  for (const entry of entries) {
+    if (entry?.isFile && isVideoFile(entry.name)) {
+      const file = await entryToFile(entry);
+      if (file) return file;
+    }
+  }
+  for (const entry of entries) {
+    if (!entry?.isDirectory) continue;
+    try {
+      const found = await firstVideoInDirectoryEntry(entry);
+      if (found) return found;
+    } catch (e) {
+      console.error('Failed to scan dropped folder for video:', e);
+    }
+  }
+
+  return null;
 }

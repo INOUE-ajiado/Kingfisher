@@ -187,3 +187,54 @@ export async function deleteFile(
   const { dir, name } = await resolveParentDirectory(rootHandle, path, rootFolderName);
   await dir.removeEntry(name);
 }
+
+/**
+ * FileSystemEntry のディレクトリを最後まで読み切る。
+ *
+ * ⚠️ readEntries() は 1 回の呼び出しで最大 100 件しか返さない仕様なので、
+ * 空配列が返るまで繰り返すこと。1 回で済ませると大きなカットフォルダの
+ * ファイルが黙って欠落する。
+ */
+export async function readAllDirectoryEntries(dirReader: any): Promise<any[]> {
+  const all: any[] = [];
+  for (;;) {
+    const batch: any[] = await new Promise((resolve) => {
+      dirReader.readEntries(
+        (results: any[]) => resolve(results),
+        () => resolve([])
+      );
+    });
+    if (!batch.length) break;
+    all.push(...batch);
+  }
+  return all;
+}
+
+/** getAsFileSystemHandle() を待つ上限 (ms) */
+const DROP_HANDLE_TIMEOUT_MS = 3000;
+
+/**
+ * ドロップされた項目の FileSystemHandle を、期限を切って集める。
+ *
+ * ⚠️ getAsFileSystemHandle() をそのまま await しないこと。
+ * 解決しないまま返ってこないことがある (ヘッドレスの Chrome で実測)。
+ * Promise.all で待つとドロップ処理ごと止まり、エラーも出さずに黙って終わるため、
+ * 「フォルダを落としたのに何も起きない」という最悪の見え方になる。
+ *
+ * 期限内に取れなかったものは捨てる。呼び出し側は webkitGetAsEntry() の
+ * 読み取り専用エントリへ落ちればよい (保存はできないが読み込みはできる)。
+ */
+export async function resolveDropHandles(
+  handlePromises: Promise<any>[],
+  timeoutMs: number = DROP_HANDLE_TIMEOUT_MS
+): Promise<any[]> {
+  if (handlePromises.length === 0) return [];
+
+  const guarded = handlePromises.map((p) =>
+    Promise.race([
+      p.catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+    ])
+  );
+  return (await Promise.all(guarded)).filter(Boolean);
+}

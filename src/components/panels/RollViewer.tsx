@@ -3,7 +3,8 @@ import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, Ch
 import { usePaintStore } from '../../store/usePaintStore';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
-import { isVideoFile, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
+import { findDroppedVideoFile, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
+import { resolveDropHandles } from '../../engine/fileSystemPath';
 
 /** 再生速度の選択肢 */
 const SPEEDS = [0.25, 0.5, 1, 2];
@@ -145,12 +146,32 @@ export const RollViewer: React.FC = React.memo(() => {
     fileInputRef.current?.click();
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
-    const file = Array.from(e.dataTransfer.files).find((f) => isVideoFile(f.name));
-    if (file) loadRollFile(file);
+
+    // ⚠️ dataTransfer.items は await を挟んだ時点で無効になるので、先に同期で読み取る。
+    // ⚠️ files だけを見ないこと。フォルダを落とした場合そこにはフォルダ自体しか入らず、
+    // 中の .mov / .mp4 が見えない。
+    const plainFiles = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+    const entries: any[] = [];
+    const handlePromises: Promise<any>[] = [];
+    const items = e.dataTransfer.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item: any = items[i];
+        if (typeof item.getAsFileSystemHandle === 'function') {
+          handlePromises.push(item.getAsFileSystemHandle().catch(() => null));
+        }
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+    }
+
+    const handles = await resolveDropHandles(handlePromises);
+    const video = await findDroppedVideoFile(plainFiles, handles, entries);
+    if (video) loadRollFile(video);
   };
 
   const togglePlay = () => {
@@ -183,7 +204,7 @@ export const RollViewer: React.FC = React.memo(() => {
       onPointerDownCapture={bringToFront}
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
-      onDrop={handleDrop}
+      onDrop={(e) => void handleDrop(e)}
       className={`flex flex-col bg-white dark:bg-slate-900 border-2 ${
         isOverDockTarget
           ? 'border-blue-500 ring-4 ring-blue-500/50'
