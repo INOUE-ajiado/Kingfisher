@@ -133,7 +133,7 @@ export const App: React.FC = () => {
       // 一覧に載せるだけ。再生はツリーで選ばれてから
       store.setRollFolderFiles(folder.videos, folder.folderName);
       // 映像しか入っていなかったら、そのまま 1 本目を開く
-      if (folder.images.size === 0) store.selectRollFile(folder.videos[0].path);
+      if (folder.images.size === 0) store.selectRollFile(store.roll.activeId, folder.videos[0].path);
     }
 
     if (folder.images.size === 0 && folder.videos.length === 0) {

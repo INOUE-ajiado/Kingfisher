@@ -241,6 +241,12 @@
       "title": "ファイルツリーが入口。拡張子で表示先を決める",
       "detail": "2026-08-27 に「窓の型に合わせてファイルを落とす」から「どこへ落としてもフォルダを開き、ツリーから開いたファイルの拡張子で表示先が決まる」へ変えた。ドロップは App の一番外側で受ける (Win A / Win B / ロールの窓は自前の処理で stopPropagation しているので、そこへ落とした分はここへ来ない)。走査は engine/dropFolder.ts の readDroppedFolder に一本化すること。⚠️ 映像を fileListA / unifiedFileList へ混ぜないこと。あちらはフレーム番号で対応づける連番の器で、映像名が混ざるとコマの対応が壊れる。表示用の並びとして後ろに足し、位置が連番の長さを超えたら映像として扱う。セル画像は activeViewIndex の側 (Win A / Win B) へ出す。",
       "location": "src/App.tsx, src/engine/dropFolder.ts, src/components/panels/FileBrowser.tsx"
+    },
+    {
+      "id": "roll-two-panes-and-sync",
+      "title": "ロールは 2 面。連動はアクティブな面が主導する",
+      "detail": "ロールは rollA / rollB の 2 面あり、修正前と修正後を並べて見比べられる。⚠️ 映像の一覧 (roll.files) は 2 面で共有すること。ツリーは 1 本しか出ないので、面ごとに持つとツリーの中身と開ける対象が食い違う。面ごとに持つのは再生状態 (roll.views) だけ。⚠️ 連動中のずれ直しは、操作した側 (roll.activeId) だけが行うこと。両方が相手を直すと互いにシークをかけ合い、再生が始まらなくなる (2026-08-27 に実際に踏んだ)。⚠️ 連動開始時の時刻差 (syncOffset) を保つこと。片方を頭出ししてから連動させる使い方があり、強制的に同じ時刻へ合わせると狙って選んだ位置がずれる (セルの左右連動と同じ考え方)。⚠️ <video> を登録する ref のコールバックは useCallback で固定すること。毎レンダー作り直すと React が null → 要素 の順で呼び直し、その一瞬だけ登録が外れる。",
+      "location": "src/store/slices/rollSlice.ts, src/components/panels/RollViewer.tsx, src/components/panels/rollVideoRegistry.ts"
     }
   ],
   "workflow": {
@@ -279,7 +285,9 @@
         "⚠️ Runtime.evaluate からの video.play() は NotAllowedError で弾かれる。再生の検証は Input.dispatchMouseEvent で本物のクリックを送ること",
         "⚠️ vite preview は既定で localhost(IPv6) にしか繋がらない。--host 127.0.0.1 を付ける",
         "⚠️ DOM.setFileInputFiles を使うと、その後キーボード入力がページへ届かなくなる (文字キーも含む)。キーを試すテストでは D&D で読み込ませること",
-        "⚠️ Input.dispatchKeyEvent が届かない場面がある。ハンドラが信頼済みイベントを要求しない (e.key / e.shiftKey を見るだけ) なら、ページ内から new KeyboardEvent を dispatch すれば経路を通せる。再生など信頼済み操作が要るものだけ Input.dispatchMouseEvent を使う"
+        "⚠️ Input.dispatchKeyEvent が届かない場面がある。ハンドラが信頼済みイベントを要求しない (e.key / e.shiftKey を見るだけ) なら、ページ内から new KeyboardEvent を dispatch すれば経路を通せる。再生など信頼済み操作が要るものだけ Input.dispatchMouseEvent を使う",
+        "⚠️ 再生の検証は --autoplay-policy=no-user-gesture-required を付けて起動すると素直に書ける",
+        "⚠️ innerText で要素を探すと、同じ文字列で始まる祖先が先に見つかる。ウィンドウの外枠を取りたいときは find の結果をそのまま使う (親を辿らない)"
       ],
       "cannotCover": "showDirectoryPicker / showSaveFilePicker のネイティブダイアログ。フォルダを開く・保存・リネーム・削除の実操作だけは人手が要る。"
     }
@@ -494,13 +502,6 @@
       "lastAttempt": "document.body へポータル描画 (FloatingPortal.tsx)。右サイドパネルの overflow-y-auto 内にあると position:fixed でも再描画が起きるため。",
       "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。",
       "investigated": "ColorChart.tsx:68,137 に usePaintStore.setState((state) => ({ ...state })) があり、ストア全体を購読する全パネルを強制再描画する。ただし発火は色のドロップ登録と右クリック登録のみで、ドラッグ中に毎フレーム走る経路ではない。継続的な重さの説明にはならない。"
-    },
-    {
-      "id": "roll-multiple-instances",
-      "severity": "low",
-      "title": "ロールを 2 本同時に並べて見比べられない",
-      "detail": "2026-08-27 の時点で、1 つのフォルダに入った複数のロールを一覧から選んで順に確認することはできる (ファイルツリーのロールセクション + 前後のロールへ移るボタン)。できないのは「2 本を同時に並べて見比べる」方だけで、roll ステートが 1 本しか開けないのが理由。",
-      "nextStep": "PaneId を固定の 4 種から「面の実体 (インスタンス)」へ広げ、roll ステートを配列にする。paneLayout 側は PaneId を文字列として扱っているので、モデルの変更は小さい。"
     }
   ]
 }

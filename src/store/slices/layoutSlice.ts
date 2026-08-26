@@ -78,7 +78,8 @@ export const createLayoutSlice: StateCreator<PaintStore, [], [], LayoutSlice> = 
     let layout = createDefaultLayout();
     if (isSplitView) layout = showPane(layout, 'winB');
     if (referenceCanvas.isOpen) layout = showPane(layout, 'reference');
-    if (roll.isOpen) layout = showPane(layout, 'roll');
+    if (roll.views.rollA.isOpen) layout = showPane(layout, 'rollA');
+    if (roll.views.rollB.isOpen) layout = showPane(layout, 'rollB');
     set({ paneLayout: layout });
   },
 });

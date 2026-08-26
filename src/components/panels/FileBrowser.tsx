@@ -509,7 +509,7 @@ export const FileBrowser: React.FC = () => {
     // 連番の長さを超えていたら映像。ロールの窓へ回して再生する
     if (idx >= unifiedFileList.length) {
       const path = rollPaths[idx - unifiedFileList.length];
-      if (path) selectRollFile(path);
+      if (path) selectRollFile(roll.activeId, path);
       return;
     }
     // セルは「今アクティブな方」へ出す

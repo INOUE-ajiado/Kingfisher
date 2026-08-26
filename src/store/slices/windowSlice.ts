@@ -15,7 +15,8 @@ const DEFAULT_LAYOUTS: Record<FloatingWindowId, FloatingWindowLayout> = {
   reference: { x: 120, y: 80, width: 360, height: 420 },
   colorChart: { x: 0, y: 120, width: 340, height: 240 },
   // ロールは映像なので横に広く取る
-  roll: { x: 160, y: 100, width: 720, height: 480 },
+  rollA: { x: 160, y: 100, width: 720, height: 480 },
+  rollB: { x: 220, y: 140, width: 720, height: 480 },
 };
 
 /** 最背面の独立ウィンドウに割り当てる z-index */
