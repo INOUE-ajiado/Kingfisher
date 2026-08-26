@@ -4,6 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { renameFile, copyFile, deleteFile, ensureWritePermission } from '../../engine/fileSystemPath';
+import { sortNatural } from '../../engine/naturalOrder';
 import {
   buildDuplicatePlan,
   findInvalidNames,
@@ -329,7 +330,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
   setFolderFilesA: (name, filesMap) =>
     set((state) => {
-      const files = Array.from(filesMap.keys()).sort();
+      const files = sortNatural(filesMap.keys());
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(files, state.fileListB);
       const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
       const splitFileIndex = keepFrameIndex(
@@ -355,7 +356,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
   setFolderFilesB: (name, filesMap) =>
     set((state) => {
-      const files = Array.from(filesMap.keys()).sort();
+      const files = sortNatural(filesMap.keys());
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
       const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
       const currentFileIndex = keepFrameIndex(
@@ -586,7 +587,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     // --- ストア側の一覧を新しい名前へ差し替える ---
     const renamedPath = new Map(plan.map((item) => [item.path, replaceBaseName(item.path, item.to)]));
 
-    const nextList = fileList.map((p) => renamedPath.get(p) ?? p).sort();
+    const nextList = sortNatural(fileList.map((p) => renamedPath.get(p) ?? p));
     const nextMap = new Map<string, File>();
     fileMap.forEach((file, p) => nextMap.set(renamedPath.get(p) ?? p, file));
 
@@ -641,7 +642,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       };
     }
 
-    const nextList = [...fileList, ...created].sort();
+    const nextList = sortNatural([...fileList, ...created]);
     const nextMap = new Map(fileMap);
     // 複製したファイルの実体はまだ読んでいないので、ハンドル経由で読ませる
 

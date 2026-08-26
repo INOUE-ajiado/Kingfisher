@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder } from '../../engine/cutFolder';
+import { sortNatural } from '../../engine/naturalOrder';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
@@ -646,7 +647,7 @@ export const FileBrowser: React.FC = () => {
           return;
         }
 
-        const files = Array.from(filesMap.keys()).sort();
+        const files = sortNatural(filesMap.keys());
         if (view === 1) setFolderHandleB(handle, handle.name, files, filesMap);
         else setFolderHandleA(handle, handle.name, files, filesMap);
         return;

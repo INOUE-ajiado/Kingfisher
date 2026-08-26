@@ -15,6 +15,7 @@
  */
 
 import { collectImageFilesRecursively } from './fileSystemPath';
+import { compareNatural, sortNatural } from './naturalOrder';
 
 /** store の SubDirectoryItem と同じ形。engine から store へは依存させない */
 export interface ScannedSubDirectory {
@@ -32,7 +33,7 @@ export const ROOT_SUBDIR_NAME = '(Root)';
 function compareSubDirNames(a: string, b: string): number {
   if (a.startsWith('_') && !b.startsWith('_')) return -1;
   if (!a.startsWith('_') && b.startsWith('_')) return 1;
-  return a.localeCompare(b);
+  return compareNatural(a, b);
 }
 
 /**
@@ -64,7 +65,7 @@ export async function scanCutRootFolder(
       name: entry.name,
       handle: rootHandle,
       filesMap,
-      fileList: Array.from(filesMap.keys()).sort(),
+      fileList: sortNatural(filesMap.keys()),
       // collectImageFilesRecursively は対応拡張子しか集めないので、
       // 1 件でも入っていれば画像フォルダ
       isImageFolder: true,
@@ -85,7 +86,7 @@ export async function scanCutRootFolder(
       name: ROOT_SUBDIR_NAME,
       handle: rootHandle,
       filesMap: rootFiles,
-      fileList: Array.from(rootFiles.keys()).sort(),
+      fileList: sortNatural(rootFiles.keys()),
       isImageFolder: true,
     },
   ];

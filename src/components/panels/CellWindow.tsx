@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
 import { isVideoFile } from '../../engine/videoSource';
+import { sortNatural } from '../../engine/naturalOrder';
 import {
   floodFill,
   gradientFill,
@@ -469,7 +470,7 @@ export const CellWindow: React.FC = () => {
     if (dirHandle) {
       await collectImageFilesRecursively(dirHandle, dirHandle.name, fileMap);
       if (fileMap.size > 0) {
-        const fileList = Array.from(fileMap.keys()).sort();
+        const fileList = sortNatural(fileMap.keys());
         // 保存できる経路なので、ハンドルを持つ通常のフォルダとして登録する
         if (isWinA) setFolderHandleA(dirHandle, dirHandle.name, fileList, fileMap);
         else setFolderHandleB(dirHandle, dirHandle.name, fileList, fileMap);
@@ -518,7 +519,7 @@ export const CellWindow: React.FC = () => {
       return;
     }
 
-    const fileList = Array.from(fileMap.keys()).sort();
+    const fileList = sortNatural(fileMap.keys());
     const folderTitle = detectedFolderName || (isWinA ? 'ドロップフォルダ A' : 'ドロップフォルダ B');
     if (isWinA) setCustomDropFolderA(folderTitle, fileMap, fileList);
     else setCustomDropFolderB(folderTitle, fileMap, fileList);
