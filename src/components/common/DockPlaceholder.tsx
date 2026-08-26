@@ -36,40 +36,51 @@ export const DockPlaceholder: React.FC<DockPlaceholderProps> = ({
 
   if (variant === 'strip-v' || variant === 'strip-h') {
     const isVertical = variant === 'strip-v';
+
+    /* 跡地。ウィンドウを見失った時の復帰導線 */
+    const vacantArea = (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300/70 dark:border-slate-700/70 rounded p-1.5">
+        <span className="text-[9px] text-slate-500 dark:text-slate-400 text-center leading-tight">
+          {label} は
+          <br />
+          独立表示中
+        </span>
+        <button
+          onClick={onRestore}
+          className="px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
+        >
+          <Minimize2 className="w-2.5 h-2.5" />
+          戻す
+        </button>
+      </div>
+    );
+
+    /*
+     * 元のタブ位置。ここへタブを重ねて離すとドッキング表示に戻る。
+     *
+     * 縦帯 (strip-v) では右端に縦向きで置く。編集エリアの右隣にある帯なので、
+     * 上端に横向きで置くと本体から遠く、タブを持って行きにくかった。
+     */
+    const dropTab = (
+      <div
+        id={id}
+        onClick={onRestore}
+        title={`${label} のタブ位置。タブをここへドロップすると戻ります`}
+        className={`flex-shrink-0 flex flex-col items-center justify-center gap-1.5 rounded border-2 border-dashed cursor-pointer transition-colors w-6 h-full ${tabTone}`}
+      >
+        <MoveUpRight className="w-3 h-3 flex-shrink-0" />
+        <span className="text-[10px] font-bold" style={{ writingMode: 'vertical-rl' }}>
+          {label} のタブ
+        </span>
+      </div>
+    );
+
     return (
       <div
-        className={`flex-shrink-0 flex gap-1 select-none ${
-          isVertical ? 'w-32 flex-col' : 'h-16 flex-row'
-        }`}
+        className={`flex-shrink-0 flex flex-row gap-1 select-none ${isVertical ? 'w-32' : 'h-16'}`}
       >
-        {/* 元のタブ位置。ここへタブを重ねて離すとドッキング表示に戻る */}
-        <div
-          id={id}
-          onClick={onRestore}
-          title={`${label} のタブ位置。タブをここへドロップすると戻ります`}
-          className={`flex-shrink-0 flex items-center justify-center gap-1.5 rounded border-2 border-dashed cursor-pointer transition-colors ${
-            isVertical ? 'h-6 w-full' : 'w-6 h-full flex-col'
-          } ${tabTone}`}
-        >
-          <MoveUpRight className="w-3 h-3 flex-shrink-0" />
-          <span className="text-[10px] font-bold truncate">{label} のタブ</span>
-        </div>
-
-        {/* 跡地。見失った時の復帰導線 */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-slate-300/70 dark:border-slate-700/70 rounded p-1.5">
-          <span className="text-[9px] text-slate-500 dark:text-slate-400 text-center leading-tight">
-            {label} は
-            <br />
-            独立表示中
-          </span>
-          <button
-            onClick={onRestore}
-            className="px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
-          >
-            <Minimize2 className="w-2.5 h-2.5" />
-            戻す
-          </button>
-        </div>
+        {vacantArea}
+        {dropTab}
       </div>
     );
   }
