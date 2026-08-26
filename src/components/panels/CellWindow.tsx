@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
-import { findDroppedVideoFile } from '../../engine/videoSource';
+import { collectDroppedVideoFiles, commonRootName } from '../../engine/videoSource';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
   floodFill,
@@ -62,7 +62,7 @@ export const CellWindow: React.FC = () => {
     fps,
     roll,
     toggleRollFloating,
-    loadRollFile,
+    loadRollFiles,
     closeRollWindow,
     closeReferenceWindow,
     toggleIsSplitView,
@@ -509,9 +509,9 @@ export const CellWindow: React.FC = () => {
       // 自然な操作で、しかもロールウィンドウを閉じていると落とす先が他に無い。
       // ⚠️ plainFiles だけを見ないこと。フォルダを落とした場合そこにはフォルダ自体しか
       // 入っておらず、中の .mov / .mp4 が見えない。ハンドルとエントリも渡して中を探す。
-      const video = await findDroppedVideoFile(plainFiles, handles, entries);
-      if (video) {
-        loadRollFile(video);
+      const videos = await collectDroppedVideoFiles(plainFiles, handles, entries);
+      if (videos.length > 0) {
+        loadRollFiles(videos, commonRootName(videos));
         return;
       }
       alert(

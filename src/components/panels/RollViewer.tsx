@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
-import { findDroppedVideoFile, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
+import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
 import { resolveDropHandles } from '../../engine/fileSystemPath';
 
 /** 再生速度の選択肢 */
@@ -32,7 +32,8 @@ function formatTimecode(seconds: number, fps: number): string {
  */
 export const RollViewer: React.FC = React.memo(() => {
   const roll = usePaintStore((s) => s.roll);
-  const { closeRollWindow, toggleRollFloating, loadRollFile, reportRollPlaybackFailure, setRollFps } = usePaintStore();
+  const { closeRollWindow, toggleRollFloating, loadRollFile, loadRollFiles, stepRoll, reportRollPlaybackFailure, setRollFps } =
+    usePaintStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const seekRef = useRef<HTMLInputElement | null>(null);
@@ -171,8 +172,9 @@ export const RollViewer: React.FC = React.memo(() => {
     }
 
     const handles = await resolveDropHandles(handlePromises);
-    const video = await findDroppedVideoFile(plainFiles, handles, entries);
-    if (video) loadRollFile(video);
+    // フォルダの中に複数入っていることがあるので、まとめて受け取って一覧にする
+    const videos = await collectDroppedVideoFiles(plainFiles, handles, entries);
+    if (videos.length > 0) loadRollFiles(videos, commonRootName(videos));
   };
 
   const togglePlay = () => {
@@ -283,6 +285,11 @@ export const RollViewer: React.FC = React.memo(() => {
         <div className="flex items-center gap-1.5 truncate">
           <Film className="w-3.5 h-3.5 text-indigo-200" />
           <span className="truncate">【ロール】 {roll.fileName || '(未読み込み)'}</span>
+          {roll.files.length > 1 && (
+            <span className="text-[9px] font-normal opacity-90 flex-shrink-0">
+              {roll.files.findIndex((v) => v.path === roll.currentPath) + 1} / {roll.files.length}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -374,6 +381,16 @@ export const RollViewer: React.FC = React.memo(() => {
 
         <div className="flex items-center justify-between gap-2 text-[10px] text-slate-600 dark:text-slate-300">
           <div className="flex items-center gap-1">
+            {roll.files.length > 1 && (
+              <button
+                onClick={() => stepRoll(-1)}
+                disabled={disabled}
+                title="前のロールへ"
+                className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
+              >
+                <SkipBack className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               onClick={() => step(-1)}
               disabled={disabled}
@@ -398,6 +415,16 @@ export const RollViewer: React.FC = React.memo(() => {
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
+            {roll.files.length > 1 && (
+              <button
+                onClick={() => stepRoll(1)}
+                disabled={disabled}
+                title="次のロールへ"
+                className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
+              >
+                <SkipForward className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <span ref={timeLabelRef} className="font-mono tabular-nums">
