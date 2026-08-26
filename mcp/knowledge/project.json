@@ -223,6 +223,12 @@
       "title": "面の並び順を JSX に書かない",
       "detail": "どの面をどこへ、どう重ねて出すかは engine/paneLayout.ts のモデルと paneLayout ステートが持つ。CellWindow は slotsToRender を回して描くだけで、面の順序を JSX に書いてはいけない。書くと入れ替え・一面表示・タブ重ねができなくなる (2026-08-27 以前がその状態だった)。⚠️ 「その面を開いているか」は従来どおり isSplitView / referenceCanvas.isOpen / roll.isOpen が持つ。連動やファイル読み込みから参照されているため移していない。CellWindow の syncPaneVisibility が一方向に流し込んでレイアウトを追従させる。タブの × もこれらのフラグを動かすこと。⚠️ タブの D&D には PANE_DRAG_TYPE を付ける。付けないとフォルダの D&D と区別できず、タブを運んだだけで「画像ファイルが見つかりませんでした」が出る。",
       "location": "src/engine/paneLayout.ts, src/components/panels/PaneTabBar.tsx, src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "roll-arrow-keys",
+      "title": "ロールのコマ送りは左右キー。上下はセル用",
+      "detail": "← → で 1 コマ、Shift + ← → で 1 秒ぶん送り戻しする。↑ ↓ / PageUp PageDown はセルのコマ送りに使われているので、ロールでは使わないこと。⚠️ 1 秒送りは秒数を直接足さず、fps ぶんのコマを進めること。秒で足すとコマの境界からずれ、そのあとのコマ送りが半コマずれた位置を行き来する。⚠️ 入力欄 (シークバー・fps の選択) にフォーカスがあるときは横取りしないこと。それらは左右キーで操作するものなので、奪うとつまみが動かせなくなる。",
+      "location": "src/components/panels/RollViewer.tsx"
     }
   ],
   "workflow": {
@@ -259,7 +265,9 @@
         "同じバイト列を .mov 拡張子で複製すれば、.mov の MIME 付け替え経路もそのまま検証できる",
         "DOM.setFileInputFiles で隠し file input へファイルを流し込める",
         "⚠️ Runtime.evaluate からの video.play() は NotAllowedError で弾かれる。再生の検証は Input.dispatchMouseEvent で本物のクリックを送ること",
-        "⚠️ vite preview は既定で localhost(IPv6) にしか繋がらない。--host 127.0.0.1 を付ける"
+        "⚠️ vite preview は既定で localhost(IPv6) にしか繋がらない。--host 127.0.0.1 を付ける",
+        "⚠️ DOM.setFileInputFiles を使うと、その後キーボード入力がページへ届かなくなる (文字キーも含む)。キーを試すテストでは D&D で読み込ませること",
+        "⚠️ Input.dispatchKeyEvent が届かない場面がある。ハンドラが信頼済みイベントを要求しない (e.key / e.shiftKey を見るだけ) なら、ページ内から new KeyboardEvent を dispatch すれば経路を通せる。再生など信頼済み操作が要るものだけ Input.dispatchMouseEvent を使う"
       ],
       "cannotCover": "showDirectoryPicker / showSaveFilePicker のネイティブダイアログ。フォルダを開く・保存・リネーム・削除の実操作だけは人手が要る。"
     }
