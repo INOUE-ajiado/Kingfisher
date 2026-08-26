@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder, ROOT_SUBDIR_NAME } from '../../engine/cutFolder';
-import { Columns, Pipette, Save } from 'lucide-react';
+import { Columns, Pipette } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -51,8 +51,6 @@ export const MenuBar: React.FC = () => {
     setAutoRevertTool,
     saveActiveCell,
     saveActiveCellAs,
-    isDirtyA,
-    isDirtyB,
   } = usePaintStore();
 
   useEffect(() => {
@@ -423,24 +421,11 @@ export const MenuBar: React.FC = () => {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
-        {/* 💾 未保存インジケーター ＆ 保存ボタン */}
-        <button
-          id="save-current-cell-btn"
-          onClick={handleSave}
-          title="アクティブなウィンドウのセルを上書き保存 (Ctrl+S)"
-          className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border ${
-            isDirtyA || isDirtyB
-              ? 'bg-orange-500 hover:bg-orange-600 text-white border-orange-600 shadow-xs'
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 border-slate-300 dark:border-slate-700'
-          }`}
-        >
-          <Save className="w-3.5 h-3.5" />
-          <span>
-            {isDirtyA || isDirtyB
-              ? `未保存${isDirtyA ? ' A' : ''}${isDirtyB ? ' B' : ''}`
-              : '保存済み'}
-          </span>
-        </button>
+        {/*
+          保存はメニューの「上書き保存」と Ctrl+S に一本化してある。
+          ヘッダーの保存ボタンは 2026-08-27 にユーザーの指定で外した。
+          未保存かどうかは Win A / Win B のタイトルバーの * で分かる。
+        */}
 
         {/* 統合アクションボタン群 (左右比較・見本ビューア) */}
         {/* 左右連動はファイルブラウザ側に同じ操作があるため、ここには置かない */}
