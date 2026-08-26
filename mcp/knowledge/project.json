@@ -15,7 +15,8 @@
       "Web Workers (TGA デコード / ベクター・ラスタートレース)",
       "vitest (テスト 155 件)",
       "Firebase Hosting (COOP/COEP ヘッダー付き)",
-      "撮影上がりロール (.mov / .mp4) の再生 — ネイティブ <video>。デコードは自前でやらない"
+      "撮影上がりロール (.mov / .mp4) の再生 — ネイティブ <video>。デコードは自前でやらない",
+      "作業領域のレイアウト — 面 (Win A / Win B / 見本 / ロール) を横一列の枠へ割り当て、並べ替え・タブ重ね・一面表示・幅調整ができる (engine/paneLayout.ts)"
     ],
     "notImplemented": [
       "Rust / WebAssembly — 存在しない。画像処理は全て素の TypeScript",
@@ -216,6 +217,12 @@
       "title": "getAsFileSystemHandle() は期限を切って待つ",
       "detail": "ドロップされた項目の FileSystemHandle は resolveDropHandles を通して集めること。getAsFileSystemHandle() は解決しないまま返ってこないことがあり (ヘッドレス Chrome で実測)、Promise.all で素直に待つとドロップ処理ごと止まって「落としても何も起きない」状態になる。期限内に取れなければ webkitGetAsEntry() の読み取り専用エントリへ落ちればよい。また動画の判定は dataTransfer.files だけで行わないこと。フォルダを落とすとそこにはフォルダ自体しか入らないので、findDroppedVideoFile で中を探す。",
       "location": "src/engine/fileSystemPath.ts, src/engine/videoSource.ts"
+    },
+    {
+      "id": "pane-layout-owns-order",
+      "title": "面の並び順を JSX に書かない",
+      "detail": "どの面をどこへ、どう重ねて出すかは engine/paneLayout.ts のモデルと paneLayout ステートが持つ。CellWindow は slotsToRender を回して描くだけで、面の順序を JSX に書いてはいけない。書くと入れ替え・一面表示・タブ重ねができなくなる (2026-08-27 以前がその状態だった)。⚠️ 「その面を開いているか」は従来どおり isSplitView / referenceCanvas.isOpen / roll.isOpen が持つ。連動やファイル読み込みから参照されているため移していない。CellWindow の syncPaneVisibility が一方向に流し込んでレイアウトを追従させる。タブの × もこれらのフラグを動かすこと。⚠️ タブの D&D には PANE_DRAG_TYPE を付ける。付けないとフォルダの D&D と区別できず、タブを運んだだけで「画像ファイルが見つかりませんでした」が出る。",
+      "location": "src/engine/paneLayout.ts, src/components/panels/PaneTabBar.tsx, src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -467,6 +474,13 @@
       "lastAttempt": "document.body へポータル描画 (FloatingPortal.tsx)。右サイドパネルの overflow-y-auto 内にあると position:fixed でも再描画が起きるため。",
       "nextStep": "まだ重い場合は推測で手を打たず、DevTools の Performance で 1 フレームの内訳を実測してから判断する。",
       "investigated": "ColorChart.tsx:68,137 に usePaintStore.setState((state) => ({ ...state })) があり、ストア全体を購読する全パネルを強制再描画する。ただし発火は色のドロップ登録と右クリック登録のみで、ドラッグ中に毎フレーム走る経路ではない。継続的な重さの説明にはならない。"
+    },
+    {
+      "id": "roll-multiple-instances",
+      "severity": "low",
+      "title": "ロールを 2 本同時に開いて見比べられない",
+      "detail": "2026-08-27 にユーザーから「両方やりたい」との指定。大きく表示する方 (一面表示・幅調整) はレイアウト刷新で入った。複数同時に開く方は未対応で、roll ステートが 1 本しか持てないのが原因。",
+      "nextStep": "PaneId を固定の 4 種から「面の実体 (インスタンス)」へ広げ、roll ステートを配列にする。paneLayout 側は PaneId を文字列として扱っているので、モデルの変更は小さい。"
     }
   ]
 }
