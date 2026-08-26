@@ -130,6 +130,7 @@ export const RollViewer: React.FC = React.memo(() => {
     if (video) video.playbackRate = speed;
   }, [speed, roll.objectUrl]);
 
+
   const openViaPicker = async () => {
     try {
       if ('showOpenFilePicker' in window) {
@@ -193,6 +194,60 @@ export const RollViewer: React.FC = React.memo(() => {
     video.pause();
     video.currentTime = steppedTime(video.currentTime, delta, roll.fps, video.duration);
   };
+
+  /**
+   * 1 秒送り / 戻し。
+   *
+   * ⚠️ 秒数を直接足さないこと。コマの境界からずれてしまい、そのあとのコマ送りが
+   * 半コマずれた位置を行き来する。fps ぶんのコマを進めれば境界に乗ったままになる。
+   */
+  const stepSecond = (direction: number) => {
+    step(direction * Math.max(1, Math.round(roll.fps)));
+  };
+
+  /**
+   * キーボードでのコマ送り。
+   *
+   * ⚠️ 上下キーはセルのコマ送りに割り当てられているので、ここでは左右だけを使う。
+   * ⚠️ 入力欄にフォーカスがあるときは何もしないこと。シークバーや fps の選択は
+   * 左右キーで操作するものなので、横取りするとつまみが動かせなくなる。
+   * ⚠️ Shift 以外の修飾キーが付いていたら見送る。割り当てていない組み合わせを
+   * 横取りしないため。
+   */
+  const stepRef = useRef({ step, stepSecond });
+  stepRef.current = { step, stepSecond };
+
+  useEffect(() => {
+    if (!roll.objectUrl || roll.status !== 'ready') return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const direction = e.key === 'ArrowRight' ? 1 : -1;
+      // ⚠️ 最新の関数を ref から呼ぶこと。依存に入れて登録し直すと、
+      // 塗っている間の再描画のたびに window のリスナーを付け替えることになる。
+      if (e.shiftKey) stepRef.current.stepSecond(direction);
+      else stepRef.current.step(direction);
+    };
+
+    window.addEventListener('keydown', onKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+  }, [roll.objectUrl, roll.status]);
 
   const unsupported = roll.status === 'unsupported' || roll.status === 'error';
   const disabled = !roll.objectUrl || unsupported;
@@ -322,7 +377,7 @@ export const RollViewer: React.FC = React.memo(() => {
             <button
               onClick={() => step(-1)}
               disabled={disabled}
-              title="前のコマ"
+              title="前のコマ (←) / 1 秒戻す (Shift + ←)"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -338,7 +393,7 @@ export const RollViewer: React.FC = React.memo(() => {
             <button
               onClick={() => step(1)}
               disabled={disabled}
-              title="次のコマ"
+              title="次のコマ (→) / 1 秒送る (Shift + →)"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               <ChevronRight className="w-3.5 h-3.5" />

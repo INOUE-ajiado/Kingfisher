@@ -168,6 +168,22 @@ describe('コマ送りの時刻計算', () => {
     expect(steppedTime(1.99, 5, 24, duration)).toBeLessThan(duration);
   });
 
+  it('1 秒送りは fps ぶんのコマを進む', () => {
+    // 秒数を直接足すとコマの境界からずれ、その後のコマ送りが半コマずれる
+    const fps = 24;
+    const start = timeForFrame(0, fps);
+    const later = steppedTime(start, fps, fps);
+    expect(frameIndexAt(later, fps)).toBe(fps);
+    expect(later - start).toBeCloseTo(1, 6);
+  });
+
+  it('1 秒戻しても境界に乗ったまま', () => {
+    const fps = 23.976;
+    const start = timeForFrame(100, fps);
+    const back = steppedTime(start, -24, fps);
+    expect(frameIndexAt(back, fps)).toBe(76);
+  });
+
   it('fps が 0 でも壊れない', () => {
     expect(frameIndexAt(1, 0)).toBe(0);
     expect(timeForFrame(5, 0)).toBe(0);
