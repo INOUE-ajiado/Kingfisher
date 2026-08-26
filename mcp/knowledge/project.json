@@ -186,6 +186,12 @@
       "title": "セルの窓に落とされた動画はロールウィンドウへ回す",
       "detail": "Win A / Win B の D&D は画像フォルダ用だが、撮影ロールをそこへ落とすのは自然な操作で、しかもロールウィンドウを閉じていると落とす先が他に無い。handleFolderOrFilesNativeDrop は画像が 1 枚も無かったとき、dataTransfer.files に動画があれば loadRollFile へ回す (loadRollFile が窓も開く)。ここを「画像が見つかりません」で突き放さないこと。",
       "location": "src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "plain-folder-keeps-winb",
+      "title": "単独フォルダを開くときは setCutRootFolder を通さない",
+      "detail": "setCutRootFolder は「カットを開き直す」操作で、A と B の両方を組み直す。サブフォルダが 1 つしか無いと defaultDirB が決まらず fileListB が空になるため、片側だけ開き直したいときに使うと Win B の中身が消え、2 画面 + 連動が使えなくなる。サブフォルダを持たないフォルダは openPlainFolderAsA を使うこと (Win B に触れず、前のカットのサブフォルダ一覧だけ捨てる)。なお setFolderHandleA/B はリネーム・複製・削除後の一覧更新にも使われているので、あちらにカット状態を捨てる処理を足してはいけない。",
+      "location": "src/store/slices/fileSlice.ts, src/components/layout/MenuBar.tsx"
     }
   ],
   "workflow": {
@@ -375,6 +381,10 @@
     {
       "symptom": "Ctrl+Alt を押していると、どのキーを打っても右パネルが開閉する",
       "cause": "押されたキーを一切見ずに修飾キーだけで判定していた。キーリピートでも連打され、入力欄で打っている最中にも反応していた"
+    },
+    {
+      "symptom": "2 画面で開いて連動を押しても Win B が動かない (Win B が空になっている)",
+      "cause": "メニューの「フォルダを開く」がサブフォルダの無いフォルダも setCutRootFolder に流していた。setCutRootFolder は A と B の両方を組み直すので、サブフォルダが (Root) 1 つだけだと fileListB を空にする。openPlainFolderAsA を新設して Win B に触れない経路にした"
     }
   ],
   "openIssues": [

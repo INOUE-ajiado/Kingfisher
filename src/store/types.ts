@@ -307,6 +307,15 @@ export interface FileSlice {
   selectedSubDirB: string | null
   mergedFrameNumbers: string[]
   mergedFrameMap: Map<string, MergedFrameMapItem>
+  /**
+   * サブフォルダを持たないフォルダを Win A として開く。
+   *
+   * ⚠️ この用途で setCutRootFolder を使わないこと。あちらはカット全体を開き直す操作で、
+   * サブフォルダが 1 つしか無いと Win B を空にしてしまう。
+   * ⚠️ 一方で、前に開いたカットのサブフォルダ一覧は必ず捨てること。
+   * 残すとドロップダウンに前のカットの _go / _ao が並び、選ぶとそちらへ飛ぶ。
+   */
+  openPlainFolderAsA: (handle: any, name: string, files: string[], filesMap: Map<string, File>) => void
   setCutRootFolder: (rootHandle: any, rootName: string, subDirs: SubDirectoryItem[]) => void
   setSelectedSubDirA: (dirName: string | null) => void
   setSelectedSubDirB: (dirName: string | null) => void
