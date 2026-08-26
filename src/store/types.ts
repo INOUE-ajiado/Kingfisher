@@ -552,6 +552,11 @@ export interface RollSlice {
   loadRollFile: (file: File) => void
   /** フォルダの中で見つかったロールをまとめて受け取り、先頭を開く */
   loadRollFiles: (videos: DroppedVideo[], folderName: string) => void
+  /**
+   * 一覧だけ登録して開かない。フォルダを開いた時点では映像を再生せず、
+   * ツリーから選ばれたときに初めて開くため
+   */
+  setRollFolderFiles: (videos: DroppedVideo[], folderName: string) => void
   /** 一覧の中から 1 本を選んで開く */
   selectRollFile: (path: string) => void
   /** 一覧の中で前後のロールへ移る */

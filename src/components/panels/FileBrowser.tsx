@@ -4,7 +4,6 @@ import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine
 import { scanCutRootFolder } from '../../engine/cutFolder';
 import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
-import { RollFileTree } from './RollFileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
 import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
@@ -238,6 +237,9 @@ export const FileBrowser: React.FC = () => {
     splitFileIndex,
     setCurrentFileIndex,
     setSplitFileIndex,
+    activeViewIndex,
+    roll,
+    selectRollFile,
     setFolderHandleA,
     setFolderHandleB,
     setFolderFilesA,
@@ -268,7 +270,17 @@ export const FileBrowser: React.FC = () => {
   };
 
   // ファイルリストから階層ツリー構造を動的作成
-  const fileTreeNodes = useMemo(() => buildTreeFromPaths(unifiedFileList), [unifiedFileList]);
+  /**
+   * ツリーには映像も並べる。
+   *
+   * ⚠️ 映像を fileListA / unifiedFileList そのものへ混ぜないこと。
+   * あちらはフレーム番号で対応づける連番の器で、映像名が混ざると
+   * コマの対応がおかしくなる。表示用の並びとしてだけ後ろに足し、
+   * 位置 (fileIndex) が連番の長さを超えたら映像として扱う。
+   */
+  const rollPaths = useMemo(() => roll.files.map((v) => v.path), [roll.files]);
+  const treeSource = useMemo(() => [...unifiedFileList, ...rollPaths], [unifiedFileList, rollPaths]);
+  const fileTreeNodes = useMemo(() => buildTreeFromPaths(treeSource), [treeSource]);
 
   /**
    * 2画面分割中は Win A / Win B のツリーを並べて表示する。
@@ -494,7 +506,15 @@ export const FileBrowser: React.FC = () => {
   // 連動中の Win B への追従はストア側 (setCurrentFileIndex) が担う。
   // ここで両方に同じ番号を入れると、連動開始時のコマ差が失われる。
   const handleSelectFrame = (idx: number) => {
-    setCurrentFileIndex(idx);
+    // 連番の長さを超えていたら映像。ロールの窓へ回して再生する
+    if (idx >= unifiedFileList.length) {
+      const path = rollPaths[idx - unifiedFileList.length];
+      if (path) selectRollFile(path);
+      return;
+    }
+    // セルは「今アクティブな方」へ出す
+    if (activeViewIndex === 1) setSplitFileIndex(idx);
+    else setCurrentFileIndex(idx);
   };
 
   // ⌨️ キーボード方向キー (↑ ↓ ← → Enter Space) ナビゲーション処理
@@ -811,11 +831,15 @@ export const FileBrowser: React.FC = () => {
 
       {/* 4. メインツリー / 連番マージビュー */}
       <div className="flex-1 overflow-y-auto p-1">
-        {unifiedFileList.length === 0 ? (
+        {treeSource.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-3 text-slate-400">
             <span className="text-[11px] font-medium mb-1">フォルダが読み込まれていません</span>
             <span className="text-[9px] text-slate-400 leading-relaxed">
-              エクスプローラーからフォルダをドロップするか、[カットを開く] を押してください
+              画面のどこへでもフォルダをドロップしてください。
+              <br />
+              セル画像 (.tga / .png / .jpg) と撮影ロール (.mov / .mp4) をまとめて読み込み、
+              <br />
+              ツリーから開いたファイルに合わせて表示先が切り替わります。
             </span>
           </div>
         ) : viewMode === 'tree' ? (
@@ -1041,8 +1065,6 @@ export const FileBrowser: React.FC = () => {
           </table>
         )}
       </div>
-
-      <RollFileTree />
 
       <input
         type="file"

@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { usePaintStore } from './store/usePaintStore';
+import { readDropItems, readDroppedFolder } from './engine/dropFolder';
+import { sortNatural } from './engine/naturalOrder';
+import { isPaneDrag } from './components/panels/PaneTabBar';
 import { MenuBar } from './components/layout/MenuBar';
 import { ToolPalette } from './components/panels/ToolPalette';
 import { ToolOptionsPanel } from './components/panels/ToolOptionsPanel';
@@ -73,6 +76,73 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', handleRightPanelShortcut);
     return () => window.removeEventListener('keydown', handleRightPanelShortcut);
   }, [toggleRightSidebarOpen]);
+
+  /**
+   * 画面のどこへ落としてもフォルダを開く。
+   *
+   * ⚠️ Win A / Win B / ロールの窓は自前のドロップ処理で stopPropagation しているので、
+   * そこへ落とした分はここへ来ない。窓の外 (右パネルや余白) だけがここで拾われる。
+   * ⚠️ タブの移動を拾わないこと。ファイルが 1 つも無いので開くものが無い。
+   */
+  const [isRootDragOver, setIsRootDragOver] = React.useState(false);
+
+  const isFileDrag = (e: React.DragEvent) =>
+    !!e.dataTransfer && Array.prototype.includes.call(e.dataTransfer.types, 'Files');
+
+  const handleRootDragOver = (e: React.DragEvent) => {
+    if (isPaneDrag(e.dataTransfer) || !isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsRootDragOver(true);
+  };
+
+  const handleRootDragLeave = (e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && e.currentTarget.contains(related)) return;
+    setIsRootDragOver(false);
+  };
+
+  const handleRootDrop = async (e: React.DragEvent) => {
+    if (isPaneDrag(e.dataTransfer) || !isFileDrag(e)) return;
+    e.preventDefault();
+    setIsRootDragOver(false);
+
+    const items = readDropItems(e.dataTransfer);
+    const folder = await readDroppedFolder(items);
+
+    const store = usePaintStore.getState();
+
+    if (folder.images.size > 0) {
+      // 画像は「今アクティブな方」へ。A/B を使い分けたいときは先にその窓を触ってから開く
+      const files = sortNatural(folder.images.keys());
+      const view = store.activeViewIndex === 1 ? 1 : 0;
+      const name = folder.folderName || (view === 1 ? 'ドロップフォルダ B' : 'ドロップフォルダ A');
+
+      if (folder.dirHandle) {
+        // 書き込み可能なハンドルが取れた経路。保存もできる
+        if (view === 1) store.setFolderHandleB(folder.dirHandle, name, files, folder.images);
+        else store.setFolderHandleA(folder.dirHandle, name, files, folder.images);
+      } else if (view === 1) {
+        store.setCustomDropFolderB(name, folder.images, files);
+      } else {
+        store.setCustomDropFolderA(name, folder.images, files);
+      }
+    }
+
+    if (folder.videos.length > 0) {
+      // 一覧に載せるだけ。再生はツリーで選ばれてから
+      store.setRollFolderFiles(folder.videos, folder.folderName);
+      // 映像しか入っていなかったら、そのまま 1 本目を開く
+      if (folder.images.size === 0) store.selectRollFile(folder.videos[0].path);
+    }
+
+    if (folder.images.size === 0 && folder.videos.length === 0) {
+      alert(
+        'ドロップされた中に開けるファイルが見つかりませんでした。\n' +
+          'セル画像 (.tga / .png / .jpg) と撮影ロール (.mov / .mp4) に対応しています。'
+      );
+    }
+  };
 
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState<number>(320);
   const isRightResizing = React.useRef(false);
@@ -152,7 +222,19 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans select-none transition-colors duration-150">
+    <div
+      onDragOver={handleRootDragOver}
+      onDragLeave={handleRootDragLeave}
+      onDrop={handleRootDrop}
+      className="h-screen w-screen flex flex-col bg-slate-200 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans select-none transition-colors duration-150"
+    >
+      {isRootDragOver && (
+        <div className="fixed inset-0 z-[100] pointer-events-none flex items-end justify-center pb-10">
+          <div className="bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-full shadow-2xl border border-blue-400">
+            ここへドロップするとフォルダを開きます (セル・映像をまとめて読み込みます)
+          </div>
+        </div>
+      )}
       {/* 1. Top Menu Bar */}
       <MenuBar />
 
