@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { collectImageFilesRecursively, isSupportedImageFile } from '../../engine/fileSystemPath';
-import { isVideoFile } from '../../engine/videoSource';
+import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
+import { findDroppedVideoFile } from '../../engine/videoSource';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
   floodFill,
@@ -389,26 +389,6 @@ export const CellWindow: React.FC = () => {
   }, []);
 
   // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理 (階層パス保持)
-  /**
-   * readEntries() は 1 回の呼び出しで最大 100 件しか返さない仕様なので、
-   * 空配列が返るまで繰り返す。1 回で済ませると大きなカットフォルダの
-   * ファイルが黙って欠落する。
-   */
-  const readAllDirectoryEntries = async (dirReader: any): Promise<any[]> => {
-    const all: any[] = [];
-    for (;;) {
-      const batch: any[] = await new Promise((resolve) => {
-        dirReader.readEntries(
-          (results: any[]) => resolve(results),
-          () => resolve([])
-        );
-      });
-      if (!batch.length) break;
-      all.push(...batch);
-    }
-    return all;
-  };
-
   const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>, currentPath = '') => {
     const entries = await readAllDirectoryEntries(dirEntry.createReader());
 
@@ -464,7 +444,7 @@ export const CellWindow: React.FC = () => {
     const fileMap = new Map<string, File>();
 
     // --- 1. 書き込み可能なディレクトリハンドルが取れる場合 ---
-    const handles = (await Promise.all(handlePromises)).filter(Boolean);
+    const handles = await resolveDropHandles(handlePromises);
     const dirHandle = handles.find((h: any) => h?.kind === 'directory') ?? null;
 
     if (dirHandle) {
@@ -506,8 +486,9 @@ export const CellWindow: React.FC = () => {
     if (fileMap.size === 0) {
       // ⚠️ 画像が無いというだけで突き放さないこと。撮影ロールをセルの窓へ落とすのは
       // 自然な操作で、しかもロールウィンドウを閉じていると落とす先が他に無い。
-      // 動画が入っていればロールとして開いてしまう。
-      const video = plainFiles.find((f) => isVideoFile(f.name));
+      // ⚠️ plainFiles だけを見ないこと。フォルダを落とした場合そこにはフォルダ自体しか
+      // 入っておらず、中の .mov / .mp4 が見えない。ハンドルとエントリも渡して中を探す。
+      const video = await findDroppedVideoFile(plainFiles, handles, entries);
       if (video) {
         loadRollFile(video);
         return;

@@ -210,6 +210,12 @@
       "title": "ヘッダーに保存ボタンを置かない",
       "detail": "保存はメニューの「上書き保存」と Ctrl+S に一本化してある。2026-08-27 にユーザーの指定でヘッダーの保存ボタン (未保存インジケーター兼用) を外した。未保存かどうかは Win A / Win B のタイトルバーの * で分かる。ヘッダーへの保存ボタンや未保存バッジの追加を提案しないこと。",
       "location": "src/components/layout/MenuBar.tsx"
+    },
+    {
+      "id": "drop-handles-need-timeout",
+      "title": "getAsFileSystemHandle() は期限を切って待つ",
+      "detail": "ドロップされた項目の FileSystemHandle は resolveDropHandles を通して集めること。getAsFileSystemHandle() は解決しないまま返ってこないことがあり (ヘッドレス Chrome で実測)、Promise.all で素直に待つとドロップ処理ごと止まって「落としても何も起きない」状態になる。期限内に取れなければ webkitGetAsEntry() の読み取り専用エントリへ落ちればよい。また動画の判定は dataTransfer.files だけで行わないこと。フォルダを落とすとそこにはフォルダ自体しか入らないので、findDroppedVideoFile で中を探す。",
+      "location": "src/engine/fileSystemPath.ts, src/engine/videoSource.ts"
     }
   ],
   "workflow": {
@@ -407,6 +413,14 @@
     {
       "symptom": "ファイルツリーの並びが連番順にならない (a1, a10, a11, a2, a3 … のように 1 の次が 10 になる)",
       "cause": "ファイル一覧を素の Array.prototype.sort() で並べており辞書順になっていた。連番表 (unifiedFileList) はフレーム番号で数値順に並ぶため、ツリーだけ並びが食い違って見えていた。ゼロ埋めが揃っていれば表面化しないが、撮影・仕上げのデータでは揃っていないことが普通にある。Win A と Win B の両方を読み込んだとき (ツリーが 2 本になるとき) に出る"
+    },
+    {
+      "symptom": "ロールの入ったフォルダを D&D すると「画像ファイルが見つかりませんでした」になる",
+      "cause": "動画の判定を dataTransfer.files だけで行っていた。フォルダを落とすとそこにはフォルダ自体しか入らず、中の .mov / .mp4 が見えない。ハンドルとエントリからフォルダの中を探すようにした"
+    },
+    {
+      "symptom": "フォルダを D&D しても何も起きず、エラーも出ない",
+      "cause": "getAsFileSystemHandle() が解決しないことがあり (ヘッドレス Chrome で実測)、Promise.all で待っているドロップ処理ごと停止していた。期限を切って読み取り専用のエントリ経路へ落ちるようにした"
     }
   ],
   "openIssues": [
