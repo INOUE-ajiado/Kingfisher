@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RollId } from '../../store/types';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
@@ -74,6 +74,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     reportRollPlaybackFailure,
     setRollFps,
     toggleRollSync,
+    openRollWindow,
   } = usePaintStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -424,6 +425,23 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
         </div>
         <div className="flex items-center gap-1">
+          {isActive && partnerOpen && (
+            <span
+              title="ツリーから映像を選ぶと、この面に開きます"
+              className="text-[9px] font-bold bg-amber-400 text-slate-900 px-1 rounded flex-shrink-0"
+            >
+              選択先
+            </span>
+          )}
+          {!partnerOpen && (
+            <button
+              onClick={(e) => { e.stopPropagation(); openRollWindow(otherRollId(rollId)); }}
+              title={`${TONE[otherRollId(rollId)].label} を開いて 2 画面で見比べる`}
+              className="p-0.5 hover:bg-white/25 rounded transition-colors"
+            >
+              <Columns className="w-3 h-3" />
+            </button>
+          )}
           {partnerOpen && (
             <button
               onClick={(e) => { e.stopPropagation(); handleToggleSync(); }}
@@ -485,6 +503,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               ロールを開く (.mov / .mp4)
             </button>
             <p className="mt-2 text-[9px] opacity-70">ドラッグ＆ドロップでも開けます</p>
+            <p className="mt-1 text-[9px] opacity-70">
+              ファイルツリーで映像を選んでも、この面が「選択先」なら開きます
+            </p>
           </div>
         )}
 
