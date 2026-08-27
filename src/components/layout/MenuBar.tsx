@@ -30,6 +30,8 @@ export const MenuBar: React.FC = () => {
     toggleShowUnpaintedFlash,
     isSplitView,
     toggleIsSplitView,
+    isWinAVisible,
+    toggleWinAVisible,
     syncMode,
     toggleSyncMode,
     setActiveTool,
@@ -236,6 +238,7 @@ export const MenuBar: React.FC = () => {
       id: 'view',
       label: '表示 (V)',
       items: [
+        { label: 'Win A を表示', shortcut: '', checked: isWinAVisible, action: toggleWinAVisible },
         { label: '2画面分割表示 (Split View)', shortcut: '', checked: isSplitView, action: toggleIsSplitView },
         { label: '左右連動 (Sync Mode)', shortcut: '', checked: syncMode, action: toggleSyncMode },
         { type: 'divider' },

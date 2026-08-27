@@ -153,6 +153,15 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
   splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
 
+  isWinAVisible: true,
+
+  toggleWinAVisible: () => {
+    const { isWinAVisible, confirmDiscardIfDirty } = get();
+    // 閉じると編集中の内容は見えなくなるので、未保存なら確認する
+    if (isWinAVisible && !confirmDiscardIfDirty(0)) return;
+    set({ isWinAVisible: !isWinAVisible });
+  },
+
   toggleIsSplitView: () => {
     const { isSplitView, confirmDiscardIfDirty } = get();
     // 2画面表示を閉じると Win B の編集は破棄されるので確認する

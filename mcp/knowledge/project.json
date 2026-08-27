@@ -247,6 +247,12 @@
       "title": "ロールは 2 面。連動はアクティブな面が主導する",
       "detail": "ロールは rollA / rollB の 2 面あり、修正前と修正後を並べて見比べられる。⚠️ 映像の一覧 (roll.files) は 2 面で共有すること。ツリーは 1 本しか出ないので、面ごとに持つとツリーの中身と開ける対象が食い違う。面ごとに持つのは再生状態 (roll.views) だけ。⚠️ 連動中のずれ直しは、操作した側 (roll.activeId) だけが行うこと。両方が相手を直すと互いにシークをかけ合い、再生が始まらなくなる (2026-08-27 に実際に踏んだ)。⚠️ 連動開始時の時刻差 (syncOffset) を保つこと。片方を頭出ししてから連動させる使い方があり、強制的に同じ時刻へ合わせると狙って選んだ位置がずれる (セルの左右連動と同じ考え方)。⚠️ <video> を登録する ref のコールバックは useCallback で固定すること。毎レンダー作り直すと React が null → 要素 の順で呼び直し、その一瞬だけ登録が外れる。",
       "location": "src/store/slices/rollSlice.ts, src/components/panels/RollViewer.tsx, src/components/panels/rollVideoRegistry.ts"
+    },
+    {
+      "id": "win-a-can-be-closed",
+      "title": "Win A も閉じられる",
+      "detail": "⚠️ Win A を「常に出す」扱いにしないこと。ロールを 2 面並べたいときに空の Win A が場所を取り、並べられなくなる (2026-08-27 の報告)。表示は isWinAVisible が持ち、タブの × と 表示メニューの「Win A を表示」で出し入れする。ただしカットやフォルダを明示的に開いたときは、隠していても出す(setCutRootFolder / openPlainFolderAsA / 画面全体のドロップ)。開いたのに何も起きないように見えるのを避けるため。レイアウト側の hidePane は最後の 1 枚を残すので、全部消えることはない。",
+      "location": "src/store/slices/viewSlice.ts, src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -456,6 +462,10 @@
     {
       "symptom": "フォルダを D&D しても何も起きず、エラーも出ない",
       "cause": "getAsFileSystemHandle() が解決しないことがあり (ヘッドレス Chrome で実測)、Promise.all で待っているドロップ処理ごと停止していた。期限を切って読み取り専用のエントリ経路へ落ちるようにした"
+    },
+    {
+      "symptom": "空の Win A が場所を取って、ロールを 2 面並べられない",
+      "cause": "closePane が Win A だけ閉じさせず、syncPaneVisibility も winA: true を固定で渡していた。isWinAVisible を追加して閉じられるようにした"
     }
   ],
   "openIssues": [
