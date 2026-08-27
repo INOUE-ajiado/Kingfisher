@@ -249,10 +249,10 @@
       "location": "src/store/slices/rollSlice.ts, src/components/panels/RollViewer.tsx, src/components/panels/rollVideoRegistry.ts"
     },
     {
-      "id": "win-a-can-be-closed",
-      "title": "Win A も閉じられる",
-      "detail": "⚠️ Win A を「常に出す」扱いにしないこと。ロールを 2 面並べたいときに空の Win A が場所を取り、並べられなくなる (2026-08-27 の報告)。表示は isWinAVisible が持ち、タブの × と 表示メニューの「Win A を表示」で出し入れする。ただしカットやフォルダを明示的に開いたときは、隠していても出す(setCutRootFolder / openPlainFolderAsA / 画面全体のドロップ)。開いたのに何も起きないように見えるのを避けるため。レイアウト側の hidePane は最後の 1 枚を残すので、全部消えることはない。",
-      "location": "src/store/slices/viewSlice.ts, src/components/panels/CellWindow.tsx"
+      "id": "empty-start-open-by-content",
+      "title": "起動時は何も出さない。開いた内容がウィンドウを決める",
+      "detail": "⚠️ createDefaultLayout に面を置かないこと。Win A を最初から出しておくと、空のまま場所を取り続けて他の面を並べられない (2026-08-27 の報告)。⚠️ hidePane に「最後の 1 枚は残す」規則を入れないこと。残すと居座った面が消せなくなり、同じ状態に戻る。全部閉じたら作業領域は空の案内になる。セルを開けば Win A、映像を選べばロールが出る。ただしカットやフォルダを明示的に開いたときは、隠していても Win A を出す(setCutRootFolder / openPlainFolderAsA / 画面全体のドロップ)。開いたのに何も起きないように見えるのを避けるため。",
+      "location": "src/engine/paneLayout.ts, src/store/slices/viewSlice.ts, src/components/panels/CellWindow.tsx"
     }
   ],
   "workflow": {
@@ -466,6 +466,10 @@
     {
       "symptom": "空の Win A が場所を取って、ロールを 2 面並べられない",
       "cause": "closePane が Win A だけ閉じさせず、syncPaneVisibility も winA: true を固定で渡していた。isWinAVisible を追加して閉じられるようにした"
+    },
+    {
+      "symptom": "Win A が画面に固定され、消せないので他のウィンドウを並べられない",
+      "cause": "createDefaultLayout が起動時に Win A を置き、さらに hidePane が「最後の 1 枚は残す」規則だったため、Win A だけのときに閉じられなかった。起動時は空、最後の 1 枚も閉じられるようにした"
     }
   ],
   "openIssues": [

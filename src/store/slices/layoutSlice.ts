@@ -74,8 +74,9 @@ export const createLayoutSlice: StateCreator<PaintStore, [], [], LayoutSlice> = 
 
   resetPaneLayout: () => {
     // 開いている面はそのままに、並びだけ既定へ戻す
-    const { isSplitView, referenceCanvas, roll } = get();
+    const { isWinAVisible, isSplitView, referenceCanvas, roll } = get();
     let layout = createDefaultLayout();
+    if (isWinAVisible) layout = showPane(layout, 'winA');
     if (isSplitView) layout = showPane(layout, 'winB');
     if (referenceCanvas.isOpen) layout = showPane(layout, 'reference');
     if (roll.views.rollA.isOpen) layout = showPane(layout, 'rollA');

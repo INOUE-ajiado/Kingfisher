@@ -36,19 +36,21 @@ function layoutOf(...groups: string[][]): PaneLayout {
 }
 
 describe('初期状態', () => {
-  it('Win A だけが開いている', () => {
+  it('何も開いていない', () => {
+    // Win A を最初から置くと、空のまま場所を取って他の面を並べられない
     const layout = createDefaultLayout();
-    expect(shape(layout)).toEqual(['[winA]']);
-    expect(isPaneVisible(layout, 'winB')).toBe(false);
+    expect(shape(layout)).toEqual([]);
+    expect(isPaneVisible(layout, 'winA')).toBe(false);
   });
 });
 
 describe('表示と非表示', () => {
   it('面を足すと右端に枠が増える', () => {
     let layout = createDefaultLayout();
+    layout = showPane(layout, 'winA');
     layout = showPane(layout, 'winB');
-    layout = showPane(layout, 'roll');
-    expect(shape(layout)).toEqual(['[winA]', '[winB]', '[roll]']);
+    layout = showPane(layout, 'rollA');
+    expect(shape(layout)).toEqual(['[winA]', '[winB]', '[rollA]']);
   });
 
   it('閉じると枠ごと消える', () => {
@@ -57,10 +59,11 @@ describe('表示と非表示', () => {
     expect(shape(layout)).toEqual(['[winA]', '[roll]']);
   });
 
-  it('最後の 1 枚は閉じさせない', () => {
-    // 何も無い画面にしてしまうと、開き直す導線が分かりにくい
-    const layout = hidePane(createDefaultLayout(), 'winA');
-    expect(shape(layout)).toEqual(['[winA]']);
+  it('最後の 1 枚も閉じられる', () => {
+    // 残すと、居座った面が空のまま消せなくなり他の面を並べられない。
+    // 全部閉じたら作業領域は空の案内になる
+    const layout = hidePane(layoutOf(['winA']), 'winA');
+    expect(shape(layout)).toEqual([]);
   });
 
   it('開いている面をもう一度指定しても増えない', () => {

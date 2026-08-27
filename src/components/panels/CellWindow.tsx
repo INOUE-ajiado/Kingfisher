@@ -1526,6 +1526,25 @@ export const CellWindow: React.FC = () => {
           ⚠️ ここに面の順序を直接書かないこと。以前は Win A → Win B → 見本 → ロール の
           順序が JSX に固定されており、入れ替えも一面表示もできなかった。
         */}
+        {slotsToRender.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center select-none p-6">
+            <FolderOpen className="w-10 h-10 text-slate-400 dark:text-slate-600" />
+            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">
+              フォルダをドロップしてください
+            </p>
+            <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
+              画面のどこへ落としても構いません。
+              <br />
+              セル画像 (.tga / .png / .jpg) と撮影ロール (.mov / .mp4) をまとめて読み込み、
+              <br />
+              ツリーから開いたファイルに合わせたウィンドウが出ます。
+            </p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-600">
+              ウィンドウ (W) メニューからも個別に出せます
+            </p>
+          </div>
+        )}
+
         {slotsToRender.map((slot, index) => (
           <React.Fragment key={slot.id}>
             <PaneDropGap index={index} onDropPane={movePaneToPosition} />
