@@ -253,6 +253,12 @@
       "title": "起動時は何も出さない。開いた内容がウィンドウを決める",
       "detail": "⚠️ createDefaultLayout に面を置かないこと。Win A を最初から出しておくと、空のまま場所を取り続けて他の面を並べられない (2026-08-27 の報告)。⚠️ hidePane に「最後の 1 枚は残す」規則を入れないこと。残すと居座った面が消せなくなり、同じ状態に戻る。全部閉じたら作業領域は空の案内になる。セルを開けば Win A、映像を選べばロールが出る。ただしカットやフォルダを明示的に開いたときは、隠していても Win A を出す(setCutRootFolder / openPlainFolderAsA / 画面全体のドロップ)。開いたのに何も起きないように見えるのを避けるため。",
       "location": "src/engine/paneLayout.ts, src/store/slices/viewSlice.ts, src/components/panels/CellWindow.tsx"
+    },
+    {
+      "id": "roll-split-affordance",
+      "title": "ロールの 2 画面はヘッダーのボタンから。開いた側が「選択先」になる",
+      "detail": "ロールのヘッダーにある 2 画面ボタンで、もう一方の面を開く (Win A / Win B の「左右に並べる」に相当)。⚠️ openRollWindow は開いた面を activeId にすること。開いた直後にツリーで映像を選ぶとその面へ入る、という流れが自然につながる。2 面あるときは、ツリーの選択先になっている面のヘッダーに「選択先」を出す。⚠️ 仕組みだけ入れて導線を出さないと「1 面しか開けない」と受け取られる (2026-08-27 の報告)。",
+      "location": "src/components/panels/RollViewer.tsx"
     }
   ],
   "workflow": {
@@ -470,6 +476,10 @@
     {
       "symptom": "Win A が画面に固定され、消せないので他のウィンドウを並べられない",
       "cause": "createDefaultLayout が起動時に Win A を置き、さらに hidePane が「最後の 1 枚は残す」規則だったため、Win A だけのときに閉じられなかった。起動時は空、最後の 1 枚も閉じられるようにした"
+    },
+    {
+      "symptom": "ロールが 1 面でしか開けないように見える",
+      "cause": "2 面の仕組みは入っていたが、Win A / Win B の「左右に並べる」に当たるボタンがロール側に無く、ツリーの選択先も見えなかった。ヘッダーに 2 画面ボタンと「選択先」表示を追加"
     }
   ],
   "openIssues": [
