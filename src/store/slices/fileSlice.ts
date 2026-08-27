@@ -90,6 +90,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
    */
   openPlainFolderAsA: (handle, name, files, filesMap) => {
     set({
+      // 明示的にフォルダを開いた操作なので、隠していても Win A を出す
+      isWinAVisible: true,
       rootFolderHandle: handle,
       rootFolderName: name,
       availableSubDirectories: [],
@@ -116,6 +118,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, listB);
 
       set({
+        // 明示的にカットを開いた操作なので、隠していても Win A を出す
+        isWinAVisible: true,
         rootFolderHandle: rootHandle,
         rootFolderName: rootName,
         availableSubDirectories: subDirs,

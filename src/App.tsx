@@ -113,6 +113,8 @@ export const App: React.FC = () => {
     const store = usePaintStore.getState();
 
     if (folder.images.size > 0) {
+      // 隠していても、セルを開いたなら出す
+      if (!store.isWinAVisible && store.activeViewIndex !== 1) store.toggleWinAVisible();
       // 画像は「今アクティブな方」へ。A/B を使い分けたいときは先にその窓を触ってから開く
       const files = sortNatural(folder.images.keys());
       const view = store.activeViewIndex === 1 ? 1 : 0;

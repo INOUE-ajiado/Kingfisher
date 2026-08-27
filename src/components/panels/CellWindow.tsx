@@ -67,6 +67,8 @@ export const CellWindow: React.FC = () => {
     closeRollWindow,
     closeReferenceWindow,
     toggleIsSplitView,
+    isWinAVisible,
+    toggleWinAVisible,
     paneLayout,
     syncPaneVisibility,
     setActivePaneInSlot,
@@ -1134,13 +1136,14 @@ export const CellWindow: React.FC = () => {
    */
   useEffect(() => {
     syncPaneVisibility({
-      winA: true,
+      winA: isWinAVisible,
       winB: isSplitView,
       reference: referenceCanvas.isOpen,
       rollA: roll.views.rollA.isOpen,
       rollB: roll.views.rollB.isOpen,
     });
   }, [
+    isWinAVisible,
     isSplitView,
     referenceCanvas.isOpen,
     roll.views.rollA.isOpen,
@@ -1481,10 +1484,10 @@ export const CellWindow: React.FC = () => {
    *
    * ⚠️ レイアウトから直接消さないこと。開いているかどうかは従来どおり
    * 各スライスのフラグが持っており、そちらを動かせば同期でレイアウトも畳まれる。
-   * Win A は編集の主対象なので閉じさせない。
    */
   const closePane = (pane: PaneId) => {
-    if (pane === 'winB' && isSplitView) toggleIsSplitView();
+    if (pane === 'winA' && isWinAVisible) toggleWinAVisible();
+    else if (pane === 'winB' && isSplitView) toggleIsSplitView();
     else if (pane === 'reference') closeReferenceWindow();
     else if (pane === 'rollA' || pane === 'rollB') closeRollWindow(pane);
   };

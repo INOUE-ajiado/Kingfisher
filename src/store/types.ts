@@ -282,6 +282,13 @@ export interface ViewSlice {
   togglePegGuide: () => void
   runPegStabilizerAutoDetect: () => void
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
+  /**
+   * Win A を出しているか。
+   * ⚠️ 「常に出す」にしないこと。ロールを 2 面並べたいときに、空の Win A が
+   * 場所を取って並べられなくなる。
+   */
+  isWinAVisible: boolean
+  toggleWinAVisible: () => void
   isSplitView: boolean
   /**
    * 連動時に保つ Win B と Win A のコマ差 (splitFileIndex - currentFileIndex)。
