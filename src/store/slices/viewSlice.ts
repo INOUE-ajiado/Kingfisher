@@ -153,7 +153,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
   splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
 
-  isWinAVisible: true,
+  isWinAVisible: false,
 
   toggleWinAVisible: () => {
     const { isWinAVisible, confirmDiscardIfDirty } = get();

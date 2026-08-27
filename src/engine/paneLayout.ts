@@ -52,9 +52,15 @@ export function createSlot(panes: PaneId[], flexGrow = 1): PaneSlot {
   return { id: nextSlotId(), panes: [...panes], activePane: panes[0], flexGrow };
 }
 
-/** 起動時のレイアウト。Win A だけを開いた状態から始める */
+/**
+ * 起動時のレイアウト。
+ *
+ * ⚠️ 何も置かない状態から始めること。Win A を最初から出しておくと、
+ * 空のまま場所を取り続けて他の面を並べられなくなる。
+ * 何を出すかはフォルダを開いた内容が決める。
+ */
 export function createDefaultLayout(): PaneLayout {
-  return { slots: [createSlot(['winA'])], maximized: null };
+  return { slots: [], maximized: null };
 }
 
 /** その面が今どのスロットにいるか (いなければ null) */
@@ -106,13 +112,14 @@ export function showPane(layout: PaneLayout, pane: PaneId): PaneLayout {
   return { ...layout, slots: [...layout.slots, createSlot([pane])] };
 }
 
-/** 面を閉じる。最後の 1 枚は閉じさせない */
+/**
+ * 面を閉じる。
+ *
+ * ⚠️ 「最後の 1 枚は残す」としないこと。残すと、最後に居座った面 (たいてい Win A) が
+ * 空のまま消せなくなり、他の面を並べられない。全部閉じたら作業領域は空の案内になる。
+ */
 export function hidePane(layout: PaneLayout, pane: PaneId): PaneLayout {
   if (!isPaneVisible(layout, pane)) return layout;
-
-  const total = layout.slots.reduce((n, s) => n + s.panes.length, 0);
-  if (total <= 1) return layout;
-
   return withoutPane(layout, pane);
 }
 
