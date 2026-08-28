@@ -6,7 +6,22 @@ import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
+import { RollId, ROLL_IDS } from '../../store/types';
+
+/**
+ * 選択中ファイルの色。Win A は青 / Win B は緑、ロールはウィンドウの枠と同じ
+ * 藍 / 紫。⚠️ Tailwind は文字列を切り出して拾うので、クラス名は必ずここに
+ * 丸ごと書くこと (`bg-${tone}-600` のような組み立ては消える)。
+ */
+type SelectionTone = 'blue' | 'emerald' | 'indigo' | 'violet';
+
+const TONE_CLASS: Record<SelectionTone, { bg: string; icon: string }> = {
+  blue: { bg: 'bg-blue-600', icon: 'text-blue-400' },
+  emerald: { bg: 'bg-emerald-600', icon: 'text-emerald-400' },
+  indigo: { bg: 'bg-indigo-600', icon: 'text-indigo-400' },
+  violet: { bg: 'bg-violet-600', icon: 'text-violet-400' },
+};
 
 /** ツリー内のフォルダのパスを、階層の深さに関係なくすべて集める */
 function collectFolderPaths(nodes: FileTreeNode[], acc: Set<string> = new Set()): Set<string> {
@@ -53,8 +68,10 @@ const TreeItemNode: React.FC<{
   onSelectFile: (idx: number) => void;
   /** もう一方のウィンドウが表示中の位置 (単一ツリー表示時の副次ハイライト) */
   secondaryIdx?: number;
-  /** 選択中ファイルのハイライト色。Win A は青、Win B は緑 */
-  selectionTone?: 'blue' | 'emerald';
+  /** 選択中ファイルのハイライト色 */
+  selectionTone?: SelectionTone;
+  /** ファイル行のアイコン。ロールの一覧はセルと見分けが付くようフィルムにする */
+  fileIcon?: 'image' | 'film';
   /** 左右連動中であることを示す 🔗 を選択中ファイルに付ける */
   showSyncBadge?: boolean;
   onFocusNode: (path: string) => void;
@@ -76,6 +93,7 @@ const TreeItemNode: React.FC<{
   currentIdx,
   secondaryIdx,
   selectionTone = 'blue',
+  fileIcon = 'image',
   showSyncBadge = false,
   markedPaths,
   onMarkFile,
@@ -136,6 +154,7 @@ const TreeItemNode: React.FC<{
                 onSelectFile={onSelectFile}
                 secondaryIdx={secondaryIdx}
                 selectionTone={selectionTone}
+                fileIcon={fileIcon}
                 showSyncBadge={showSyncBadge}
                 onFocusNode={onFocusNode}
                 currentIdx={currentIdx}
@@ -173,7 +192,7 @@ const TreeItemNode: React.FC<{
         isSelected && isSecondary
           ? 'bg-gradient-to-r from-blue-600 to-emerald-600 text-white font-bold rounded shadow-xs'
           : isSelected || isMarked
-          ? `${selectionTone === 'emerald' ? 'bg-emerald-600' : 'bg-blue-600'} text-white font-bold rounded shadow-xs`
+          ? `${TONE_CLASS[selectionTone].bg} text-white font-bold rounded shadow-xs`
           : isSecondary
           ? 'bg-emerald-600 text-white font-bold rounded shadow-xs'
           : isFocused
@@ -185,15 +204,11 @@ const TreeItemNode: React.FC<{
       {showSyncBadge && (isSelected || isSecondary) && (
         <Link className="w-3 h-3 flex-shrink-0 text-white" />
       )}
-      <FileImage
-        className={`w-3.5 h-3.5 flex-shrink-0 ${
-          isSelected || isSecondary || isMarked
-            ? 'text-white'
-            : selectionTone === 'emerald'
-            ? 'text-emerald-400'
-            : 'text-blue-400'
-        }`}
-      />
+      {React.createElement(fileIcon === 'film' ? Film : FileImage, {
+        className: `w-3.5 h-3.5 flex-shrink-0 ${
+          isSelected || isSecondary || isMarked ? 'text-white' : TONE_CLASS[selectionTone].icon
+        }`,
+      })}
       <span className="truncate">{node.name}</span>
     </div>
   );
@@ -270,17 +285,38 @@ export const FileBrowser: React.FC = () => {
   };
 
   // ファイルリストから階層ツリー構造を動的作成
+  const fileTreeNodes = useMemo(() => buildTreeFromPaths(unifiedFileList), [unifiedFileList]);
+
   /**
-   * ツリーには映像も並べる。
+   * 撮影ロールのツリー。面ごとに 1 本ずつ、セルのツリーとは別の区画に並べる。
    *
-   * ⚠️ 映像を fileListA / unifiedFileList そのものへ混ぜないこと。
-   * あちらはフレーム番号で対応づける連番の器で、映像名が混ざると
-   * コマの対応がおかしくなる。表示用の並びとしてだけ後ろに足し、
-   * 位置 (fileIndex) が連番の長さを超えたら映像として扱う。
+   * ⚠️ 映像を fileListA / unifiedFileList へ混ぜないこと。あちらはフレーム番号で
+   * 対応づける連番の器で、映像名が混ざるとコマの対応がおかしくなる。
+   * ⚠️ 以前は連番リストの後ろへ足して 1 本のツリーに同居させていたため、
+   * ロールを 2 面開いても一覧は 1 つしか出ず、どちらの面のものか分からなかった。
+   *
+   * 開いている面と、まだ開いていなくても一覧を持つ面 (フォルダを落とした直後) を出す。
    */
-  const rollPaths = useMemo(() => roll.files.map((v) => v.path), [roll.files]);
-  const treeSource = useMemo(() => [...unifiedFileList, ...rollPaths], [unifiedFileList, rollPaths]);
-  const fileTreeNodes = useMemo(() => buildTreeFromPaths(treeSource), [treeSource]);
+  const rollPanes = useMemo(() => {
+    const shown = ROLL_IDS.filter((id) => roll.views[id].isOpen || roll.views[id].files.length > 0);
+    return shown.map((id) => {
+      const view = roll.views[id];
+      const paths = view.files.map((v) => v.path);
+      return {
+        id,
+        label: id === 'rollA' ? 'ロール A' : 'ロール B',
+        folderName: view.folderName,
+        tone:
+          id === 'rollA'
+            ? 'text-indigo-600 dark:text-indigo-400 border-indigo-500/40'
+            : 'text-violet-600 dark:text-violet-400 border-violet-500/40',
+        selectionTone: (id === 'rollA' ? 'indigo' : 'violet') as SelectionTone,
+        paths,
+        nodes: buildTreeFromPaths(paths),
+        activeIdx: view.currentPath ? paths.indexOf(view.currentPath) : -1,
+      };
+    });
+  }, [roll.views]);
 
   /**
    * 2画面分割中は Win A / Win B のツリーを並べて表示する。
@@ -316,6 +352,7 @@ export const FileBrowser: React.FC = () => {
     collectFolderPaths(fileTreeNodes, wanted);
     collectFolderPaths(treeA, wanted);
     collectFolderPaths(treeB, wanted);
+    rollPanes.forEach((pane) => collectFolderPaths(pane.nodes, wanted));
     if (wanted.size === 0) return;
 
     setExpandedPaths((prev) => {
@@ -325,7 +362,7 @@ export const FileBrowser: React.FC = () => {
       missing.forEach((path) => next.add(path));
       return next;
     });
-  }, [fileTreeNodes, treeA, treeB]);
+  }, [fileTreeNodes, treeA, treeB, rollPanes]);
 
   /**
    * ツリー内の位置 → 統合リスト上の位置。
@@ -506,15 +543,15 @@ export const FileBrowser: React.FC = () => {
   // 連動中の Win B への追従はストア側 (setCurrentFileIndex) が担う。
   // ここで両方に同じ番号を入れると、連動開始時のコマ差が失われる。
   const handleSelectFrame = (idx: number) => {
-    // 連番の長さを超えていたら映像。ロールの窓へ回して再生する
-    if (idx >= unifiedFileList.length) {
-      const path = rollPaths[idx - unifiedFileList.length];
-      if (path) selectRollFile(roll.activeId, path);
-      return;
-    }
     // セルは「今アクティブな方」へ出す
     if (activeViewIndex === 1) setSplitFileIndex(idx);
     else setCurrentFileIndex(idx);
+  };
+
+  /** ロールのツリーは、その面のものだけを開く (どちらへ出るか迷わせない) */
+  const handleSelectRoll = (id: RollId, paths: string[]) => (localIdx: number) => {
+    const path = paths[localIdx];
+    if (path) selectRollFile(id, path);
   };
 
   // ⌨️ キーボード方向キー (↑ ↓ ← → Enter Space) ナビゲーション処理
@@ -830,8 +867,20 @@ export const FileBrowser: React.FC = () => {
       </div>
 
       {/* 4. メインツリー / 連番マージビュー */}
-      <div className="flex-1 overflow-y-auto p-1">
-        {treeSource.length === 0 ? (
+      <div
+        className={`p-1 ${
+          // ロールだけを読み込んだときは、案内で場所を取らずロールの一覧へ譲る
+          unifiedFileList.length === 0 && rollPanes.length > 0
+            ? 'flex-shrink-0'
+            : 'flex-1 overflow-y-auto'
+        }`}
+      >
+        {unifiedFileList.length === 0 ? (
+          rollPanes.length > 0 ? (
+            <div className="px-1 py-1.5 text-[10px] text-slate-400 dark:text-slate-500 select-none">
+              セル画像は読み込まれていません (撮影ロールのみ)
+            </div>
+          ) : (
           <div className="h-full flex flex-col items-center justify-center text-center p-3 text-slate-400">
             <span className="text-[11px] font-medium mb-1">フォルダが読み込まれていません</span>
             <span className="text-[9px] text-slate-400 leading-relaxed">
@@ -842,6 +891,7 @@ export const FileBrowser: React.FC = () => {
               ツリーから開いたファイルに合わせて表示先が切り替わります。
             </span>
           </div>
+          )
         ) : viewMode === 'tree' ? (
           showDualTree ? (
             /* 📁📁 2画面分割中: Win A / Win B のツリーを並べて表示 */
@@ -1065,6 +1115,68 @@ export const FileBrowser: React.FC = () => {
           </table>
         )}
       </div>
+
+      {/* 5. 撮影ロールのツリー。開いている面の数だけ横に並べる */}
+      {rollPanes.length > 0 && (
+        <div
+          className={`border-t border-slate-300 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/40 flex flex-col min-h-0 ${
+            unifiedFileList.length === 0 ? 'flex-1' : 'flex-shrink-0 max-h-[45%]'
+          }`}
+        >
+          <div className="h-5 px-2 flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400 select-none flex-shrink-0">
+            <Film className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+            <span>撮影ロール</span>
+          </div>
+
+          <div className="flex gap-1 flex-1 min-h-0 px-1 pb-1">
+            {rollPanes.map((pane) => (
+              <div key={pane.id} className="flex-1 min-w-0 flex flex-col">
+                <div
+                  className={`text-[9px] font-bold px-1 pb-1 mb-1 border-b truncate select-none flex items-center gap-1 ${pane.tone}`}
+                >
+                  {/* フォルダ名が無いのは 1 本だけ開いたとき。空の括弧を出さない */}
+                  <span className="truncate">
+                    {pane.folderName ? `${pane.label} (${pane.folderName})` : pane.label}
+                  </span>
+                  {/* どの面へ開くかは面ごとのツリーで決まるが、他の導線 (連番表など) の
+                      行き先が分かるように、アクティブな面には印を出す */}
+                  {roll.activeId === pane.id && rollPanes.length > 1 && (
+                    <span className="text-[8px] font-bold bg-amber-400 text-slate-900 px-1 rounded flex-shrink-0">
+                      選択先
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-0.5">
+                  {pane.nodes.length === 0 ? (
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500 px-1 py-2 leading-relaxed select-none">
+                      ロールが読み込まれていません。
+                      <br />
+                      {pane.label} へ .mov / .mp4 かフォルダをドロップしてください。
+                    </div>
+                  ) : (
+                    pane.nodes.map((node) => (
+                      <TreeItemNode
+                        key={node.path}
+                        node={node}
+                        depth={0}
+                        expandedPaths={expandedPaths}
+                        focusedPath={focusedPath}
+                        togglePath={togglePath}
+                        onSelectFile={handleSelectRoll(pane.id, pane.paths)}
+                        onFocusNode={setFocusedPath}
+                        currentIdx={pane.activeIdx}
+                        selectionTone={pane.selectionTone}
+                        fileIcon="film"
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <input
         type="file"

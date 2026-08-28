@@ -4,9 +4,10 @@
  * ⚠️ ここではデコードも読み込みも行わない。ブラウザのネイティブデコーダに任せる
  * ことがこの機能の要で、そうすればハードウェア再生になりメモリも増えない。
  *
- * ⚠️ 映像の一覧 (files) は 2 面で共有する。ツリーは 1 本しか出ないので、
- * 面ごとに持つとツリーの中身と開ける対象が食い違う。
- * 面ごとに持つのは再生状態 (views) だけ。
+ * ⚠️ 映像の一覧 (files) は面ごとに持つ。ファイルツリーも面ごとに 1 本ずつ並べるため、
+ * 共有すると「ロール A に落としたフォルダが B のツリーにも出る」ことになる。
+ * ただし 2 面目を開くときだけは、一覧が空なら相手のものを引き継ぐ
+ * (1 つのフォルダを 2 面で見比べる使い方が多く、そこで毎回落とし直させない)。
  */
 
 import { StateCreator } from 'zustand';
@@ -20,6 +21,8 @@ function emptyView(): RollViewState {
   return {
     isOpen: false,
     isFloating: false,
+    files: [],
+    folderName: '',
     fileName: '',
     file: null,
     objectUrl: null,
@@ -33,8 +36,6 @@ function emptyView(): RollViewState {
 }
 
 const initialRoll: RollState = {
-  files: [],
-  folderName: '',
   views: { rollA: emptyView(), rollB: emptyView() },
   activeId: 'rollA',
   sync: false,
@@ -93,10 +94,28 @@ function withView(roll: RollState, id: RollId, next: RollViewState): RollState {
 export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set, get) => ({
   roll: initialRoll,
 
+  /**
+   * ⚠️ 一覧が空のまま開かないこと。「2 画面で見比べる」ボタンから開いた面に
+   * 一覧が無いと、ツリーの 2 本目が空のまま並び、同じフォルダをもう一度
+   * 落とさないと選べない。空のときだけ相手の一覧を引き継ぐ (開くのは選ばれてから)。
+   */
   openRollWindow: (id) =>
-    set((state) => ({
-      roll: withView({ ...state.roll, activeId: id }, id, { ...state.roll.views[id], isOpen: true }),
-    })),
+    set((state) => {
+      const view = state.roll.views[id];
+      const partner = state.roll.views[id === 'rollA' ? 'rollB' : 'rollA'];
+      const inherited =
+        view.files.length === 0 && partner.files.length > 0
+          ? { files: partner.files, folderName: partner.folderName }
+          : null;
+
+      return {
+        roll: withView({ ...state.roll, activeId: id }, id, {
+          ...view,
+          ...(inherited ?? {}),
+          isOpen: true,
+        }),
+      };
+    }),
 
   closeRollWindow: (id) =>
     set((state) => {
@@ -116,39 +135,54 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
   setActiveRollId: (id) => set((state) => ({ roll: { ...state.roll, activeId: id } })),
 
+  /**
+   * ⚠️ 1 本だけ選んだときは一覧もその 1 本にする。前のフォルダの一覧を残すと、
+   * ツリーには出ているのに開いている映像がそこに無い、という食い違いになる。
+   */
   loadRollFile: (id, file) =>
-    set((state) => ({
-      roll: withView(
-        { ...state.roll, activeId: id },
-        id,
-        openedView(state.roll.views[id], { path: file.name, file })
-      ),
-    })),
+    set((state) => {
+      const video = { path: file.name, file };
+      return {
+        roll: withView({ ...state.roll, activeId: id }, id, {
+          ...openedView(state.roll.views[id], video),
+          files: [video],
+          folderName: '',
+        }),
+      };
+    }),
 
   loadRollFiles: (id, videos, folderName) =>
     set((state) => {
       if (videos.length === 0) return state;
-      const roll = { ...state.roll, files: videos, folderName, activeId: id };
-      return { roll: withView(roll, id, openedView(state.roll.views[id], videos[0])) };
+      return {
+        roll: withView({ ...state.roll, activeId: id }, id, {
+          ...openedView(state.roll.views[id], videos[0]),
+          files: videos,
+          folderName,
+        }),
+      };
     }),
 
-  setRollFolderFiles: (videos, folderName) =>
-    set((state) => ({ roll: { ...state.roll, files: videos, folderName } })),
+  setRollFolderFiles: (id, videos, folderName) =>
+    set((state) => ({
+      roll: withView(state.roll, id, { ...state.roll.views[id], files: videos, folderName }),
+    })),
 
   selectRollFile: (id, path) =>
     set((state) => {
-      if (path === state.roll.views[id].currentPath) return state;
-      const target = state.roll.files.find((v) => v.path === path);
+      const view = state.roll.views[id];
+      if (path === view.currentPath) return state;
+      const target = view.files.find((v) => v.path === path);
       if (!target) return state;
-      const roll = { ...state.roll, activeId: id };
-      return { roll: withView(roll, id, openedView(state.roll.views[id], target)) };
+      return { roll: withView({ ...state.roll, activeId: id }, id, openedView(view, target)) };
     }),
 
   stepRoll: (id, delta) => {
-    const { files, views } = get().roll;
+    const view = get().roll.views[id];
+    const files = view.files;
     if (files.length <= 1) return;
 
-    const at = files.findIndex((v) => v.path === views[id].currentPath);
+    const at = files.findIndex((v) => v.path === view.currentPath);
     const next = Math.max(0, Math.min(files.length - 1, (at < 0 ? 0 : at) + delta));
     if (next === at) return;
     get().selectRollFile(id, files[next].path);

@@ -536,6 +536,14 @@ export const ROLL_IDS: RollId[] = ['rollA', 'rollB'];
 export interface RollViewState {
   isOpen: boolean;
   isFloating: boolean;
+  /**
+   * この面で開いたフォルダの映像一覧。
+   * ⚠️ 面ごとに持つ。ツリーも面ごとに 1 本ずつ並べるので、
+   * ここを共有すると「A に落としたフォルダが B のツリーにも出る」ことになる。
+   */
+  files: DroppedVideo[];
+  /** 一覧の見出しに出すフォルダ名 */
+  folderName: string;
   fileName: string;
   /** 元ファイル。再生に失敗したときコーデックを調べ直すために持っておく (実データは読まない) */
   file: File | null;
@@ -553,13 +561,7 @@ export interface RollViewState {
 }
 
 export interface RollState {
-  /**
-   * 開いたフォルダで見つかった映像の一覧。
-   * ⚠️ 2 面で共有する。ツリーは 1 本しか出ないので、面ごとに持つと食い違う。
-   */
-  files: DroppedVideo[];
-  folderName: string;
-  /** 面ごとの再生状態 */
+  /** 面ごとの再生状態 (映像の一覧も面ごとに持つ) */
   views: Record<RollId, RollViewState>;
   /** ツリーから選んだときに開く面 */
   activeId: RollId;
@@ -571,6 +573,10 @@ export interface RollState {
 
 export interface RollSlice {
   roll: RollState
+  /**
+   * 面を開く。開く側に一覧が無ければ、もう一方の一覧を引き継ぐ
+   * (1 つのフォルダを 2 面で見比べる使い方でツリーが片方だけになるのを防ぐ)
+   */
   openRollWindow: (id: RollId) => void
   closeRollWindow: (id: RollId) => void
   toggleRollFloating: (id: RollId) => void
@@ -584,7 +590,7 @@ export interface RollSlice {
    * 一覧だけ登録して開かない。フォルダを開いた時点では映像を再生せず、
    * ツリーから選ばれたときに初めて開くため
    */
-  setRollFolderFiles: (videos: DroppedVideo[], folderName: string) => void
+  setRollFolderFiles: (id: RollId, videos: DroppedVideo[], folderName: string) => void
   /** 一覧の中から 1 本を選んで開く */
   selectRollFile: (id: RollId, path: string) => void
   /** 一覧の中で前後のロールへ移る */
