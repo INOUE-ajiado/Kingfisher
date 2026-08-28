@@ -418,9 +418,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         <div className="flex items-center gap-1.5 truncate">
           <Film className={`w-3.5 h-3.5 ${tone.accent}`} />
           <span className="truncate">【{tone.label}】 {view.fileName || '(未読み込み)'}</span>
-          {roll.files.length > 1 && view.currentPath && (
+          {view.files.length > 1 && view.currentPath && (
             <span className="text-[9px] font-normal opacity-90 flex-shrink-0">
-              {roll.files.findIndex((v) => v.path === view.currentPath) + 1} / {roll.files.length}
+              {view.files.findIndex((v) => v.path === view.currentPath) + 1} / {view.files.length}
             </span>
           )}
         </div>
@@ -547,7 +547,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
 
         <div className="flex items-center justify-between gap-2 text-[10px] text-slate-600 dark:text-slate-300">
           <div className="flex items-center gap-1">
-            {roll.files.length > 1 && (
+            {view.files.length > 1 && (
               <button
                 onClick={() => stepRoll(rollId, -1)}
                 disabled={disabled}
@@ -581,7 +581,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             >
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
-            {roll.files.length > 1 && (
+            {view.files.length > 1 && (
               <button
                 onClick={() => stepRoll(rollId, 1)}
                 disabled={disabled}

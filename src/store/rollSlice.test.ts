@@ -53,6 +53,8 @@ beforeEach(() => {
   const emptyView = () => ({
     isOpen: false,
     isFloating: false,
+    files: [],
+    folderName: '',
     fileName: '',
     file: null,
     objectUrl: null,
@@ -65,8 +67,6 @@ beforeEach(() => {
   });
   usePaintStore.setState({
     roll: {
-      files: [],
-      folderName: '',
       views: { rollA: emptyView(), rollB: emptyView() },
       activeId: 'rollA',
       sync: false,
@@ -189,20 +189,53 @@ describe('2 面 (修正前 / 修正後の見比べ)', () => {
     expect(revoked).toEqual([created[1]]);
   });
 
-  it('一覧は 2 面で共有する', () => {
-    // ツリーは 1 本しか出ないので、面ごとに持つと中身と食い違う
+  it('一覧は面ごとに持つ (ツリーも面ごとに 1 本ずつ並べるため)', () => {
+    const videosA = [
+      { path: 'RollA/before.mov', file: movFile('avc1', 'before.mov') },
+      { path: 'RollA/after.mov', file: movFile('avc1', 'after.mov') },
+    ];
+    const videosB = [{ path: 'RollB/retake.mov', file: movFile('avc1', 'retake.mov') }];
+
+    s().setRollFolderFiles('rollA', videosA, 'RollA');
+    s().setRollFolderFiles('rollB', videosB, 'RollB');
+
+    expect(s().roll.views.rollA.files.map((v) => v.path)).toEqual([
+      'RollA/before.mov',
+      'RollA/after.mov',
+    ]);
+    expect(s().roll.views.rollB.files.map((v) => v.path)).toEqual(['RollB/retake.mov']);
+
+    // 自分の一覧に無いものは開かない (相手の一覧へ流れ込まない)
+    s().selectRollFile('rollB', 'RollA/before.mov');
+    expect(s().roll.views.rollB.currentPath).toBeNull();
+
+    s().selectRollFile('rollA', 'RollA/before.mov');
+    s().selectRollFile('rollB', 'RollB/retake.mov');
+    expect(s().roll.views.rollA.currentPath).toBe('RollA/before.mov');
+    expect(s().roll.views.rollB.currentPath).toBe('RollB/retake.mov');
+  });
+
+  it('2 面目を開くとき、一覧が空なら相手のものを引き継ぐ', () => {
+    // 1 つのフォルダを 2 面で見比べる使い方。ここで引き継がないと
+    // ツリーの 2 本目が空のまま並び、同じフォルダを落とし直す羽目になる
     const videos = [
       { path: 'Roll/before.mov', file: movFile('avc1', 'before.mov') },
       { path: 'Roll/after.mov', file: movFile('avc1', 'after.mov') },
     ];
-    s().setRollFolderFiles(videos, 'Roll');
+    s().loadRollFiles('rollA', videos, 'Roll');
+    s().openRollWindow('rollB');
 
-    s().selectRollFile('rollA', 'Roll/before.mov');
-    s().selectRollFile('rollB', 'Roll/after.mov');
+    expect(s().roll.views.rollB.files).toHaveLength(2);
+    expect(s().roll.views.rollB.folderName).toBe('Roll');
+    // 引き継ぐのは一覧だけ。何を開くかは選ばれてから決まる
+    expect(s().roll.views.rollB.currentPath).toBeNull();
 
-    expect(s().roll.files).toHaveLength(2);
-    expect(s().roll.views.rollA.currentPath).toBe('Roll/before.mov');
-    expect(s().roll.views.rollB.currentPath).toBe('Roll/after.mov');
+    // 既に自分の一覧を持っている面は上書きしない
+    s().loadRollFiles('rollB', [{ path: 'Other/x.mov', file: movFile('avc1', 'x.mov') }], 'Other');
+    s().closeRollWindow('rollA');
+    s().loadRollFiles('rollA', videos, 'Roll');
+    s().openRollWindow('rollB');
+    expect(s().roll.views.rollB.folderName).toBe('Other');
   });
 
   it('開いた面がアクティブになる', () => {
