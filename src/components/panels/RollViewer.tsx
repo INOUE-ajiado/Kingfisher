@@ -445,7 +445,11 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           {partnerOpen && (
             <button
               onClick={(e) => { e.stopPropagation(); handleToggleSync(); }}
-              title={roll.sync ? '連動を解除する' : 'もう一方のロールと連動させる (今の時刻差を保ちます)'}
+              title={
+                roll.sync
+                  ? '再生の連動を解除する'
+                  : 'もう一方のロールと再生を連動させる (今の時刻差を保ちます)。ツリーで選ぶロールの連動はファイルツリー側の「選択連動」'
+              }
               className={`p-0.5 rounded transition-colors ${
                 roll.sync ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/25'
               }`}

@@ -71,6 +71,8 @@ beforeEach(() => {
       activeId: 'rollA',
       sync: false,
       syncOffset: 0,
+      fileSync: false,
+      fileSyncOffset: 0,
     },
   });
 });
@@ -274,5 +276,106 @@ describe('連動', () => {
     s().toggleRollSync(1.5);
     s().toggleRollSync();
     expect(s().roll.sync).toBe(false);
+  });
+});
+
+describe('ツリーの選択の連動', () => {
+  /** 3 本ずつ入った 2 つのフォルダを、面ごとに読み込む */
+  const loadBoth = () => {
+    const videos = (prefix: string) =>
+      ['c1', 'c2', 'c3'].map((n) => ({
+        path: `${prefix}/${n}.mov`,
+        file: movFile('avc1', `${n}.mov`),
+      }));
+    s().loadRollFiles('rollA', videos('Before'), 'Before');
+    s().loadRollFiles('rollB', videos('After'), 'After');
+  };
+
+  const pathA = () => s().roll.views.rollA.currentPath;
+  const pathB = () => s().roll.views.rollB.currentPath;
+
+  it('片方に一覧が無ければ連動しない', () => {
+    s().loadRollFile('rollA', movFile('avc1'));
+    s().toggleRollFileSync();
+    expect(s().roll.fileSync).toBe(false);
+  });
+
+  it('開始時のずれを覚え、押しただけでは動かさない', () => {
+    // 「A の 1 本目と B の 2 本目が同じカット」という並びに合わせてから連動させる
+    loadBoth();
+    s().selectRollFile('rollB', 'After/c2.mov');
+    s().toggleRollFileSync();
+
+    expect(s().roll.fileSync).toBe(true);
+    expect(s().roll.fileSyncOffset).toBe(1);
+    expect(pathA()).toBe('Before/c1.mov');
+    expect(pathB()).toBe('After/c2.mov');
+  });
+
+  it('片方で選ぶと、もう片方もずれを保って動く', () => {
+    loadBoth();
+    s().selectRollFile('rollB', 'After/c2.mov');
+    s().toggleRollFileSync();
+
+    s().selectRollFile('rollA', 'Before/c2.mov');
+    expect(pathB()).toBe('After/c3.mov');
+
+    // 逆向きも同じ差で追う
+    s().selectRollFile('rollB', 'After/c2.mov');
+    expect(pathA()).toBe('Before/c1.mov');
+  });
+
+  it('コマ送り (前後のロールへ) からも連動する', () => {
+    loadBoth();
+    s().toggleRollFileSync();
+    s().stepRoll('rollA', 1);
+    expect(pathA()).toBe('Before/c2.mov');
+    expect(pathB()).toBe('After/c2.mov');
+  });
+
+  it('一覧の端では止まるが、ずれ自体は保つ', () => {
+    loadBoth();
+    s().selectRollFile('rollB', 'After/c2.mov');
+    s().toggleRollFileSync(); // ずれ +1
+
+    s().selectRollFile('rollA', 'Before/c3.mov');
+    expect(pathB()).toBe('After/c3.mov'); // これ以上先が無いので端で止まる
+    expect(s().roll.fileSyncOffset).toBe(1);
+
+    // 端で切り詰めた分をずれに書き戻していないこと (戻せば元の差で付いてくる)
+    s().selectRollFile('rollA', 'Before/c1.mov');
+    expect(pathB()).toBe('After/c2.mov');
+  });
+
+  it('連動していなければ相手は動かない', () => {
+    loadBoth();
+    s().selectRollFile('rollA', 'Before/c3.mov');
+    expect(pathB()).toBe('After/c1.mov');
+  });
+
+  it('差を揃えるとロール B がロール A と同じ位置へ来る', () => {
+    loadBoth();
+    s().selectRollFile('rollB', 'After/c3.mov');
+    s().toggleRollFileSync();
+    s().alignRollFiles();
+
+    expect(s().roll.fileSyncOffset).toBe(0);
+    expect(pathB()).toBe('After/c1.mov');
+  });
+
+  it('連動で開いた URL も手放す', () => {
+    loadBoth();
+    s().toggleRollFileSync();
+    const before = revoked.length;
+    s().selectRollFile('rollA', 'Before/c2.mov');
+    // 2 面とも差し替わるので、前の URL は 2 本とも解放される
+    expect(revoked.length).toBe(before + 2);
+  });
+
+  it('面を閉じたら連動も解ける', () => {
+    loadBoth();
+    s().toggleRollFileSync();
+    s().closeRollWindow('rollB');
+    expect(s().roll.fileSync).toBe(false);
   });
 });

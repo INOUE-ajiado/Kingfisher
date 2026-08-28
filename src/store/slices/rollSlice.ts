@@ -8,6 +8,9 @@
  * 共有すると「ロール A に落としたフォルダが B のツリーにも出る」ことになる。
  * ただし 2 面目を開くときだけは、一覧が空なら相手のものを引き継ぐ
  * (1 つのフォルダを 2 面で見比べる使い方が多く、そこで毎回落とし直させない)。
+ *
+ * ⚠️ 連動は 2 種類ある。sync は再生 (同じロールの中の時刻)、fileSync は
+ * ツリーの選択 (一覧の何本目を開くか)。混ぜないこと。
  */
 
 import { StateCreator } from 'zustand';
@@ -40,6 +43,8 @@ const initialRoll: RollState = {
   activeId: 'rollA',
   sync: false,
   syncOffset: 0,
+  fileSync: false,
+  fileSyncOffset: 0,
 };
 
 /**
@@ -91,6 +96,37 @@ function withView(roll: RollState, id: RollId, next: RollViewState): RollState {
   return { ...roll, views: { ...roll.views, [id]: next } };
 }
 
+function partnerOf(id: RollId): RollId {
+  return id === 'rollA' ? 'rollB' : 'rollA';
+}
+
+/** 一覧の中の位置。まだ何も開いていなければ -1 */
+function indexOfCurrent(view: RollViewState): number {
+  return view.currentPath ? view.files.findIndex((v) => v.path === view.currentPath) : -1;
+}
+
+/**
+ * ツリーの連動中に、相手の面を「一覧上のずれ」ぶんだけ動かした roll を返す。
+ *
+ * ⚠️ fileSyncOffset は「B − A」。自分が A なら足し、B なら引く (再生の連動と同じ向き)。
+ * ⚠️ 端は切り詰めるだけで、ずれ自体は書き換えないこと。書き換えると、
+ * 一覧の端で一度止まっただけで狙って付けたずれが失われる。
+ * ⚠️ 相手が既にそのロールを開いているなら何もしないこと。openedView は blob URL を
+ * 作り直すので、通すたびに相手の再生が頭へ戻る。
+ */
+function withSyncedPartner(roll: RollState, id: RollId, index: number): RollState {
+  const otherId = partnerOf(id);
+  const partner = roll.views[otherId];
+  if (partner.files.length === 0) return roll;
+
+  const wanted = id === 'rollA' ? index + roll.fileSyncOffset : index - roll.fileSyncOffset;
+  const at = Math.max(0, Math.min(partner.files.length - 1, wanted));
+  const target = partner.files[at];
+  if (!target || target.path === partner.currentPath) return roll;
+
+  return withView(roll, otherId, openedView(partner, target));
+}
+
 export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set, get) => ({
   roll: initialRoll,
 
@@ -117,12 +153,22 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       };
     }),
 
+  /**
+   * ⚠️ 閉じたらツリーの連動も解くこと。一覧ごと捨てるので、残したままにすると
+   * 次に開いたときに前のずれで勝手に相手が動く。
+   */
   closeRollWindow: (id) =>
     set((state) => {
       const view = state.roll.views[id];
       releaseUrl(view.objectUrl);
       // ウィンドウの切り離し状態は次に開いたときのために残し、素材だけ手放す
-      return { roll: withView(state.roll, id, { ...emptyView(), isFloating: view.isFloating }) };
+      return {
+        roll: withView(
+          { ...state.roll, fileSync: false, fileSyncOffset: 0 },
+          id,
+          { ...emptyView(), isFloating: view.isFloating }
+        ),
+      };
     }),
 
   toggleRollFloating: (id) =>
@@ -168,13 +214,19 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       roll: withView(state.roll, id, { ...state.roll.views[id], files: videos, folderName }),
     })),
 
+  /**
+   * ⚠️ ツリーの連動中は相手の面も動かすこと。ここを通さずに面ごとに選ばせると、
+   * 2 本のツリーで同じ位置を毎回 2 回選ぶことになる (連動の意味が無くなる)。
+   */
   selectRollFile: (id, path) =>
     set((state) => {
       const view = state.roll.views[id];
       if (path === view.currentPath) return state;
-      const target = view.files.find((v) => v.path === path);
-      if (!target) return state;
-      return { roll: withView({ ...state.roll, activeId: id }, id, openedView(view, target)) };
+      const at = view.files.findIndex((v) => v.path === path);
+      if (at < 0) return state;
+
+      const roll = withView({ ...state.roll, activeId: id }, id, openedView(view, view.files[at]));
+      return { roll: roll.fileSync ? withSyncedPartner(roll, id, at) : roll };
     }),
 
   stepRoll: (id, delta) => {
@@ -247,5 +299,39 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       // 片方しか開いていなければ連動しても意味がない
       if (open.length < 2) return state;
       return { roll: { ...state.roll, sync: true, syncOffset: offset } };
+    }),
+
+  /**
+   * 2 面のツリーの選択を連動させる / やめる。
+   *
+   * ⚠️ 開始時のずれを保つこと。「A の 3 本目と B の 5 本目が同じカット」という
+   * 並びは珍しくないので、押した瞬間に揃えると合わせた位置が失われる
+   * (再生の連動・セルの左右連動と同じ考え方)。
+   * ⚠️ 判定に isOpen を使わないこと。フォルダを落としただけでまだ開いていない面も
+   * ツリーには並んでおり、そこから選べば開く。窓の有無で押せなくすると
+   * 「ボタンはあるのに反応しない」ことになる。
+   */
+  toggleRollFileSync: () =>
+    set((state) => {
+      if (state.roll.fileSync) return { roll: { ...state.roll, fileSync: false } };
+
+      const { rollA, rollB } = state.roll.views;
+      // 片方に一覧が無ければ合わせようがない
+      if (rollA.files.length === 0 || rollB.files.length === 0) return state;
+
+      const atA = indexOfCurrent(rollA);
+      const atB = indexOfCurrent(rollB);
+      // どちらかがまだ開いていなければ、ずれの決めようが無いので 0 から始める
+      const offset = atA >= 0 && atB >= 0 ? atB - atA : 0;
+      return { roll: { ...state.roll, fileSync: true, fileSyncOffset: offset } };
+    }),
+
+  /** ずれを 0 に戻し、ロール B をロール A と同じ位置へ揃える */
+  alignRollFiles: () =>
+    set((state) => {
+      const atA = indexOfCurrent(state.roll.views.rollA);
+      if (atA < 0) return state;
+      const roll = { ...state.roll, fileSyncOffset: 0 };
+      return { roll: withSyncedPartner(roll, 'rollA', atA) };
     }),
 });

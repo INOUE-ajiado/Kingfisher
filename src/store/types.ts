@@ -569,6 +569,14 @@ export interface RollState {
   sync: boolean;
   /** 連動を開始した時点の時刻差 (B - A、秒) */
   syncOffset: number;
+  /**
+   * 2 面のツリーで選ぶロールを連動させるか。
+   * 再生の連動 (sync) とは別物。あちらは同じロールの中の時刻、こちらは
+   * 「一覧の何本目を開くか」を合わせる。
+   */
+  fileSync: boolean;
+  /** ツリーの連動を開始した時点の一覧上のずれ (B - A、本数) */
+  fileSyncOffset: number;
 }
 
 export interface RollSlice {
@@ -603,6 +611,13 @@ export interface RollSlice {
    * 開始時の時刻差 (B - A、秒) を渡すと、その差を保ったまま追従する。
    */
   toggleRollSync: (offset?: number) => void
+  /**
+   * 2 面のツリーで選ぶロールを連動させる / やめる。
+   * 開始時に今それぞれ開いている本数の差を記録し、以降その差を保って追従する。
+   */
+  toggleRollFileSync: () => void
+  /** ツリーの連動のずれを 0 に戻し、ロール B を ロール A と同じ位置へ揃える */
+  alignRollFiles: () => void
 }
 
 /** 独立ウィンドウとして切り離せるパネルの識別子 */
