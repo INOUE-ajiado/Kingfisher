@@ -255,6 +255,8 @@ export const FileBrowser: React.FC = () => {
     activeViewIndex,
     roll,
     selectRollFile,
+    toggleRollFileSync,
+    alignRollFiles,
     setFolderHandleA,
     setFolderHandleB,
     setFolderFilesA,
@@ -1126,6 +1128,52 @@ export const FileBrowser: React.FC = () => {
           <div className="h-5 px-2 flex items-center gap-1.5 text-[10px] font-semibold text-slate-600 dark:text-slate-400 select-none flex-shrink-0">
             <Film className="w-3 h-3 text-indigo-500 flex-shrink-0" />
             <span>撮影ロール</span>
+
+            {/* 2 面あるときだけ。ツリーの選択を連動させる (再生の連動はロール窓のヘッダー側) */}
+            {rollPanes.length > 1 && (
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  onClick={toggleRollFileSync}
+                  title={
+                    roll.fileSync
+                      ? `ツリー連動中${
+                          roll.fileSyncOffset !== 0
+                            ? ` (ロール B は ロール A の ${
+                                roll.fileSyncOffset > 0
+                                  ? `${roll.fileSyncOffset} 本先`
+                                  : `${-roll.fileSyncOffset} 本手前`
+                              })`
+                            : ' (同じ位置)'
+                        }`
+                      : '独立モード (押すと今のずれを保ったまま、片方で選ぶともう片方も動きます)'
+                  }
+                  className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-0.5 font-bold border transition-colors ${
+                    roll.fileSync
+                      ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                      : 'bg-slate-200 dark:bg-slate-700 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {roll.fileSync ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
+                  <span>選択連動</span>
+                  {/* ずれが見えないと「連動していない」ように見えるため常に出す */}
+                  {roll.fileSync && roll.fileSyncOffset !== 0 && (
+                    <span className="tabular-nums">
+                      {roll.fileSyncOffset > 0 ? `+${roll.fileSyncOffset}` : roll.fileSyncOffset}
+                    </span>
+                  )}
+                </button>
+
+                {roll.fileSync && roll.fileSyncOffset !== 0 && (
+                  <button
+                    onClick={alignRollFiles}
+                    title="ずれをリセットして ロール B を ロール A と同じ位置に揃える"
+                    className="px-1.5 py-0.5 rounded text-[9px] font-bold border border-amber-400 text-amber-600 dark:text-amber-400 hover:bg-amber-500 hover:text-white transition-colors"
+                  >
+                    差を揃える
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-1 flex-1 min-h-0 px-1 pb-1">
@@ -1168,6 +1216,7 @@ export const FileBrowser: React.FC = () => {
                         currentIdx={pane.activeIdx}
                         selectionTone={pane.selectionTone}
                         fileIcon="film"
+                        showSyncBadge={roll.fileSync}
                       />
                     ))
                   )}
