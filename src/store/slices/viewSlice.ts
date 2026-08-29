@@ -159,7 +159,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     const { isWinAVisible, confirmDiscardIfDirty } = get();
     // 閉じると編集中の内容は見えなくなるので、未保存なら確認する
     if (isWinAVisible && !confirmDiscardIfDirty(0)) return;
-    set({ isWinAVisible: !isWinAVisible });
+    set({ isWinAVisible: !isWinAVisible, ...(isWinAVisible ? {} : { activeSurface: 'cell' as const }) });
   },
 
   toggleIsSplitView: () => {
@@ -168,6 +168,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     if (isSplitView && !confirmDiscardIfDirty(1)) return;
     set({
       isSplitView: !isSplitView,
+      // セルを並べた操作なので、↑ ↓ と Space はセルのものへ
+      ...(isSplitView ? {} : { activeSurface: 'cell' as const }),
       // 閉じたときはアクティブビューを Win A に戻す (保存先の取り違えを防ぐ)
       ...(isSplitView ? { activeViewIndex: 0 as 0 | 1, splitHistoryStack: [], splitHistoryIndex: -1 } : {}),
     });
@@ -208,7 +210,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
   setSplitFileIndex: (index) => {
     const state = get();
-    if (index === state.splitFileIndex) return;
+    if (index === state.splitFileIndex) {
+      // 同じコマでも、選んだ以上はキーの効き先をセルへ戻す
+      if (state.activeSurface !== 'cell') set({ activeSurface: 'cell' });
+      return;
+    }
     if (!state.confirmDiscardIfDirty(1)) return;
 
     const patch: Record<string, unknown> = {

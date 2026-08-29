@@ -409,6 +409,35 @@ describe('キーの効き先 (activeSurface)', () => {
     expect(s().activeSurface).toBe('cell');
   });
 
+  it('セルのフォルダを開くとセルへ戻る', () => {
+    // ⚠️ ロールを開いた後にセルのフォルダを開くと、↑ ↓ がロールのままだった
+    s().loadRollFile('rollA', movFile('avc1'));
+    expect(s().activeSurface).toBe('roll');
+
+    const files = ['a0001.tga', 'a0002.tga'];
+    const map = new Map(files.map((n) => [n, new File([new Uint8Array(4)], n)]));
+    s().setCustomDropFolderA('Cut', map, files);
+    expect(s().activeSurface).toBe('cell');
+  });
+
+  it('同じコマを選び直してもセルへ戻る', () => {
+    const files = ['a0001.tga', 'a0002.tga'];
+    const map = new Map(files.map((n) => [n, new File([new Uint8Array(4)], n)]));
+    s().setCustomDropFolderA('Cut', map, files);
+    s().loadRollFile('rollA', movFile('avc1'));
+    expect(s().activeSurface).toBe('roll');
+
+    // 表示中のコマをもう一度選んだだけでも、キーはセルのものへ戻る
+    s().setCurrentFileIndex(s().currentFileIndex);
+    expect(s().activeSurface).toBe('cell');
+  });
+
+  it('2 画面に並べるとセルへ戻る', () => {
+    s().loadRollFile('rollA', movFile('avc1'));
+    s().toggleIsSplitView();
+    expect(s().activeSurface).toBe('cell');
+  });
+
   it('片面を閉じてもロールのまま。両面閉じたらセルへ戻る', () => {
     s().loadRollFile('rollA', movFile('avc1', 'before.mov'));
     s().loadRollFile('rollB', movFile('avc1', 'after.mov'));

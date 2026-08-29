@@ -92,6 +92,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set({
       // 明示的にフォルダを開いた操作なので、隠していても Win A を出す
       isWinAVisible: true,
+      // セルを開いた操作なので、↑ ↓ と Space の効き先もセルへ戻す
+      activeSurface: 'cell',
       rootFolderHandle: handle,
       rootFolderName: name,
       availableSubDirectories: [],
@@ -137,6 +139,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex: firstIndexWithFile(frameNumbers, frameMap, 0),
         splitFileIndex: firstIndexWithFile(frameNumbers, frameMap, 1),
       });
@@ -169,6 +173,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -201,6 +207,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         splitFileIndex,
         currentFileIndex,
       };
@@ -227,6 +235,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -253,6 +263,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         splitFileIndex,
         currentFileIndex,
       };
@@ -300,6 +312,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -327,6 +341,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -353,6 +369,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -379,6 +397,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         fileList: unifiedFiles,
         mergedFrameNumbers: frameNumbers,
         mergedFrameMap: frameMap,
+        // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
+        activeSurface: 'cell' as const,
         currentFileIndex,
         splitFileIndex,
       };
@@ -397,7 +417,12 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
   setCurrentFileIndex: (index) => {
     const state = get();
-    if (index === state.currentFileIndex) return;
+    // ⚠️ 同じコマを選び直したときも、キーの効き先はセルへ戻すこと。
+    // ここで返してしまうと「ツリーで選んだのに ↑ ↓ がロールのまま」になる
+    if (index === state.currentFileIndex) {
+      if (state.activeSurface !== 'cell') set({ activeSurface: 'cell' });
+      return;
+    }
     if (!state.confirmDiscardIfDirty(0)) return;
 
     const patch: Record<string, unknown> = {
