@@ -405,6 +405,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       historyStack: [],
       historyIndex: -1,
       isDirtyA: false,
+      // セルを選んだ時点で、↑ ↓ と Space はセルのものへ戻る
+      activeSurface: 'cell',
     };
 
     // 連動中は、連動を開始した時点のコマ差を保ったまま Win B も追従させる

@@ -201,7 +201,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     });
   },
 
-  setActiveViewIndex: (idx) => set({ activeViewIndex: idx }),
+  // セルの窓を触ったら、↑ ↓ と Space の効き先もセルへ戻す
+  setActiveViewIndex: (idx) => set({ activeViewIndex: idx, activeSurface: 'cell' }),
 
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
 
@@ -215,6 +216,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       splitHistoryStack: [],
       splitHistoryIndex: -1,
       isDirtyB: false,
+      activeSurface: 'cell',
     };
 
     // 連動中は Win A 側も同じコマ差を保って追従させる

@@ -145,6 +145,8 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
           : null;
 
       return {
+        // 開いた直後は ↑ ↓ と Space をロールへ効かせる
+        activeSurface: 'roll' as const,
         roll: withView({ ...state.roll, activeId: id }, id, {
           ...view,
           ...(inherited ?? {}),
@@ -162,13 +164,13 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       const view = state.roll.views[id];
       releaseUrl(view.objectUrl);
       // ウィンドウの切り離し状態は次に開いたときのために残し、素材だけ手放す
-      return {
-        roll: withView(
-          { ...state.roll, fileSync: false, fileSyncOffset: 0 },
-          id,
-          { ...emptyView(), isFloating: view.isFloating }
-        ),
-      };
+      const roll = withView({ ...state.roll, fileSync: false, fileSyncOffset: 0 }, id, {
+        ...emptyView(),
+        isFloating: view.isFloating,
+      });
+      // ロールが 1 面も残らなければ、キーの効き先をセルへ戻す
+      const stillOpen = ROLL_IDS.some((rid) => roll.views[rid].isOpen);
+      return { roll, ...(stillOpen ? {} : { activeSurface: 'cell' as const }) };
     }),
 
   toggleRollFloating: (id) =>
@@ -179,7 +181,8 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       }),
     })),
 
-  setActiveRollId: (id) => set((state) => ({ roll: { ...state.roll, activeId: id } })),
+  setActiveRollId: (id) =>
+    set((state) => ({ activeSurface: 'roll' as const, roll: { ...state.roll, activeId: id } })),
 
   /**
    * ⚠️ 1 本だけ選んだときは一覧もその 1 本にする。前のフォルダの一覧を残すと、
@@ -189,6 +192,7 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
     set((state) => {
       const video = { path: file.name, file };
       return {
+        activeSurface: 'roll' as const,
         roll: withView({ ...state.roll, activeId: id }, id, {
           ...openedView(state.roll.views[id], video),
           files: [video],
@@ -201,6 +205,7 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
     set((state) => {
       if (videos.length === 0) return state;
       return {
+        activeSurface: 'roll' as const,
         roll: withView({ ...state.roll, activeId: id }, id, {
           ...openedView(state.roll.views[id], videos[0]),
           files: videos,
@@ -226,7 +231,11 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       if (at < 0) return state;
 
       const roll = withView({ ...state.roll, activeId: id }, id, openedView(view, view.files[at]));
-      return { roll: roll.fileSync ? withSyncedPartner(roll, id, at) : roll };
+      return {
+        // ツリーでロールを選んだ時点で、↑ ↓ と Space はロールのものになる
+        activeSurface: 'roll' as const,
+        roll: roll.fileSync ? withSyncedPartner(roll, id, at) : roll,
+      };
     }),
 
   stepRoll: (id, delta) => {

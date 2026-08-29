@@ -275,12 +275,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (videos.length > 0) loadRollFiles(rollId, videos, commonRootName(videos));
   };
 
-  const togglePlay = () => {
+  /**
+   * 再生 / 一時停止。
+   *
+   * both を立てると、再生の連動を入れていなくても 2 面いっしょに動かす
+   * (Space の「同時再生」)。時刻を揃えるかどうかは従来どおり連動の有無で決まる。
+   */
+  const togglePlay = (both = false) => {
     const video = videoRef.current;
     if (!video) return;
     // 連動中はこちらが主導する。押した側をアクティブにしておく
     setActiveRollId(rollId);
-    const partner = partnerVideo();
+    const partner = both ? getRollVideo(otherRollId(rollId)) : partnerVideo();
 
     if (!video.paused) {
       video.pause();
@@ -335,23 +341,42 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   };
 
   /**
-   * キーボードでのコマ送り。
+   * キーボード操作。← → でコマ送り、↑ ↓ で前後のロール、Space で 2 面同時再生。
    *
-   * ⚠️ 上下キーはセルのコマ送りに割り当てられているので、ここでは左右だけを使う。
+   * ⚠️ ↑ ↓ と Space はセルでも使う (コマ送り / パン)。どちらへ効かせるかは
+   * activeSurface (最後に触った面) で決める。ここで拾ったら stopPropagation して
+   * セル側 (useGlobalShortcuts / CellWindow) へ流さないこと。二重に動く。
+   *   ⚠️ この登録は window の capture。document の capture (useGlobalShortcuts) より
+   *   先に走るので、ここで止めればセルのコマ送りは動かない。
    * ⚠️ 入力欄にフォーカスがあるときは何もしないこと。シークバーや fps の選択は
    * 左右キーで操作するものなので、横取りするとつまみが動かせなくなる。
-   * ⚠️ 2 面あるので、キーを拾うのはアクティブな面だけ。両方が拾うと二重に進む。
+   * ⚠️ ボタンにフォーカスがあるときは Space を横取りしないこと。ブラウザが keyup で
+   * クリックにするため、拾うと再生と停止が 1 回ずつ走って何も起きないように見える。
+   * ⚠️ 2 面あるので、キーを拾うのは 1 面だけ。両方が拾うと二重に進む。
    */
-  const stepRef = useRef({ step, stepSecond });
-  stepRef.current = { step, stepSecond };
+  const stepRef = useRef({ step, stepSecond, togglePlay });
+  stepRef.current = { step, stepSecond, togglePlay };
 
   useEffect(() => {
-    if (!view.objectUrl || view.status !== 'ready') return;
+    // ⚠️ 「再生できる」ことを条件にしないこと。コーデック非対応で止まった面からでも
+    // ↑ ↓ で次のロールへ移れないと、その 1 本から抜け出せなくなる。
+    if (!view.isOpen) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (usePaintStore.getState().roll.activeId !== rollId) return;
+      const store = usePaintStore.getState();
       if (e.ctrlKey || e.altKey || e.metaKey) return;
-      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+      const isStep = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+      const isRollStep = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+      const isPlay = e.key === ' ' || e.code === 'Space';
+      if (!isStep && !isRollStep && !isPlay) return;
+
+      // ← → はロールの中のコマ送りなので従来どおり常に拾う。
+      // ↑ ↓ と Space はセルと取り合いになるため、ロールを最後に触ったときだけ。
+      if ((isRollStep || isPlay) && store.activeSurface !== 'roll') return;
+
+      // キーを拾うのは 1 面だけ。アクティブな面が閉じていれば、開いている方が拾う
+      if (store.roll.views[store.roll.activeId].isOpen && store.roll.activeId !== rollId) return;
 
       const target = e.target as HTMLElement | null;
       if (
@@ -359,7 +384,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
-          target.isContentEditable)
+          target.isContentEditable ||
+          (isPlay && (target.tagName === 'BUTTON' || target.tagName === 'A')))
       ) {
         return;
       }
@@ -367,16 +393,25 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       e.preventDefault();
       e.stopPropagation();
 
-      const direction = e.key === 'ArrowRight' ? 1 : -1;
       // ⚠️ 最新の関数を ref から呼ぶこと。依存に入れて登録し直すと、
       // 塗っている間の再描画のたびに window のリスナーを付け替えることになる。
+      if (isPlay) {
+        stepRef.current.togglePlay(true);
+        return;
+      }
+      if (isRollStep) {
+        // ツリーの並びに合わせる (↓ が次のロール)。選択連動中は相手の面も動く
+        usePaintStore.getState().stepRoll(rollId, e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      const direction = e.key === 'ArrowRight' ? 1 : -1;
       if (e.shiftKey) stepRef.current.stepSecond(direction);
       else stepRef.current.step(direction);
     };
 
     window.addEventListener('keydown', onKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
-  }, [view.objectUrl, view.status, rollId]);
+  }, [view.isOpen, rollId]);
 
   const unsupported = view.status === 'unsupported' || view.status === 'error';
   const disabled = !view.objectUrl || unsupported;
@@ -555,7 +590,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               <button
                 onClick={() => stepRoll(rollId, -1)}
                 disabled={disabled}
-                title="前のロールへ"
+                title="前のロールへ (↑)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
               >
                 <SkipBack className="w-3.5 h-3.5" />
@@ -570,9 +605,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={togglePlay}
+              onClick={() => togglePlay()}
               disabled={disabled}
-              title={isPlaying ? '一時停止' : '再生'}
+              title={isPlaying ? '一時停止 (Space)' : '再生 (Space で 2 面同時)'}
               className={`p-1 rounded ${tone.button} text-white disabled:opacity-40 transition-colors`}
             >
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
@@ -589,7 +624,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               <button
                 onClick={() => stepRoll(rollId, 1)}
                 disabled={disabled}
-                title="次のロールへ"
+                title="次のロールへ (↓)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
               >
                 <SkipForward className="w-3.5 h-3.5" />
