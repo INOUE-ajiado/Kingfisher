@@ -916,6 +916,59 @@ describe('view スライス — 左右連動', () => {
     expect(s().currentFileIndex).toBe(2);
   });
 
+  it('端をまたいでもコマ差が失われない', () => {
+    // ⚠️ ここが崩れると「Win B で先頭の 0001 だけ出てこない」という形で現れる。
+    // 両方に delta を足していた頃は、先頭で Win B が止まった時点で差が 0 になり、
+    // 戻ってきたときに 1 コマずれたまま進んでいた。
+    usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 0 });
+    s().toggleSyncMode();
+    expect(s().syncFrameOffset).toBe(-1);
+
+    s().prevCell();
+    expect(s().currentFileIndex).toBe(0);
+    expect(s().splitFileIndex).toBe(0); // これ以上戻れないので端で止まる
+
+    s().nextCell();
+    expect(s().currentFileIndex).toBe(1);
+    expect(s().splitFileIndex).toBe(0); // 差 -1 が戻ってくる (0001 を飛ばさない)
+
+    s().nextCell();
+    expect(s().currentFileIndex).toBe(2);
+    expect(s().splitFileIndex).toBe(1);
+  });
+
+  it('末尾でも同じようにコマ差を保つ', () => {
+    usePaintStore.setState({ currentFileIndex: 3, splitFileIndex: 4 });
+    s().toggleSyncMode(); // 差 +1
+
+    s().nextCell();
+    expect(s().currentFileIndex).toBe(4);
+    expect(s().splitFileIndex).toBe(4); // 末尾で止まる
+
+    s().prevCell();
+    expect(s().currentFileIndex).toBe(3);
+    expect(s().splitFileIndex).toBe(4); // 差 +1 が戻る
+  });
+
+  it('主導する面が端なら、どちらも動かさない', () => {
+    usePaintStore.setState({ currentFileIndex: 0, splitFileIndex: 2 });
+    s().toggleSyncMode();
+
+    s().prevCell();
+    expect(s().currentFileIndex).toBe(0);
+    expect(s().splitFileIndex).toBe(2);
+  });
+
+  it('Win B を触っていれば Win B が主導する', () => {
+    usePaintStore.setState({ currentFileIndex: 0, splitFileIndex: 2 });
+    s().toggleSyncMode(); // 差 +2
+    s().setActiveViewIndex(1);
+
+    s().nextCell();
+    expect(s().splitFileIndex).toBe(3);
+    expect(s().currentFileIndex).toBe(1);
+  });
+
   it('連動を解除すると相手は動かなくなる', () => {
     usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 3 });
     s().toggleSyncMode();

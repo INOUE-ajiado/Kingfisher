@@ -450,36 +450,59 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set(patch as any);
   },
 
-  /** 移動対象のビューをすべて確認したうえでコマ送りする共通処理 */
+  /**
+   * 移動対象のビューをすべて確認したうえでコマ送りする共通処理。
+   *
+   * ⚠️ 連動中に両方へ delta を足さないこと。片方が端 (先頭 / 末尾) で止まった時点で
+   * コマ差が失われ、戻ってきたときに相手だけ 1 コマずれたまま進む。
+   * 「Win B で先頭の 0001 だけ出てこない」という形で現れる (2026-08-29 の報告)。
+   * 追従する側は必ず「主導する面 + コマ差」から決めること
+   * (setCurrentFileIndex / setSplitFileIndex と同じ決め方)。
+   * ⚠️ 主導する面が端で動けないときは、どちらも動かさない。相手だけ動かすと
+   * やはりコマ差が変わる。
+   */
   stepCell: (delta: number) => {
     const state = get();
     const last = Math.max(0, state.unifiedFileList.length - 1);
     const clamp = (v: number) => Math.max(0, Math.min(last, v));
 
-    // 同期モードでは両ビューが動くので、両方の未保存を確認する
-    const views: (0 | 1)[] = state.syncMode
-      ? state.isSplitView
-        ? [0, 1]
-        : [0]
-      : [state.activeViewIndex === 1 ? 1 : 0];
+    const driver: 0 | 1 = state.isSplitView && state.activeViewIndex === 1 ? 1 : 0;
+    const linked = state.syncMode && state.isSplitView;
 
+    const driverIndex = driver === 1 ? state.splitFileIndex : state.currentFileIndex;
+    const nextDriver = clamp(driverIndex + delta);
+    if (nextDriver === driverIndex) return;
+
+    // 連動中は両ビューが動くので、両方の未保存を確認する
+    const views: (0 | 1)[] = linked ? [0, 1] : [driver];
     for (const view of views) {
       if (!state.confirmDiscardIfDirty(view)) return;
     }
 
     const patch: Partial<PaintStore> = {};
-    if (views.includes(0)) {
-      patch.currentFileIndex = clamp(state.currentFileIndex + delta);
-      patch.historyStack = [];
-      patch.historyIndex = -1;
-      patch.isDirtyA = false;
+    const move = (view: 0 | 1, index: number) => {
+      if (view === 0) {
+        patch.currentFileIndex = index;
+        patch.historyStack = [];
+        patch.historyIndex = -1;
+        patch.isDirtyA = false;
+      } else {
+        patch.splitFileIndex = index;
+        patch.splitHistoryStack = [];
+        patch.splitHistoryIndex = -1;
+        patch.isDirtyB = false;
+      }
+    };
+
+    move(driver, nextDriver);
+    if (linked) {
+      // syncFrameOffset は「B - A」。主導が A なら足し、B なら引く
+      const follower = clamp(
+        driver === 0 ? nextDriver + state.syncFrameOffset : nextDriver - state.syncFrameOffset
+      );
+      move(driver === 0 ? 1 : 0, follower);
     }
-    if (views.includes(1)) {
-      patch.splitFileIndex = clamp(state.splitFileIndex + delta);
-      patch.splitHistoryStack = [];
-      patch.splitHistoryIndex = -1;
-      patch.isDirtyB = false;
-    }
+
     set(patch as any);
   },
 
