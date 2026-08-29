@@ -302,13 +302,51 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     partner?.play().catch((err) => console.error('Failed to play linked roll:', err));
   };
 
-  /** コマ送り。再生中なら止めてから動かす */
-  const step = (delta: number) => {
+  /**
+   * もう一方の面も同じコマ数だけ送る。
+   *
+   * ⚠️ 再生の連動 (roll.sync) 中はここでは触らないこと。あちらは開始時の時刻差を
+   * 保って絶対時刻で合わせる担当 (syncPartnerTime) で、両方から書くと差が崩れる。
+   * ⚠️ コマ数は面ごとの fps で秒へ直すこと。24fps と 30fps を並べたときに
+   * 相手の fps で計算しないと、送るたびに少しずつずれていく。
+   */
+  const stepPartner = (frames: number) => {
+    const otherId = otherRollId(rollId);
+    const state = usePaintStore.getState();
+    if (state.roll.sync) return;
+    if (!state.roll.views[otherId].isOpen) return;
+
+    const partner = getRollVideo(otherId);
+    if (!partner) return;
+    const fps = state.roll.views[otherId].fps;
+    partner.currentTime = steppedTime(partner.currentTime, frames, fps, partner.duration);
+  };
+
+  /**
+   * コマ送り。再生中なら止めてから動かす。
+   *
+   * ⚠️ 2 面開いているときは、もう一方も同じだけ送ること (2026-08-29 のユーザー指定)。
+   * 再生の連動が入っていれば時刻差を保ったまま、入っていなければ今の位置から
+   * 同じコマ数だけ動く。片方だけ動かしたいときは、その面の ◀ ▶ ボタンを使う。
+   */
+  const step = (delta: number, partnerDelta: number = delta) => {
     const video = videoRef.current;
     if (!video) return;
     setActiveRollId(rollId);
     video.pause();
-    partnerVideo()?.pause();
+    getRollVideo(otherRollId(rollId))?.pause();
+    video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
+    // 連動中は時刻差を保って合わせ、そうでなければ相手も同じコマ数だけ送る
+    syncPartnerTime(video.currentTime);
+    stepPartner(partnerDelta);
+  };
+
+  /** この面だけを送る (◀ ▶ ボタン)。左右のずれを作りたいときの逃げ道 */
+  const stepSelf = (delta: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    setActiveRollId(rollId);
+    video.pause();
     video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
     syncPartnerTime(video.currentTime);
   };
@@ -318,9 +356,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    *
    * ⚠️ 秒数を直接足さないこと。コマの境界からずれてしまい、そのあとのコマ送りが
    * 半コマずれた位置を行き来する。fps ぶんのコマを進めれば境界に乗ったままになる。
+   * ⚠️ 相手のコマ数は相手の fps で数えること。同じコマ数を渡すと、fps が違う
+   * 2 本では「1 秒」がずれる。
    */
   const stepSecond = (direction: number) => {
-    step(direction * Math.max(1, Math.round(view.fps)));
+    const partnerFps = usePaintStore.getState().roll.views[otherRollId(rollId)].fps;
+    step(
+      direction * Math.max(1, Math.round(view.fps)),
+      direction * Math.max(1, Math.round(partnerFps))
+    );
   };
 
   /**
@@ -341,7 +385,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   };
 
   /**
-   * キーボード操作。← → でコマ送り、↑ ↓ で前後のロール、Space で 2 面同時再生。
+   * キーボード操作。← → でコマ送り (2 面いっしょ)、↑ ↓ で前後のロール、
+   * Space で 2 面同時再生。
    *
    * ⚠️ ↑ ↓ と Space はセルでも使う (コマ送り / パン)。どちらへ効かせるかは
    * activeSurface (最後に触った面) で決める。ここで拾ったら stopPropagation して
@@ -597,9 +642,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               </button>
             )}
             <button
-              onClick={() => step(-1)}
+              onClick={() => stepSelf(-1)}
               disabled={disabled}
-              title="前のコマ (←) / 1 秒戻す (Shift + ←)"
+              title="前のコマ (この面だけ)。← は 2 面いっしょ / Shift + ← で 1 秒"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
@@ -613,9 +658,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
             <button
-              onClick={() => step(1)}
+              onClick={() => stepSelf(1)}
               disabled={disabled}
-              title="次のコマ (→) / 1 秒送る (Shift + →)"
+              title="次のコマ (この面だけ)。→ は 2 面いっしょ / Shift + → で 1 秒"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
             >
               <ChevronRight className="w-3.5 h-3.5" />

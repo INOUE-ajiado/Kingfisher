@@ -48,8 +48,8 @@ export const ShortcutsModal: React.FC = () => {
       icon: <Film className="w-4 h-4 text-indigo-500" />,
       items: [
         { key: 'Space', desc: '再生 / 一時停止 (2 面開いていれば同時再生)' },
-        { key: '← / →', desc: 'ロールのコマ送り (1 コマ)' },
-        { key: 'Shift + ← / →', desc: 'ロールを 1 秒ぶん送り / 戻し' },
+        { key: '← / →', desc: 'ロールのコマ送り (2 面開いていればいっしょに送る)' },
+        { key: 'Shift + ← / →', desc: 'ロールを 1 秒ぶん送り / 戻し (2 面いっしょ)' },
         { key: '↑ / ↓', desc: '前 / 次のロールへ (選択連動中は 2 面いっしょに移動)' },
       ],
     },
