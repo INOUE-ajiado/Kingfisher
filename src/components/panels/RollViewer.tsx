@@ -388,9 +388,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    * キーボード操作。← → でコマ送り (2 面いっしょ)、↑ ↓ で前後のロール、
    * Space で 2 面同時再生。
    *
-   * ⚠️ ↑ ↓ と Space はセルでも使う (コマ送り / パン)。どちらへ効かせるかは
-   * activeSurface (最後に触った面) で決める。ここで拾ったら stopPropagation して
-   * セル側 (useGlobalShortcuts / CellWindow) へ流さないこと。二重に動く。
+   * ⚠️ どのキーもセル側と取り合いになる (↑ ↓ = コマ送り、Space = 押しながらパン、
+   * ← → = ツリーのフォルダ開閉)。どちらへ効かせるかは activeSurface
+   * (最後に触った面) で決め、拾ったら stopPropagation してセル側
+   * (useGlobalShortcuts / CellWindow / ファイルツリー) へ流さないこと。二重に動く。
    *   ⚠️ この登録は window の capture。document の capture (useGlobalShortcuts) より
    *   先に走るので、ここで止めればセルのコマ送りは動かない。
    * ⚠️ 入力欄にフォーカスがあるときは何もしないこと。シークバーや fps の選択は
@@ -416,9 +417,11 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       const isPlay = e.key === ' ' || e.code === 'Space';
       if (!isStep && !isRollStep && !isPlay) return;
 
-      // ← → はロールの中のコマ送りなので従来どおり常に拾う。
-      // ↑ ↓ と Space はセルと取り合いになるため、ロールを最後に触ったときだけ。
-      if ((isRollStep || isPlay) && store.activeSurface !== 'roll') return;
+      // ⚠️ ← → も含めて、ロールを最後に触ったときだけ拾うこと。
+      // ← → はセルのコマ送りには使われていないが、ファイルツリーでは
+      // フォルダの開閉に使う。無条件に横取りすると、ロールを開いている間だけ
+      // セルのツリーが開け閉めできなくなる (2026-08-29 の報告)。
+      if (store.activeSurface !== 'roll') return;
 
       // キーを拾うのは 1 面だけ。アクティブな面が閉じていれば、開いている方が拾う
       if (store.roll.views[store.roll.activeId].isOpen && store.roll.activeId !== rollId) return;
