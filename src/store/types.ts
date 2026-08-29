@@ -251,6 +251,13 @@ export interface UiSlice {
   resetCanvasTransform: () => void
   renderTrigger: number
   triggerRender: () => void;
+  /**
+   * キーの効き先。最後に操作した面で決まる ('cell' = Win A / Win B、'roll' = 撮影ロール)。
+   * ⚠️ ↑ ↓ と Space はセルとロールで意味が違う (セル: コマ送り / パン、
+   * ロール: 前後のロール / 再生) ので、これで振り分ける。
+   */
+  activeSurface: 'cell' | 'roll'
+  setActiveSurface: (surface: 'cell' | 'roll') => void
 }
 
 /** 2画面分割・参照ウィンドウ・タップ穴補正など、ビュー構成の状態 */

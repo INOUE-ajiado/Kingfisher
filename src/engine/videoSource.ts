@@ -29,9 +29,16 @@ export function isVideoFile(fileName: string): boolean {
  * ⚠️ new Blob([file]) としないこと。ファイル全体をメモリへ読み込んでしまい、
  * 数 GB のロールで破綻する。Blob.slice は範囲とタイプを付け替えた「見え方」を
  * 返すだけで実データはコピーしないので、これを使う。
+ *
+ * ⚠️ 何でも video/mp4 と名乗らせないこと。付け替えたいのは .mov (video/quicktime)
+ * だけで、WebM を mp4 と偽ると中身と食い違ってデコードできず「再生できません」に
+ * なる (2026-08-29 に実測)。判定は MIME → 拡張子の順に見る。ドロップされた File は
+ * 環境によって type が空のことがある。
  */
 export function toPlayableBlob(file: Blob): Blob {
-  return file.slice(0, file.size, 'video/mp4');
+  const name = (file as File).name ?? '';
+  const isWebm = /webm/i.test(file.type) || /\.webm$/i.test(name);
+  return file.slice(0, file.size, isWebm ? 'video/webm' : 'video/mp4');
 }
 
 /** stsd から取れる映像フォーマットの 4 文字コードと、その扱い */

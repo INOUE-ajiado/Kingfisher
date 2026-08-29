@@ -74,6 +74,7 @@ beforeEach(() => {
       fileSync: false,
       fileSyncOffset: 0,
     },
+    activeSurface: 'cell',
   });
 });
 
@@ -377,5 +378,45 @@ describe('ツリーの選択の連動', () => {
     s().toggleRollFileSync();
     s().closeRollWindow('rollB');
     expect(s().roll.fileSync).toBe(false);
+  });
+});
+
+describe('キーの効き先 (activeSurface)', () => {
+  // ↑ ↓ と Space はセルとロールの双方で意味を持つので、最後に触った面で振り分ける
+  it('ロールを開くとロールへ移る', () => {
+    expect(s().activeSurface).toBe('cell');
+    s().loadRollFile('rollA', movFile('avc1'));
+    expect(s().activeSurface).toBe('roll');
+  });
+
+  it('ツリーでロールを選んでもロールへ移る', () => {
+    s().setRollFolderFiles(
+      'rollA',
+      [
+        { path: 'R/c1.mov', file: movFile('avc1', 'c1.mov') },
+        { path: 'R/c2.mov', file: movFile('avc1', 'c2.mov') },
+      ],
+      'R'
+    );
+    usePaintStore.setState({ activeSurface: 'cell' });
+    s().selectRollFile('rollA', 'R/c2.mov');
+    expect(s().activeSurface).toBe('roll');
+  });
+
+  it('セルの窓を触るとセルへ戻る', () => {
+    s().loadRollFile('rollA', movFile('avc1'));
+    s().setActiveViewIndex(0);
+    expect(s().activeSurface).toBe('cell');
+  });
+
+  it('片面を閉じてもロールのまま。両面閉じたらセルへ戻る', () => {
+    s().loadRollFile('rollA', movFile('avc1', 'before.mov'));
+    s().loadRollFile('rollB', movFile('avc1', 'after.mov'));
+
+    s().closeRollWindow('rollB');
+    expect(s().activeSurface).toBe('roll');
+
+    s().closeRollWindow('rollA');
+    expect(s().activeSurface).toBe('cell');
   });
 });

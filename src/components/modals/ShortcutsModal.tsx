@@ -44,6 +44,16 @@ export const ShortcutsModal: React.FC = () => {
       ],
     },
     {
+      title: '撮影ロール (最後に触った面に効きます)',
+      icon: <Film className="w-4 h-4 text-indigo-500" />,
+      items: [
+        { key: 'Space', desc: '再生 / 一時停止 (2 面開いていれば同時再生)' },
+        { key: '← / →', desc: 'ロールのコマ送り (1 コマ)' },
+        { key: 'Shift + ← / →', desc: 'ロールを 1 秒ぶん送り / 戻し' },
+        { key: '↑ / ↓', desc: '前 / 次のロールへ (選択連動中は 2 面いっしょに移動)' },
+      ],
+    },
+    {
       title: 'パレット ＆ 色操作',
       icon: <Palette className="w-4 h-4 text-amber-500" />,
       items: [

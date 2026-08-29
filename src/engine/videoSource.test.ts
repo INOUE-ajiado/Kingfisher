@@ -67,6 +67,18 @@ describe('再生用 Blob への付け替え', () => {
     expect(playable.type).toBe('video/mp4');
     expect(playable.size).toBe(file.size);
   });
+
+  it('WebM は WebM のままにする', () => {
+    // ⚠️ 何でも mp4 と名乗らせると中身と食い違い、デコードできず「再生できません」になる
+    const file = new Blob([new Uint8Array(1024)], { type: 'video/webm' });
+    expect(toPlayableBlob(file).type).toBe('video/webm');
+  });
+
+  it('MIME が空でも拡張子で WebM と分かる', () => {
+    // ドロップされた File は環境によって type が空のことがある
+    const file = new File([new Uint8Array(1024)], 'take1.webm', { type: '' });
+    expect(toPlayableBlob(file).type).toBe('video/webm');
+  });
 });
 
 describe('コーデックの説明', () => {

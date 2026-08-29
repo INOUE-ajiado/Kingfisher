@@ -103,4 +103,16 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
   renderTrigger: 0,
 
   triggerRender: () => set((state) => ({ renderTrigger: state.renderTrigger + 1 })),
+
+  /**
+   * キーの効き先。最初はセル。
+   *
+   * ⚠️ ↑ ↓ と Space はセルとロールの双方で意味を持つ (セル: コマ送り / パン、
+   * ロール: 前後のロール / 再生)。どちらへ効かせるかは「最後に操作した面」で決める。
+   * 面を触るたびにストア側で切り替えるので、コンポーネントで持たせないこと
+   * (キーを拾うのは window のハンドラで、そこからは React の状態が見えない)。
+   */
+  activeSurface: 'cell',
+
+  setActiveSurface: (surface) => set({ activeSurface: surface }),
 });

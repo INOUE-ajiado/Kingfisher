@@ -13,7 +13,7 @@
       "Canvas 2D API による描画 (putImageData → drawImage)",
       "File System Access API (ゼロ・アップロード)",
       "Web Workers (TGA デコード / ベクター・ラスタートレース)",
-      "vitest (テスト 295 件)",
+      "vitest (テスト 301 件)",
       "Firebase Hosting (COOP/COEP ヘッダー付き)",
       "撮影上がりロール (.mov / .mp4) の再生 — ネイティブ <video>。デコードは自前でやらない",
       "作業領域のレイアウト — 面 (Win A / Win B / 見本 / ロール) を横一列の枠へ割り当て、並べ替え・タブ重ね・一面表示・幅調整ができる (engine/paneLayout.ts)"
@@ -179,7 +179,7 @@
     {
       "id": "roll-mime-and-codecs",
       "title": ".mov は MIME を付け替える。ProRes は原理的に再生できない",
-      "detail": "実測 (2026-08-26 / 本番の Chrome): video/quicktime は canPlayType が空を返すため、File をそのまま <video> に渡しても再生できない。file.slice(0, file.size, \"video/mp4\") でデータをコピーせず MIME だけ差し替えること (new Blob([file]) は全体をメモリへ載せる)。H.264 / VP9 / AV1 は再生可。ProRes (apcn/apch/ap4h 等)・DNxHD・非圧縮は <video>・MSE・WebCodecs のいずれも非対応。HEVC は環境依存。",
+      "detail": "実測 (2026-08-26 / 本番の Chrome): video/quicktime は canPlayType が空を返すため、File をそのまま <video> に渡しても再生できない。file.slice(0, file.size, \"video/mp4\") でデータをコピーせず MIME だけ差し替えること (new Blob([file]) は全体をメモリへ載せる)。H.264 / VP9 / AV1 は再生可。⚠️ 付け替えるのは .mov (video/quicktime) だけ。WebM まで video/mp4 と名乗らせると中身と食い違ってデコードできず「再生できません」になる (2026-08-29 に実測・修正)。ProRes (apcn/apch/ap4h 等)・DNxHD・非圧縮は <video>・MSE・WebCodecs のいずれも非対応。HEVC は環境依存。",
       "location": "src/engine/videoSource.ts"
     },
     {
@@ -226,8 +226,8 @@
     },
     {
       "id": "roll-arrow-keys",
-      "title": "ロールのコマ送りは左右キー。上下はセル用",
-      "detail": "← → で 1 コマ、Shift + ← → で 1 秒ぶん送り戻しする。↑ ↓ / PageUp PageDown はセルのコマ送りに使われているので、ロールでは使わないこと。⚠️ 1 秒送りは秒数を直接足さず、fps ぶんのコマを進めること。秒で足すとコマの境界からずれ、そのあとのコマ送りが半コマずれた位置を行き来する。⚠️ 入力欄 (シークバー・fps の選択) にフォーカスがあるときは横取りしないこと。それらは左右キーで操作するものなので、奪うとつまみが動かせなくなる。",
+      "title": "ロールのキーは ← → ↑ ↓ と Space。効き先は最後に触った面で決まる",
+      "detail": "← → で 1 コマ、Shift + ← → で 1 秒ぶん送り戻し、↑ ↓ で前後のロール、Space で再生 / 一時停止 (2 面開いていれば同時再生)。⚠️ ↑ ↓ と Space はセルでも使う (コマ送り / 押しながらパン)。2026-08-29 にユーザーの指定でロールにも割り当てたので、どちらへ効かせるかは activeSurface (最後に触った面) で振り分けること。⚠️ 拾ったら必ず stopPropagation すること。RollViewer の登録は window の capture で、useGlobalShortcuts (document の capture) と CellWindow (window の bubble) より先に走る。止めないとセルのコマ送りやパンまで同時に動く。⚠️ ボタンにフォーカスがあるときは Space を横取りしないこと。ブラウザが keyup でクリックにするため、再生と停止が 1 回ずつ走って何も起きないように見える。⚠️ キーを拾うのは 1 面だけ (アクティブな面。閉じていればもう一方)。両方が拾うと二重に進む。⚠️ ハンドラの登録条件を「再生できること」にしないこと。コーデック非対応で止まった面からでも ↑ ↓ で次のロールへ移れる必要がある。⚠️ 1 秒送りは秒数を直接足さず、fps ぶんのコマを進めること。秒で足すとコマの境界からずれ、そのあとのコマ送りが半コマずれた位置を行き来する。⚠️ 入力欄 (シークバー・fps の選択) にフォーカスがあるときは横取りしないこと。それらは左右キーで操作するものなので、奪うとつまみが動かせなくなる。",
       "location": "src/components/panels/RollViewer.tsx"
     },
     {
@@ -265,6 +265,12 @@
       "title": "ロール 2 面のツリーの選択も連動できる (再生の連動とは別)",
       "detail": "2 面のツリーで「どのロールを開くか」を連動させる。ファイルブラウザの「撮影ロール」区画にある『選択連動』ボタン (roll.fileSync)。⚠️ 再生の連動 (roll.sync / ロール窓ヘッダーの鎖アイコン) と別物として持つこと。あちらは同じロールの中の時刻を合わせるもので、ロールを跨いだ乗り換えは扱わない。⚠️ 連動を押した時点の一覧上のずれ (B − A、本数) を fileSyncOffset に覚え、以降その差を保つ。押した瞬間には動かさない (セルの左右連動・再生の連動と同じ考え方)。⚠️ 端では切り詰めるだけで fileSyncOffset を書き換えないこと。書き換えると一覧の端で一度止まっただけで狙って付けたずれが失われる。⚠️ 相手が既にそのロールを開いているなら何もしないこと。openedView は blob URL を作り直すので、通すたびに相手の再生が頭へ戻る。⚠️ 追従はストア (selectRollFile → withSyncedPartner) が担う。コンポーネント側で 2 面ぶん selectRollFile を呼んではいけない (ずれが消える)。⚠️ 面を閉じたら fileSync も解くこと。一覧ごと捨てるため、残すと次に開いたとき前のずれで勝手に動く。⚠️ 押せる条件に isOpen を使わないこと。フォルダを落としただけでまだ開いていない面もツリーには並び、そこから選べば開く。条件は「両面に一覧があること」。",
       "location": "src/store/slices/rollSlice.ts, src/components/panels/FileBrowser.tsx"
+    },
+    {
+      "id": "active-surface-key-routing",
+      "title": "↑ ↓ と Space の効き先は「最後に触った面」(activeSurface)",
+      "detail": "セルとロールで同じキーが別の意味を持つ (セル: コマ送り / 押しながらパン、ロール: 前後のロール / 再生)。どちらへ効かせるかは uiSlice の activeSurface ('cell' | 'roll') で決める。⚠️ コンポーネントの state で持たないこと。キーを拾うのは window のハンドラで、そこからは React の状態が見えない。⚠️ 切り替えはストア側で行う。ロールを開く・ツリーでロールを選ぶ・ロールの窓を触る (setActiveRollId) で 'roll'、セルのコマを選ぶ (setCurrentFileIndex / setSplitFileIndex) ・セルの窓を触る (setActiveViewIndex) で 'cell'。ロールが 1 面も残らなくなったら 'cell' へ戻す。⚠️ ← → は取り合いにならない (セルは使っていない) ので、ロール側は activeSurface を見ずに常に拾ってよい。",
+      "location": "src/store/slices/uiSlice.ts, src/store/slices/rollSlice.ts, src/components/panels/RollViewer.tsx"
     }
   ],
   "workflow": {
@@ -502,7 +508,8 @@
         "本番ビルドで Ctrl+Alt+<文字> が右パネルを開閉しないこと / Ctrl+Alt の成立でトグルすること (2026-08-26)",
         "フォルダ未オープンで再生を押しても UI が壊れず NaN が出ないこと (2026-08-26)",
         "消しゴム・ゴミ取り・バケツ塗りが encodeTGA / decodeTGA の往復を越えて保持されること (saveRoundTrip.test.ts)",
-        "ロール 2 面のツリーの選択連動を実ブラウザで確認 (2026-08-29): 本番ビルドに 3 本の映像をまとめて落とし、2 画面ボタンでロール B を開き、『選択連動』を入れてロール A のツリーで 3 本目を選ぶとロール B も 3 本目へ移動。連動を切ると片方だけ動く。コンソールのエラー・警告はゼロ",
+        "ロールのキー操作を実ブラウザで確認 (2026-08-29): ↑ ↓ で前後のロールへ移り、選択連動中は 2 面いっしょに動く。Space で 2 面が同時に再生され、もう一度で両方止まる。セルのツリーでコマを選ぶと ↑ ↓ はセルへ戻り、ロールは動かない",
+      "ロール 2 面のツリーの選択連動を実ブラウザで確認 (2026-08-29): 本番ビルドに 3 本の映像をまとめて落とし、2 画面ボタンでロール B を開き、『選択連動』を入れてロール A のツリーで 3 本目を選ぶとロール B も 3 本目へ移動。連動を切ると片方だけ動く。コンソールのエラー・警告はゼロ",
       "撮影ロールの再生を実映像で確認 (2026-08-27): .mp4 と .mov の双方で readyState=4 / 尺 1.966s / 320px / デコードエラー無し、本物のクリックで再生・一時停止・タイムコード更新、コマ送りも前後とも動作",
         "ロールの D&D を実映像で確認 (2026-08-27): ロールウィンドウへの直接ドロップと、ロールウィンドウを閉じた状態で Win A へ落として自動で開く経路の両方が動作"
       ],
