@@ -969,6 +969,41 @@ describe('view スライス — 左右連動', () => {
     expect(s().currentFileIndex).toBe(1);
   });
 
+  it('連動中にフォルダを開き直しても、記録したコマ差どおりに並ぶ', () => {
+    // ⚠️ ここが崩れると「連動中 (同じコマ) と出ているのに Win B だけ 1 コマ先」になり、
+    // 先頭のコマではそれ以上戻れないため、そのズレだけ直せないまま残る
+    usePaintStore.setState({ currentFileIndex: 0, splitFileIndex: 0 });
+    s().toggleSyncMode();
+    expect(s().syncFrameOffset).toBe(0);
+
+    // 先頭のコマを持たないフォルダを Win B へ開き直す
+    s().setFolderHandleB(null, 'retake', ['0002.tga', '0003.tga', '0004.tga', '0005.tga']);
+
+    expect(s().currentFileIndex).toBe(0);
+    expect(s().splitFileIndex).toBe(0); // 実体が無くても位置は合わせる (Win B は NO DATA)
+    expect(s().resolveFileNameForView(0, 0)).toBe('0001.tga');
+    expect(s().resolveFileNameForView(0, 1)).toBeNull();
+  });
+
+  it('連動していなければ、開いた Win B は Win A と同じコマから始まる', () => {
+    // 別々のコマから始まると、そのまま連動を押したときに意図しないコマ差が記録される
+    usePaintStore.setState({ syncMode: false, currentFileIndex: 2, splitFileIndex: 0 });
+    s().setFolderHandleB(null, 'retake', ['0001.tga', '0002.tga', '0003.tga', '0004.tga', '0005.tga']);
+
+    expect(s().splitFileIndex).toBe(2);
+
+    s().toggleSyncMode();
+    expect(s().syncFrameOffset).toBe(0);
+  });
+
+  it('そのコマが Win B に無ければ、Win B に実体がある先頭から始まる', () => {
+    // NO DATA のまま開かないための従来どおりの逃げ道
+    usePaintStore.setState({ syncMode: false, currentFileIndex: 0, splitFileIndex: 0 });
+    s().setFolderHandleB(null, 'retake', ['0003.tga', '0004.tga']);
+
+    expect(s().resolveFileNameForView(s().splitFileIndex, 1)).toBe('0003.tga');
+  });
+
   it('連動を解除すると相手は動かなくなる', () => {
     usePaintStore.setState({ currentFileIndex: 1, splitFileIndex: 3 });
     s().toggleSyncMode();

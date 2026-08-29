@@ -44,6 +44,40 @@ function firstIndexWithFile(
 }
 
 /**
+ * 新しく開いた B 側の初期位置。
+ *
+ * ⚠️ Win A が見ているコマに合わせること (そのコマが B にもあるなら)。
+ * 別々のコマから始まると、そのまま「連動」を押したときに意図しないコマ差が
+ * 記録され、「0001 と 0002 が対になったまま送られる」ことになる。
+ * B にそのコマが無いときだけ、B に実体がある最初のコマへ (NO DATA で開かないため)。
+ */
+function alignedWithOther(
+  frameNumbers: string[],
+  frameMap: Map<string, MergedFrameMapItem>,
+  view: 0 | 1,
+  otherIndex: number
+): number {
+  const number = frameNumbers[otherIndex];
+  if (number && viewHasFile(frameMap, number, view)) return otherIndex;
+  return firstIndexWithFile(frameNumbers, frameMap, view);
+}
+
+/**
+ * 連動中の Win B の位置。
+ *
+ * ⚠️ 連動中にフォルダを開き直したら、必ず「Win A + コマ差」へ引き直すこと。
+ * ここを別々に決めると、記録しているコマ差 (syncFrameOffset) と実際のズレが
+ * 食い違い、「連動中 (同じコマ) と出ているのに Win B だけ 1 コマ先」になる。
+ * 先頭のコマではそれ以上戻れないため、そのズレだけ直せないまま残る
+ * (2026-08-29 の報告)。
+ */
+function linkedSplitIndex(state: PaintStore, frameCount: number, currentFileIndex: number): number | null {
+  if (!state.syncMode || !state.isSplitView) return null;
+  const last = Math.max(0, frameCount - 1);
+  return Math.max(0, Math.min(last, currentFileIndex + state.syncFrameOffset));
+}
+
+/**
  * 片側のフォルダだけを差し替えたときに、もう一方が見ていたコマを維持する。
  * マージし直すと統合リストの並びが変わるため、位置ではなくコマ番号で引き継ぐ。
  */
@@ -119,6 +153,12 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, listB);
 
+      const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
+      // 連動中はコマ差を保ったまま、そうでなければ Win A と同じコマから始める
+      const splitFileIndex =
+        linkedSplitIndex(get(), frameNumbers.length, currentFileIndex) ??
+        alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
+
       set({
         // 明示的にカットを開いた操作なので、隠していても Win A を出す
         isWinAVisible: true,
@@ -141,8 +181,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         mergedFrameMap: frameMap,
         // セルのフォルダを開いた操作。↑ ↓ と Space はセルのものへ戻す
         activeSurface: 'cell' as const,
-        currentFileIndex: firstIndexWithFile(frameNumbers, frameMap, 0),
-        splitFileIndex: firstIndexWithFile(frameNumbers, frameMap, 1),
+        currentFileIndex,
+        splitFileIndex,
       });
     },
 
@@ -155,13 +195,9 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
 
       const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
-      const splitFileIndex = keepFrameIndex(
-        state.mergedFrameNumbers,
-        state.splitFileIndex,
-        frameNumbers,
-        frameMap,
-        1
-      );
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
       return {
         selectedSubDirA: dirName,
@@ -188,7 +224,6 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
 
-      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
       const currentFileIndex = keepFrameIndex(
         state.mergedFrameNumbers,
         state.currentFileIndex,
@@ -196,6 +231,11 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         frameMap,
         0
       );
+      // 連動中は必ず「Win A + コマ差」へ引き直す。別々に決めると
+      // 記録しているコマ差と実際のズレが食い違う
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
       return {
         selectedSubDirB: dirName,
@@ -218,13 +258,9 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(listA, state.fileListB);
       const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
-      const splitFileIndex = keepFrameIndex(
-        state.mergedFrameNumbers,
-        state.splitFileIndex,
-        frameNumbers,
-        frameMap,
-        1
-      );
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
       return {
         folderNameA: folderName,
@@ -245,7 +281,6 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
   setCustomDropFolderB: (folderName, mapB, listB) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, listB);
-      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
       const currentFileIndex = keepFrameIndex(
         state.mergedFrameNumbers,
         state.currentFileIndex,
@@ -253,6 +288,11 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         frameMap,
         0
       );
+      // 連動中は必ず「Win A + コマ差」へ引き直す。別々に決めると
+      // 記録しているコマ差と実際のズレが食い違う
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
       return {
         folderNameB: folderName,
@@ -294,13 +334,9 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       // A/B でファイル名が異なっても同じフレームとして対応付けられる。
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(files, state.fileListB);
       const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
-      const splitFileIndex = keepFrameIndex(
-        state.mergedFrameNumbers,
-        state.splitFileIndex,
-        frameNumbers,
-        frameMap,
-        1
-      );
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
       return {
         folderHandleA: handle,
@@ -322,7 +358,6 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
   setFolderHandleB: (handle, name, files, filesMap) =>
     set((state) => {
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
-      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
       const currentFileIndex = keepFrameIndex(
         state.mergedFrameNumbers,
         state.currentFileIndex,
@@ -330,6 +365,11 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         frameMap,
         0
       );
+      // 連動中は必ず「Win A + コマ差」へ引き直す。別々に決めると
+      // 記録しているコマ差と実際のズレが食い違う
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
       return {
         folderHandleB: handle,
@@ -353,13 +393,9 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       const files = sortNatural(filesMap.keys());
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(files, state.fileListB);
       const currentFileIndex = firstIndexWithFile(frameNumbers, frameMap, 0);
-      const splitFileIndex = keepFrameIndex(
-        state.mergedFrameNumbers,
-        state.splitFileIndex,
-        frameNumbers,
-        frameMap,
-        1
-      );
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
       return {
         fileMapA: filesMap,
@@ -380,7 +416,6 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     set((state) => {
       const files = sortNatural(filesMap.keys());
       const { frameNumbers, frameMap, unifiedFiles } = buildMergedFrameData(state.fileListA, files);
-      const splitFileIndex = firstIndexWithFile(frameNumbers, frameMap, 1);
       const currentFileIndex = keepFrameIndex(
         state.mergedFrameNumbers,
         state.currentFileIndex,
@@ -388,6 +423,11 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         frameMap,
         0
       );
+      // 連動中は必ず「Win A + コマ差」へ引き直す。別々に決めると
+      // 記録しているコマ差と実際のズレが食い違う
+      const splitFileIndex =
+        linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
+        alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
       return {
         fileMapB: filesMap,

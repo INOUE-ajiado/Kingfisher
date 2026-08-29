@@ -785,7 +785,10 @@ export const FileBrowser: React.FC = () => {
             )}
           </button>
 
-          {syncMode && syncFrameOffset !== 0 && (
+          {/* ⚠️ 記録しているコマ差だけで出さないこと。実際のズレと食い違ったとき
+              (連動中 (同じコマ) と出ているのに Win B だけ 1 コマ先) に、
+              揃え直す手段が画面から消える */}
+          {syncMode && isSplitView && (syncFrameOffset !== 0 || splitFileIndex !== currentFileIndex) && (
             <button
               onClick={alignSyncFrames}
               title="コマ差をリセットして Win B を Win A と同じコマに揃える"
