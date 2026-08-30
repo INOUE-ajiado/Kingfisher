@@ -292,13 +292,23 @@ export const CellWindow: React.FC = () => {
         ? 'border-blue-600 dark:border-blue-500'
         : 'border-slate-300 dark:border-slate-700';
     }
-    return isActive ? 'border-blue-600 dark:border-blue-500 shadow-md' : 'border-transparent';
+    // ⚠️ ドッキング中は枠が 1px なので、色だけでは分かりにくい。内側のリングで示す
+    // (外側だと隣の面へはみ出し、エッジ・トゥ・エッジの並びが崩れる)
+    return isActive
+      ? 'border-blue-600 dark:border-blue-500 ring-1 ring-inset ring-blue-600/60'
+      : 'border-slate-300 dark:border-slate-800';
   };
 
   // 閲覧専用の画像に描画しようとした時の通知 (無言で無視されると原因が分からないため)。
   // ⚠️ どちらのウィンドウで弾かれたかを保持する。単一の真偽値にすると
   // Win B をクリックしたのに Win A にも通知が出て、判定が Win A へ移ったように見える。
   const [readOnlyNoticeView, setReadOnlyNoticeView] = useState<0 | 1 | null>(null);
+
+  /**
+   * タブを掴んでいる間だけ、枠と枠のあいだに落とし先を開く。
+   * ⚠️ 常時開けておかないこと。面を 2 つ並べるだけで左右と中央の 18px を失う。
+   */
+  const [isPaneDragging, setIsPaneDragging] = useState(false);
   useEffect(() => {
     if (readOnlyNoticeView === null) return;
     const timer = setTimeout(() => setReadOnlyNoticeView(null), 3000);
@@ -1254,10 +1264,14 @@ export const CellWindow: React.FC = () => {
             // ⚠️ ハイライト用のクラスはレイアウト用のクラスと必ず併記する。
             // 以前は D&D 中に flex-1 が外れて要素が縮み、カーソルの下から
             // 逃げてしまうため判定が点滅していた。
-            className={`flex flex-col border-2 ${
+            /*
+              ⚠️ ドッキング中は 1px の枠・角丸なし。太い枠と角丸は、面を並べたときに
+              その分だけ絵が小さくなる。浮かせたときだけ従来の見た目に戻す。
+            */
+            className={`flex flex-col ${
               isWinAFloating
-                ? `bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(0, true)}`
-                : `flex-1 relative rounded overflow-hidden ${activeBorderClass(0, false)}`
+                ? `border-2 bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(0, true)}`
+                : `border flex-1 relative overflow-hidden ${activeBorderClass(0, false)}`
             } ${isWinADragOver ? 'border-blue-500 ring-4 ring-inset ring-blue-500/60' : ''}`}
           >
             {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
@@ -1398,10 +1412,10 @@ export const CellWindow: React.FC = () => {
               onDragLeave={(e) => handleWindowDragLeave(e, 'winB')}
               onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
               // Win A と同様、ハイライトでレイアウトが変わらないようにする
-              className={`flex flex-col border-2 ${
+              className={`flex flex-col ${
                 isWinBFloating
-                  ? `bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(1, true)}`
-                  : `flex-1 relative rounded overflow-hidden ${activeBorderClass(1, false)}`
+                  ? `border-2 bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(1, true)}`
+                  : `border flex-1 relative overflow-hidden ${activeBorderClass(1, false)}`
               } ${isWinBDragOver ? 'border-emerald-500 ring-4 ring-inset ring-emerald-500/60' : ''}`}
             >
               {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
@@ -1605,7 +1619,12 @@ export const CellWindow: React.FC = () => {
       {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
       <div
         ref={splitRowRef}
-        className={`flex-1 flex overflow-hidden p-0.5 gap-0.5 ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}
+        /*
+          ⚠️ 作業領域はエッジ・トゥ・エッジ。外周の余白も枠と枠の隙間も入れないこと
+          (2026-08-31 のユーザー指定)。ここに p-* / gap-* を足すと、面を 2 つ並べた
+          ときに数十 px が表示領域から削られる。仕切りは枠線と幅調整のつまみだけで示す。
+        */
+        className={`flex-1 flex overflow-hidden ${isHorizontalSplit ? 'flex-col' : 'flex-row'}`}
       >
         {/*
           作業領域。どの面をどこへ、どう重ねて出すかは paneLayout が持つ。
@@ -1633,10 +1652,17 @@ export const CellWindow: React.FC = () => {
 
         {slotsToRender.map((slot, index) => (
           <React.Fragment key={slot.id}>
-            <PaneDropGap index={index} onDropPane={movePaneToPosition} />
+            <PaneDropGap
+              index={index}
+              active={isPaneDragging}
+              onDropPane={(pane, at) => {
+                setIsPaneDragging(false);
+                movePaneToPosition(pane, at);
+              }}
+            />
             <div
               data-slot-id={slot.id}
-              className="flex flex-col min-w-0 gap-0.5 overflow-hidden"
+              className="flex flex-col min-w-0 overflow-hidden"
               style={{ flexGrow: slot.flexGrow, flexBasis: 0 }}
             >
               <PaneTabBar
@@ -1646,19 +1672,27 @@ export const CellWindow: React.FC = () => {
                 onClose={closePane}
                 onToggleMaximize={toggleMaximizedPane}
                 onDropOnSlot={(pane) => stackPaneOnSlot(pane, slot.id)}
+                onDragStateChange={setIsPaneDragging}
               />
-              <div className="flex-1 flex min-h-0 gap-0.5">{renderPane(slot.activePane)}</div>
+              <div className="flex-1 flex min-h-0">{renderPane(slot.activePane)}</div>
             </div>
             {index < slotsToRender.length - 1 && (
               <div
                 onPointerDown={(e) => handleSlotResizePointerDown(e, slot.id, slotsToRender[index + 1].id)}
                 title="ドラッグで左右の取り分を調整"
-                className="flex-shrink-0 w-1.5 cursor-col-resize touch-none bg-slate-300 dark:bg-slate-800 hover:bg-blue-500 active:bg-blue-600 transition-colors rounded"
+                className="flex-shrink-0 w-1 cursor-col-resize touch-none bg-slate-400/70 dark:bg-slate-700 hover:bg-blue-500 active:bg-blue-600 transition-colors"
               />
             )}
           </React.Fragment>
         ))}
-        <PaneDropGap index={slotsToRender.length} onDropPane={movePaneToPosition} />
+        <PaneDropGap
+          index={slotsToRender.length}
+          active={isPaneDragging}
+          onDropPane={(pane, at) => {
+            setIsPaneDragging(false);
+            movePaneToPosition(pane, at);
+          }}
+        />
       </div>
     </div>
   );

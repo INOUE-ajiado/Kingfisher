@@ -26,6 +26,8 @@ interface PaneTabBarProps {
   onToggleMaximize: (pane: PaneId) => void;
   /** この枠へタブが落とされた (重ねる) */
   onDropOnSlot: (pane: PaneId) => void;
+  /** タブを掴んでいる / 離した。枠のあいだの落とし先を開くのに使う */
+  onDragStateChange?: (dragging: boolean) => void;
 }
 
 const TONE: Record<PaneId, { active: string; idle: string }> = {
@@ -67,6 +69,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
   onClose,
   onToggleMaximize,
   onDropOnSlot,
+  onDragStateChange,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -83,6 +86,7 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    onDragStateChange?.(false);
     const pane = e.dataTransfer.getData(PANE_DRAG_TYPE) as PaneId;
     if (pane) onDropOnSlot(pane);
   };
@@ -93,8 +97,13 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
       onDragLeave={() => setIsDragOver(false)}
       onDrop={handleDrop}
       title="タブをドラッグして位置を入れ替え / 別の枠へ重ねられます"
-      className={`flex-shrink-0 flex items-stretch gap-0.5 px-0.5 py-0.5 rounded-t select-none transition-colors ${
-        isDragOver ? 'bg-blue-500/25 ring-2 ring-blue-500/60' : ''
+      /*
+        ⚠️ タブ帯に余白を入れないこと。面と地続きに見せるためで、
+        px-* / py-* / gap-* を足すと、面を 2 つ並べたときに縦横とも表示領域が削られる
+        (2026-08-31 のユーザー指定)。タブ自身の内側の余白だけで間を取る。
+      */
+      className={`flex-shrink-0 flex items-stretch select-none transition-colors ${
+        isDragOver ? 'bg-blue-500/25 ring-1 ring-inset ring-blue-500/60' : ''
       }`}
     >
       {slot.panes.map((pane) => {
@@ -107,9 +116,11 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             onDragStart={(e) => {
               e.dataTransfer.setData(PANE_DRAG_TYPE, pane);
               e.dataTransfer.effectAllowed = 'move';
+              onDragStateChange?.(true);
             }}
+            onDragEnd={() => onDragStateChange?.(false)}
             onClick={() => onSelect(pane)}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold cursor-grab active:cursor-grabbing transition-colors ${
+            className={`flex items-center gap-1 px-1.5 py-0.5 border-r border-t text-[10px] font-bold cursor-grab active:cursor-grabbing transition-colors ${
               isActive ? tone.active : tone.idle
             }`}
           >
@@ -147,14 +158,24 @@ interface PaneDropGapProps {
   /** ここへ落とされたときに差し込む位置 */
   index: number;
   onDropPane: (pane: PaneId, index: number) => void;
+  /** タブを運んでいる間だけ開く */
+  active?: boolean;
 }
 
 /**
  * 枠と枠のあいだの落とし先。
  * ここへタブを落とすと、その位置に独立した枠として入る。
  */
-export const PaneDropGap: React.FC<PaneDropGapProps> = ({ index, onDropPane }) => {
+export const PaneDropGap: React.FC<PaneDropGapProps> = ({ index, onDropPane, active = false }) => {
   const [isOver, setIsOver] = useState(false);
+
+  /**
+   * ⚠️ 何も運んでいないときは幅を持たせないこと。
+   * 常時 6px を空けていると、面を 2 つ並べるだけで左右と中央で 18px を失う
+   * (2026-08-31 のユーザー指定でエッジ・トゥ・エッジにした)。
+   * タブを掴んでいる間だけ開いて、落とし先として掴めるようにする。
+   */
+  if (!active) return null;
 
   return (
     <div
@@ -175,7 +196,7 @@ export const PaneDropGap: React.FC<PaneDropGapProps> = ({ index, onDropPane }) =
         if (pane) onDropPane(pane, index);
       }}
       className={`flex-shrink-0 self-stretch transition-all ${
-        isOver ? 'w-6 bg-blue-500/40 rounded' : 'w-1.5'
+        isOver ? 'w-6 bg-blue-500/40' : 'w-1.5 bg-blue-500/10'
       }`}
     />
   );

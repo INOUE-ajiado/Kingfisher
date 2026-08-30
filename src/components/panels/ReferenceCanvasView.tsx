@@ -237,13 +237,13 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex flex-col bg-white dark:bg-slate-900 border-2 ${
+      className={`flex flex-col bg-white dark:bg-slate-900 ${isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'} ${
         isOverDockTarget
           ? 'border-blue-500 ring-4 ring-blue-500/50'
           : isDragOver
           ? 'border-amber-400 ring-4 ring-amber-400/50'
           : 'border-emerald-600 dark:border-emerald-700'
-      } rounded shadow-2xl relative ${isFloating ? '' : 'flex-1'}`}
+      } relative`}
     >
       {/* ドラッグ＆ドロップ受領オーバーレイ */}
       {isDragOver && (
