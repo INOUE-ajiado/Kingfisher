@@ -236,6 +236,44 @@ describe('file スライス — ツリー選択のインデックス対応', () 
     expect(s().mergedFrameNumbers.length).toBe(4);
   });
 
+  it('コマ送りの並びがツリーの並びと一致する (フォルダをまたいで飛ばない)', () => {
+    // ⚠️ 番号だけで並べていた頃は、番号を先に取った側だけが数値キーになり、
+    // 取れなかった側は末尾へ回っていた。その結果 _bg の 3 枚 → _go の 4 枚目
+    // → 5 枚目 → _go の 1 枚目… と、コマ送りの途中で別フォルダへ飛んでいた。
+    const listA = [
+      'Cut/_bg/x0001.tga',
+      'Cut/_bg/x0002.tga',
+      'Cut/_bg/x0003.tga',
+      'Cut/_go/y0001.tga',
+      'Cut/_go/y0002.tga',
+      'Cut/_go/y0003.tga',
+      'Cut/_go/y0004.tga',
+      'Cut/_go/y0005.tga',
+    ];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    expect(s().unifiedFileList).toEqual(listA);
+  });
+
+  it('連番はゼロ埋めが無くても自然順に並ぶ', () => {
+    const listA = ['Cut/_go/a1.tga', 'Cut/_go/a2.tga', 'Cut/_go/a10.tga', 'Cut/_go/a11.tga'];
+    s().setFolderHandleA(null, 'Cut', listA);
+
+    expect(s().unifiedFileList).toEqual(listA);
+  });
+
+  it('Win B だけにあるコマも、そのフォルダの並びの中に入る', () => {
+    s().setFolderHandleA(null, 'Cut', ['Cut/_go/a0001.tga', 'Cut/_go/a0003.tga']);
+    s().setFolderHandleB(null, 'Cut', ['Cut/_go/a0002.tga']);
+
+    // B にしかない 0002 が、A の 0001 と 0003 の間に入る
+    expect(s().unifiedFileList).toEqual([
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/_go/a0003.tga',
+    ]);
+  });
+
   it('どのファイルも自分自身の位置へ解決される (往復して一致する)', () => {
     const listA = [
       'Cut/_go/a0001.tga',

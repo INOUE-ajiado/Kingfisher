@@ -133,11 +133,6 @@ function directoryOf(path: string): string {
   return idx < 0 ? '' : path.slice(0, idx + 1);
 }
 
-/** キーが 0-9 だけで構成されているか (連番として数値順に並べてよいか) */
-function isNumericKey(key: string): boolean {
-  return /^[0-9]+$/.test(key);
-}
-
 /**
  * A 側 / B 側のファイル群からフレーム対応表を組み立てる。
  *
@@ -183,24 +178,29 @@ export function buildMergedFrameData(
   listA.forEach((f) => assign(f, 'A'));
   listB.forEach((f) => assign(f, 'B'));
 
-  // ⚠️ 比較関数は全順序になっていること。
-  // 数値キーと非数値キーが混ざったときに片方だけ localeCompare へ落ちると
-  // 推移律が崩れ、並び順が入力順しだいで変わってしまう。
-  const frameNumbers = Array.from(frameMap.keys()).sort((a, b) => {
-    const aNum = isNumericKey(a);
-    const bNum = isNumericKey(b);
-    if (aNum && bNum) return parseInt(a, 10) - parseInt(b, 10);
-    if (aNum) return -1;
-    if (bNum) return 1;
-    return compareNatural(a, b);
-  });
+  /**
+   * 並べ替えはコマ番号ではなく「実ファイルのパス」で行う。
+   *
+   * ⚠️ 番号だけで並べないこと。サブフォルダをまたいで同じ番号があると、
+   * 番号を先に取った側だけが数値キーになり、取れなかった側は
+   * ディレクトリ付きキーになって末尾へ回る。その結果、
+   *   _bg/x0001 → _bg/x0002 → _bg/x0003 → _go/y0004 → _go/y0005 → _go/y0001 …
+   * のように、コマ送りの途中で別フォルダへ飛び、あとから戻ってくる並びになる
+   * (2026-08-31 の報告)。
+   * ⚠️ パスで並べるとフォルダごとにまとまり、その中は自然順になる。
+   * ツリー (fileListA / fileListB の順) とコマ送りの順が一致することが要点。
+   * ⚠️ 比較は compareNatural で行うこと。素の比較では a1, a10, a2 と並ぶ。
+   */
+  const representativeOf = (key: string): string => {
+    const item = frameMap.get(key)!;
+    return item.fileNameA || item.fileNameB || key;
+  };
 
-  const unifiedFiles: string[] = [];
-  frameNumbers.forEach((num) => {
-    const item = frameMap.get(num)!;
-    const representative = item.fileNameA || item.fileNameB || num;
-    unifiedFiles.push(representative);
-  });
+  const frameNumbers = Array.from(frameMap.keys()).sort((a, b) =>
+    compareNatural(representativeOf(a), representativeOf(b))
+  );
+
+  const unifiedFiles = frameNumbers.map(representativeOf);
 
   return { frameNumbers, frameMap, unifiedFiles };
 }
