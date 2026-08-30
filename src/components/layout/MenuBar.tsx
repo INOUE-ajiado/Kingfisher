@@ -341,6 +341,7 @@ export const MenuBar: React.FC = () => {
         { label: 'ライトテーブル', shortcut: 'F8', checked: panelVisibility.lightTable, action: () => togglePanelVisibility('lightTable') },
         { label: 'ファイルブラウザ', shortcut: 'F9', checked: panelVisibility.fileBrowser, action: () => togglePanelVisibility('fileBrowser') },
         { label: 'ヒストリーパネル', shortcut: '', checked: panelVisibility.historyPanel, action: () => togglePanelVisibility('historyPanel') },
+        { label: 'DEBUG ログ (操作ログ)', shortcut: '', checked: panelVisibility.debugLog, action: () => togglePanelVisibility('debugLog') },
         { type: 'divider' },
         { label: 'ダークモード (Dark Mode)', shortcut: '', checked: isDarkMode, action: toggleDarkMode },
       ],

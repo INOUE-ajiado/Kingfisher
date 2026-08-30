@@ -34,6 +34,8 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
     fileBrowser: true,
     layerPanel: true,
     historyPanel: true,
+    // 不具合の切り分けに使うので既定で出しておく (メニューから閉じられる)
+    debugLog: true,
   },
 
   togglePanelVisibility: (panel) =>
