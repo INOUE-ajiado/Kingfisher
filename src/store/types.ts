@@ -332,8 +332,10 @@ export interface UiSlice {
     fileBrowser: boolean;
     layerPanel: boolean;
     historyPanel: boolean;
+    /** 操作ログ (DEBUG ウィンドウ) */
+    debugLog: boolean;
   }
-  togglePanelVisibility: (panel: 'toolPalette' | 'toolOptions' | 'colorChart' | 'lightTable' | 'fileBrowser' | 'layerPanel' | 'historyPanel') => void
+  togglePanelVisibility: (panel: 'toolPalette' | 'toolOptions' | 'colorChart' | 'lightTable' | 'fileBrowser' | 'layerPanel' | 'historyPanel' | 'debugLog') => void
   isColorChartFloating: boolean
   toggleColorChartFloating: () => void
   // --- 未塗り漏れ点滅表示 ---

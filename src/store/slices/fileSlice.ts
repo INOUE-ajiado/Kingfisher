@@ -13,6 +13,7 @@ import {
   omitUnchanged,
   replaceBaseName,
 } from '../../engine/renamePlan';
+import { logDebug } from '../../engine/debugLog';
 import {
   PaintStore,
   FileSlice,
@@ -96,6 +97,29 @@ function keepFrameIndex(
   return firstIndexWithFile(frameNumbers, frameMap, view);
 }
 
+/**
+ * フォルダを開いたときのログ。
+ *
+ * ⚠️ 数字を必ず入れること (枚数・統合コマ数・A と B の表示位置)。
+ * 「連携がおかしい」の報告と突き合わせるとき、この 3 つが分かれば
+ * 対応づけの食い違いか、位置の食い違いかをその場で切り分けられる。
+ */
+function logFolderOpened(
+  view: 0 | 1,
+  how: string,
+  name: string,
+  fileCount: number,
+  unifiedCount: number,
+  indexA: number,
+  indexB: number
+): void {
+  logDebug(
+    'folder',
+    `${view === 1 ? 'Win B' : 'Win A'} ${how}: ${name || '(名前なし)'} (${fileCount} 枚)`,
+    `統合 ${unifiedCount} コマ / 表示位置 Win A=${indexA} Win B=${indexB}`
+  );
+}
+
 export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set, get) => ({
   // 統合ファイルブラウザ (Dir A & Dir B 2フォルダ管理 ＆ カット階層ナビゲーション)
   rootFolderHandle: null,
@@ -136,6 +160,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     });
     // Win B の一覧・ハンドルには触れない
     get().setFolderHandleA(handle, name, files, filesMap);
+    logDebug('folder', `フォルダを開いた (Win A): ${name} (${files.length} 枚)`, 'サブフォルダを持たないフォルダ / Win B はそのまま');
   },
 
   setCutRootFolder: (rootHandle, rootName, subDirs) => {
@@ -184,6 +209,12 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         currentFileIndex,
         splitFileIndex,
       });
+
+      logDebug(
+        'folder',
+        `カットを開いた: ${rootName} — Win A=${defaultDirA ? defaultDirA.name : '(なし)'} (${listA.length} 枚) / Win B=${defaultDirB ? defaultDirB.name : '(なし)'} (${listB.length} 枚)`,
+        `サブフォルダ ${subDirs.map((d) => d.name).join(', ') || '(なし)'} / 統合 ${unifiedFiles.length} コマ / 表示位置 Win A=${currentFileIndex} Win B=${splitFileIndex}`
+      );
     },
 
   setSelectedSubDirA: (dirName) =>
@@ -199,6 +230,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
+      logFolderOpened(0, 'のサブフォルダを切替', dirName || '', listA.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         selectedSubDirA: dirName,
         folderNameA: dirName || state.rootFolderName || '',
@@ -237,6 +269,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
+      logFolderOpened(1, 'のサブフォルダを切替', dirName || '', listB.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         selectedSubDirB: dirName,
         folderNameB: dirName || state.rootFolderName || '',
@@ -262,6 +295,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
+      logFolderOpened(0, 'にドロップで開いた', folderName, listA.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         folderNameA: folderName,
         folderHandleA: null,
@@ -294,6 +328,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
+      logFolderOpened(1, 'にドロップで開いた', folderName, listB.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         folderNameB: folderName,
         folderHandleB: null,
@@ -338,6 +373,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
+      logFolderOpened(0, 'のフォルダを開いた', name, files.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         folderHandleA: handle,
         // 前のフォルダの fileMap が残ると、読み込み時に古い実体が優先されてしまう
@@ -371,6 +407,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
+      logFolderOpened(1, 'のフォルダを開いた', name, files.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         folderHandleB: handle,
         // 前のフォルダの fileMap が残ると、読み込み時に古い実体が優先されてしまう
@@ -397,6 +434,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         keepFrameIndex(state.mergedFrameNumbers, state.splitFileIndex, frameNumbers, frameMap, 1);
 
+      logFolderOpened(0, 'の一覧を更新した', name, files.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         fileMapA: filesMap,
         folderNameA: name,
@@ -429,6 +467,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
         linkedSplitIndex(state, frameNumbers.length, currentFileIndex) ??
         alignedWithOther(frameNumbers, frameMap, 1, currentFileIndex);
 
+      logFolderOpened(1, 'の一覧を更新した', name, files.length, unifiedFiles.length, currentFileIndex, splitFileIndex);
       return {
         fileMapB: filesMap,
         folderNameB: name,
@@ -488,6 +527,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     }
 
     set(patch as any);
+
+    const after = get();
+    logDebug(
+      'cell',
+      `Win A のコマ移動 ${state.currentFileIndex} → ${index} (${after.resolveFileNameForView(index, 0) ?? '実体なし'})`,
+      state.syncMode && state.isSplitView
+        ? `連動 (コマ差 ${state.syncFrameOffset}) で Win B ${state.splitFileIndex} → ${after.splitFileIndex} (${after.resolveFileNameForView(after.splitFileIndex, 1) ?? '実体なし'})`
+        : '連動なし (Win B は据え置き)'
+    );
   },
 
   /**
@@ -511,7 +559,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
     const driverIndex = driver === 1 ? state.splitFileIndex : state.currentFileIndex;
     const nextDriver = clamp(driverIndex + delta);
-    if (nextDriver === driverIndex) return;
+    if (nextDriver === driverIndex) {
+      // ⚠️ 黙って返さないこと。「押しても動かない」ときに端なのか無反応なのか分からない
+      logDebug(
+        'cell',
+        `コマ送り ${delta > 0 ? '↓ 次へ' : '↑ 前へ'} — 端なので動かさない`,
+        `主導 ${driver === 1 ? 'Win B' : 'Win A'} が ${driverIndex} (全 ${state.unifiedFileList.length} コマ)`
+      );
+      return;
+    }
 
     // 連動中は両ビューが動くので、両方の未保存を確認する
     const views: (0 | 1)[] = linked ? [0, 1] : [driver];
@@ -544,6 +600,14 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     }
 
     set(patch as any);
+
+    const after = get();
+    logDebug(
+      'cell',
+      `コマ送り ${delta > 0 ? '↓ 次へ' : '↑ 前へ'} (主導 ${driver === 1 ? 'Win B' : 'Win A'}${linked ? ` / 連動 コマ差 ${state.syncFrameOffset}` : ' / 連動なし'})`,
+      `Win A ${state.currentFileIndex} → ${after.currentFileIndex} (${after.resolveFileNameForView(after.currentFileIndex, 0) ?? '実体なし'}) / ` +
+        `Win B ${state.splitFileIndex} → ${after.splitFileIndex} (${after.resolveFileNameForView(after.splitFileIndex, 1) ?? '実体なし'})`
+    );
   },
 
   nextCell: () => get().stepCell(1),

@@ -25,7 +25,9 @@ import {
   setSlotFlex,
   evenOutSlots,
   isPaneVisible,
+  PANE_LABELS,
 } from '../../engine/paneLayout';
+import { logDebug } from '../../engine/debugLog';
 
 export const createLayoutSlice: StateCreator<PaintStore, [], [], LayoutSlice> = (set, get) => ({
   paneLayout: createDefaultLayout(),
@@ -43,8 +45,13 @@ export const createLayoutSlice: StateCreator<PaintStore, [], [], LayoutSlice> = 
       for (const pane of Object.keys(visible) as PaneId[]) {
         const shouldShow = visible[pane];
         const shown = isPaneVisible(layout, pane);
-        if (shouldShow && !shown) layout = showPane(layout, pane);
-        else if (!shouldShow && shown) layout = hidePane(layout, pane);
+        if (shouldShow && !shown) {
+          layout = showPane(layout, pane);
+          logDebug('window', `作業領域に ${PANE_LABELS[pane]} の面を出した`);
+        } else if (!shouldShow && shown) {
+          layout = hidePane(layout, pane);
+          logDebug('window', `作業領域から ${PANE_LABELS[pane]} の面を外した`);
+        }
       }
 
       return layout === state.paneLayout ? state : { paneLayout: layout };

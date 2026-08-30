@@ -5,6 +5,7 @@
 import { StateCreator } from 'zustand';
 import { detectPegHolesAndCalculateTransform } from '../../engine/pegStabilizer';
 import { PaintStore, ViewSlice } from '../types';
+import { logDebug } from '../../engine/debugLog';
 
 export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set, get) => ({
   // 色指定参照ウィンドウ (Color Spec Reference Window)
@@ -160,6 +161,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     // 閉じると編集中の内容は見えなくなるので、未保存なら確認する
     if (isWinAVisible && !confirmDiscardIfDirty(0)) return;
     set({ isWinAVisible: !isWinAVisible, ...(isWinAVisible ? {} : { activeSurface: 'cell' as const }) });
+    logDebug('window', `Win A を${isWinAVisible ? '閉じた' : '開いた'}`);
   },
 
   toggleIsSplitView: () => {
@@ -173,6 +175,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       // 閉じたときはアクティブビューを Win A に戻す (保存先の取り違えを防ぐ)
       ...(isSplitView ? { activeViewIndex: 0 as 0 | 1, splitHistoryStack: [], splitHistoryIndex: -1 } : {}),
     });
+    logDebug(
+      'window',
+      `2 画面表示を${isSplitView ? 'やめた (Win B を閉じた)' : '開始した (Win B を開いた)'}`,
+      isSplitView ? 'アクティブを Win A へ戻し、Win B の履歴は捨てた' : undefined
+    );
   },
 
   toggleSyncMode: () =>
@@ -181,11 +188,15 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         // 連動開始: 今それぞれが表示しているコマの差をそのまま保つ。
         // 以前は Win B を Win A の位置へ強制的に合わせていたため、
         // 狙って選んだコマがずれてしまっていた。
-        return {
-          syncMode: true,
-          syncFrameOffset: state.splitFileIndex - state.currentFileIndex,
-        };
+        const offset = state.splitFileIndex - state.currentFileIndex;
+        logDebug(
+          'sync',
+          `左右連動を入れた (コマ差 ${offset})`,
+          `Win A=${state.currentFileIndex} / Win B=${state.splitFileIndex}。押した時点の差をそのまま保つ`
+        );
+        return { syncMode: true, syncFrameOffset: offset };
       }
+      logDebug('sync', '左右連動を切った');
       return { syncMode: false };
     }),
 
@@ -201,10 +212,19 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       splitHistoryIndex: -1,
       isDirtyB: false,
     });
+    logDebug(
+      'sync',
+      'コマ差を 0 に揃えた',
+      `Win B ${state.splitFileIndex} → ${state.currentFileIndex} (コマ差 ${state.syncFrameOffset} → 0)`
+    );
   },
 
   // セルの窓を触ったら、↑ ↓ と Space の効き先もセルへ戻す
-  setActiveViewIndex: (idx) => set({ activeViewIndex: idx, activeSurface: 'cell' }),
+  setActiveViewIndex: (idx) => {
+    // ⚠️ 変わったときだけ記録する。塗るたびに呼ばれるのでログが埋まる
+    if (get().activeViewIndex !== idx) logDebug('window', `アクティブな窓を ${idx === 1 ? 'Win B' : 'Win A'} にした`);
+    set({ activeViewIndex: idx, activeSurface: 'cell' });
+  },
 
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
 
@@ -239,5 +259,14 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     }
 
     set(patch as any);
+
+    const after = get();
+    logDebug(
+      'cell',
+      `Win B のコマ移動 ${state.splitFileIndex} → ${index} (${after.resolveFileNameForView(index, 1) ?? '実体なし'})`,
+      state.syncMode && state.isSplitView
+        ? `連動 (コマ差 ${state.syncFrameOffset}) で Win A ${state.currentFileIndex} → ${after.currentFileIndex} (${after.resolveFileNameForView(after.currentFileIndex, 0) ?? '実体なし'})`
+        : '連動なし (Win A は据え置き)'
+    );
   },
 });

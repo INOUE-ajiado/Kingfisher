@@ -13,6 +13,8 @@ import { LightTable } from './components/panels/LightTable';
 import { FileBrowser } from './components/panels/FileBrowser';
 import { LayerPanel } from './components/panels/LayerPanel';
 import { HistoryPanel } from './components/panels/HistoryPanel';
+import { DebugLogPanel } from './components/panels/DebugLogPanel';
+import { logDebug } from './engine/debugLog';
 import { AboutModal } from './components/modals/AboutModal';
 import { PreferencesModal } from './components/modals/PreferencesModal';
 import { ShortcutsModal } from './components/modals/ShortcutsModal';
@@ -112,6 +114,12 @@ export const App: React.FC = () => {
 
     const store = usePaintStore.getState();
 
+    logDebug(
+      'folder',
+      `画面へドロップ: 画像 ${folder.images.size} 枚 / 映像 ${folder.videos.length} 本 (${folder.folderName || '(名前なし)'})`,
+      `セルの行き先: ${store.activeViewIndex === 1 ? 'Win B' : 'Win A'} / 保存できるハンドル: ${folder.dirHandle ? 'あり' : 'なし'}`
+    );
+
     if (folder.images.size > 0) {
       // 隠していても、セルを開いたなら出す
       if (!store.isWinAVisible && store.activeViewIndex !== 1) store.toggleWinAVisible();
@@ -140,6 +148,7 @@ export const App: React.FC = () => {
     }
 
     if (folder.images.size === 0 && folder.videos.length === 0) {
+      logDebug('folder', 'ドロップされた中に開けるファイルが無かった');
       alert(
         'ドロップされた中に開けるファイルが見つかりませんでした。\n' +
           'セル画像 (.tga / .png / .jpg) と撮影ロール (.mov / .mp4) に対応しています。'
@@ -159,6 +168,7 @@ export const App: React.FC = () => {
     colorChart: 260,
     layerPanel: 180,
     historyPanel: 160,
+    debugLog: 220,
   });
 
   const activeResizingKeyRef = React.useRef<string | null>(null);
@@ -301,6 +311,7 @@ export const App: React.FC = () => {
                     { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
                     { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
                     { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
+                    { key: 'debugLog', visible: panelVisibility.debugLog, component: <DebugLogPanel /> },
                   ].filter((p) => p.visible);
 
                   return lowerPanels.map((panel, idx) => {

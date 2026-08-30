@@ -13,10 +13,11 @@
       "Canvas 2D API による描画 (putImageData → drawImage)",
       "File System Access API (ゼロ・アップロード)",
       "Web Workers (TGA デコード / ベクター・ラスタートレース)",
-      "vitest (テスト 316 件)",
+      "vitest (テスト 322 件)",
       "Firebase Hosting (COOP/COEP ヘッダー付き)",
       "撮影上がりロール (.mov / .mp4) の再生 — ネイティブ <video>。デコードは自前でやらない",
-      "作業領域のレイアウト — 面 (Win A / Win B / 見本 / ロール) を横一列の枠へ割り当て、並べ替え・タブ重ね・一面表示・幅調整ができる (engine/paneLayout.ts)"
+      "作業領域のレイアウト — 面 (Win A / Win B / 見本 / ロール) を横一列の枠へ割り当て、並べ替え・タブ重ね・一面表示・幅調整ができる (engine/paneLayout.ts)",
+      "操作ログ (DEBUG ウィンドウ) — 右サイドバーの最下段。フォルダを開く / コマ送り / 窓の開閉 / 連動を時刻付きで記録し、全文コピーできる (engine/debugLog.ts, components/panels/DebugLogPanel.tsx)"
     ],
     "notImplemented": [
       "Rust / WebAssembly — 存在しない。画像処理は全て素の TypeScript",
@@ -271,6 +272,12 @@
       "title": "↑ ↓ と Space の効き先は「最後に触った面」(activeSurface)",
       "detail": "セルとロールで同じキーが別の意味を持つ (セル: コマ送り / 押しながらパン、ロール: 前後のロール / 再生)。どちらへ効かせるかは uiSlice の activeSurface ('cell' | 'roll') で決める。⚠️ コンポーネントの state で持たないこと。キーを拾うのは window のハンドラで、そこからは React の状態が見えない。⚠️ 切り替えはストア側で行う。ロールを開く・ツリーでロールを選ぶ・ロールの窓を触る (setActiveRollId) で 'roll'、セルのフォルダを開く (setFolderHandleA/B・setFolderFilesA/B・setCustomDropFolderA/B・setCutRootFolder・openPlainFolderAsA・setSelectedSubDirA/B)・セルのコマを選ぶ (setCurrentFileIndex / setSplitFileIndex)・セルの窓を触る (setActiveViewIndex)・2 画面に並べる (toggleIsSplitView) で 'cell'。ロールが 1 面も残らなくなったら 'cell' へ戻す。⚠️ 「開いた」も操作に含めること。ロールを開いたまま TGA フォルダを開くと ↑ ↓ がロールに効いたままになり、セルが動かない (2026-08-29 の報告)。⚠️ 表示中のコマを選び直したときも 'cell' へ戻すこと。setCurrentFileIndex / setSplitFileIndex は同じ位置なら早期 return するので、そこで取りこぼす。⚠️ ← → もロール側が無条件に拾わないこと。セルのコマ送りには使わないが、ファイルツリーではフォルダの開閉に使う。ロールを開いている間だけツリーが開け閉めできなくなる (2026-08-29 の報告)。",
       "location": "src/store/slices/uiSlice.ts, src/store/slices/rollSlice.ts, src/components/panels/RollViewer.tsx"
+    },
+    {
+      "id": "debug-log-outside-store",
+      "title": "操作ログはストアの外に置く。失敗しても alert を出さない",
+      "detail": "DEBUG ウィンドウ (右サイドバー最下段) の操作ログは engine/debugLog.ts が持ち、DebugLogPanel だけが useSyncExternalStore で購読する。⚠️ ログをストア (zustand) へ入れないこと。1 行足すたびにストアが更新され、購読している全パネルが再描画される。⚠️ 毎コマ走る場所 (ロールの requestVideoFrameCallback、キャンバスの描画ループ) から logDebug を呼ばないこと。ログが埋まって肝心の操作が流れる。⚠️ 記録には必ず数字を入れる (枚数・統合コマ数・A と B の表示位置・コマ差)。報告と突き合わせるとき、対応づけの食い違いか位置の食い違いかをその場で切り分けられる。⚠️ 上限 500 行で古いものから捨てる (開きっぱなしで使うため)。⚠️ 全文コピーが失敗しても alert を出さないこと。ダイアログはページの実行を止め、ログを見ながら操作を続けられなくなる (2026-08-31 のヘッドレス検証で実際に踏んだ)。ボタンの表示で知らせ、本文はコンソールへ出して手で拾えるようにする。⚠️ navigator.clipboard は権限やフォーカスしだいで解決も拒否もしないことがある。期限を切って execCommand の経路へ落とすこと。",
+      "location": "src/engine/debugLog.ts, src/components/panels/DebugLogPanel.tsx"
     }
   ],
   "workflow": {
@@ -508,7 +515,8 @@
         "本番ビルドで Ctrl+Alt+<文字> が右パネルを開閉しないこと / Ctrl+Alt の成立でトグルすること (2026-08-26)",
         "フォルダ未オープンで再生を押しても UI が壊れず NaN が出ないこと (2026-08-26)",
         "消しゴム・ゴミ取り・バケツ塗りが encodeTGA / decodeTGA の往復を越えて保持されること (saveRoundTrip.test.ts)",
-        "カットを丸ごと Win A へ・その中の _go を Win B へ開いた形を実ブラウザで確認 (2026-08-31): 連動して ↓ を押すと Win A と Win B に必ず同じセル (y0001→y0002→y0003) が並ぶ。修正前は B の y0001 が A の _bg/x0001 と対になっていた",
+        "DEBUG ログのウィンドウを実ブラウザで確認 (2026-08-31): ドロップ / 2 画面 / 連動 / コマ送り / ロールの選択連動が時刻付きで残り、全文コピーでヘッダー (日時・件数・URL・UA) 付きのテキストが得られる。クリップボードが使えない環境ではボタンが赤くなりコンソールへ本文を出す (ページは止まらない)",
+      "カットを丸ごと Win A へ・その中の _go を Win B へ開いた形を実ブラウザで確認 (2026-08-31): 連動して ↓ を押すと Win A と Win B に必ず同じセル (y0001→y0002→y0003) が並ぶ。修正前は B の y0001 が A の _bg/x0001 と対になっていた",
       "サブフォルダをまたぐコマ送りの順番を実ブラウザで確認 (2026-08-31): _bg 3 枚 + _go 5 枚を開いて ↓ を 8 回押すと、_bg/x0001→x0002→x0003→_go/y0001→…→y0005 とツリーの順どおりに進み、途中で別フォルダへ飛ばない",
       "連動中に Win B のフォルダを開き直しても記録どおりに並ぶことを実ブラウザで確認 (2026-08-29): 先頭コマを持たない retake フォルダを開いても Win B は Win A と同じ位置 (実体が無ければ NO DATA) になり、↑ ↓ でずれない。連動していないときに開いた Win B は Win A と同じコマから始まる",
       "TGA 2 画面でコマ差 -1 のまま先頭をまたぐ操作を実ブラウザで確認 (2026-08-29): 端で止まったあと戻っても Win B が 0001 を飛ばさず、コマ差 -1 が保たれる",
