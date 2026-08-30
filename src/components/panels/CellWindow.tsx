@@ -22,6 +22,7 @@ import { RollViewer } from './RollViewer';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
 import { RollId } from '../../store/types';
+import { PLAYBACK_SOURCE } from '../../engine/debugLog';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -647,7 +648,8 @@ export const CellWindow: React.FC = () => {
       if (total === 0) return;
 
       const current = Number.isInteger(currentFileIndex) ? currentFileIndex : -1;
-      setCurrentFileIndex((current + 1) % total);
+      // ⚠️ 毎コマ走るので DEBUG ログには残さない (PLAYBACK_SOURCE)
+      setCurrentFileIndex((current + 1) % total, PLAYBACK_SOURCE);
     }, (1000 / Math.max(1, fps)) * toolOptions.frameHold);
 
     return () => clearInterval(interval);

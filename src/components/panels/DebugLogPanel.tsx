@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Bug, ClipboardCopy, Check, Trash2, ArrowDownToLine } from 'lucide-react';
+import { Bug, ClipboardCopy, Check, Trash2, ArrowDownToLine, Link, AlertTriangle } from 'lucide-react';
+import { usePaintStore } from '../../store/usePaintStore';
+import { isSyncPairConsistent } from '../../store/types';
 import {
   DebugLogCategory,
   clearDebugLog,
@@ -28,12 +30,41 @@ const CATEGORY_STYLE: Record<DebugLogCategory, { label: string; className: strin
  * 解析へ渡せるようにすること。画面を目で追わせるためではない。
  */
 export const DebugLogPanel: React.FC = () => {
-  const entries = useSyncExternalStore(subscribeDebugLog, getDebugLog, getDebugLog);
+  const all = useSyncExternalStore(subscribeDebugLog, getDebugLog, getDebugLog);
 
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);
   const [follow, setFollow] = useState(true);
+  /** 2 画面の連動を追うときは、セルの移動と連動の行だけに絞る */
+  const [syncOnly, setSyncOnly] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // ⚠️ まとめて 1 つのオブジェクトで購読しないこと。毎回新しい参照になり描き直しが止まらない
+  const isSplitView = usePaintStore((s) => s.isSplitView);
+  const syncMode = usePaintStore((s) => s.syncMode);
+  const syncFrameOffset = usePaintStore((s) => s.syncFrameOffset);
+  const currentFileIndex = usePaintStore((s) => s.currentFileIndex);
+  const splitFileIndex = usePaintStore((s) => s.splitFileIndex);
+  const unifiedCount = usePaintStore((s) => s.unifiedFileList.length);
+  const resolveFileNameForView = usePaintStore((s) => s.resolveFileNameForView);
+
+  const entries = syncOnly ? all.filter((e) => e.category === 'cell' || e.category === 'sync') : all;
+
+  const offsetText = syncFrameOffset > 0 ? `+${syncFrameOffset}` : String(syncFrameOffset);
+  const nameA = resolveFileNameForView(currentFileIndex, 0) ?? '実体なし';
+  const nameB = resolveFileNameForView(splitFileIndex, 1) ?? '実体なし';
+  const expectedB = Math.max(0, Math.min(Math.max(0, unifiedCount - 1), currentFileIndex + syncFrameOffset));
+  // 端で切り詰められた並びは食い違いではない (isSyncPairConsistent が両方向で見る)
+  const mismatched =
+    syncMode && isSplitView && !isSyncPairConsistent(currentFileIndex, splitFileIndex, syncFrameOffset, unifiedCount);
+
+  /** コピーにも添える「今の状態」。行だけ貼られても前提が分からないため */
+  const statusLines = [
+    `表示: ${syncOnly ? '2 画面の連動のみ (セル・連動)' : 'すべて'}`,
+    `状態: 2 画面=${isSplitView ? 'ON' : 'OFF'} / 左右連動=${syncMode ? `ON (コマ差 ${offsetText})` : 'OFF'}` +
+      ` / Win A=${currentFileIndex} (${nameA}) / Win B=${splitFileIndex} (${nameB}) / 全 ${unifiedCount} コマ`,
+    ...(mismatched ? [`⚠️ コマ差の食い違い: 本来 Win B は ${expectedB} のはず`] : []),
+  ];
 
   // 追従が入っているときだけ、新しい行へスクロールする
   useEffect(() => {
@@ -52,7 +83,7 @@ export const DebugLogPanel: React.FC = () => {
    * ボタンの表示で知らせ、本文はコンソールへ出して手で拾えるようにする。
    */
   const handleCopy = useCallback(async () => {
-    const text = formatDebugLog();
+    const text = formatDebugLog({ entries, notes: statusLines });
     let ok = false;
 
     try {
@@ -86,7 +117,7 @@ export const DebugLogPanel: React.FC = () => {
     }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
-  }, []);
+  }, [entries, statusLines]);
 
   return (
     <div className="bg-white dark:bg-slate-900 flex flex-col select-none p-1.5 min-h-[100px] h-full">
@@ -97,6 +128,23 @@ export const DebugLogPanel: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => setSyncOnly((v) => !v)}
+            title={
+              syncOnly
+                ? '2 画面の連動 (セルの移動・連動の切替) だけを表示中。押すとすべて表示'
+                : 'すべて表示中。押すと 2 画面の連動に関する行だけに絞る'
+            }
+            className={`px-1 py-0.5 rounded text-[9px] font-bold border flex items-center gap-0.5 transition-colors ${
+              syncOnly
+                ? 'bg-rose-600 border-rose-600 text-white'
+                : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <Link className="w-3 h-3" />
+            <span>連動のみ</span>
+          </button>
+
           <button
             onClick={() => setFollow((v) => !v)}
             title={follow ? '新しいログに自動で追従中 (押すと止める)' : '自動追従は止まっています (押すと再開)'}
@@ -138,10 +186,29 @@ export const DebugLogPanel: React.FC = () => {
         </div>
       </div>
 
+      {/* 2 画面の今の状態。ログを読む前提になるので常に出す */}
+      <div
+        className={`text-[9px] font-mono px-1 py-0.5 mb-1 rounded border flex-shrink-0 ${
+          mismatched
+            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 text-amber-700 dark:text-amber-300'
+            : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+        }`}
+      >
+        <div className="flex items-center gap-1 flex-wrap">
+          {mismatched && <AlertTriangle className="w-3 h-3 flex-shrink-0" />}
+          <span>
+            2 画面={isSplitView ? 'ON' : 'OFF'} / 連動={syncMode ? `ON (${offsetText})` : 'OFF'} / 全 {unifiedCount} コマ
+          </span>
+        </div>
+        <div className="break-all">A={currentFileIndex} {nameA}</div>
+        <div className="break-all">B={splitFileIndex} {nameB}</div>
+        {mismatched && <div className="break-all">⚠️ 本来 Win B は {expectedB} のはず (「差を揃える」で直せます)</div>}
+      </div>
+
       <div className="flex-1 overflow-y-auto font-mono text-[10px] leading-relaxed min-h-0">
         {entries.length === 0 ? (
           <div className="text-[10px] text-slate-400 dark:text-slate-500 py-2 px-1 leading-relaxed font-sans">
-            まだ記録がありません。
+            {syncOnly ? '2 画面の連動に関する記録はまだありません。' : 'まだ記録がありません。'}
             <br />
             フォルダを開く / コマを送る / 窓を開閉すると、ここに残ります。
           </div>
@@ -151,7 +218,9 @@ export const DebugLogPanel: React.FC = () => {
             return (
               <div
                 key={entry.seq}
-                className="py-0.5 px-1 border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                className={`py-0.5 px-1 border-b border-slate-100 dark:border-slate-800/60 hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
+                  entry.level === 'warn' ? 'bg-amber-50 dark:bg-amber-950/40' : ''
+                }`}
               >
                 <div className="flex items-start gap-1">
                   <span className="text-slate-400 dark:text-slate-500 flex-shrink-0 tabular-nums">
@@ -161,7 +230,15 @@ export const DebugLogPanel: React.FC = () => {
                     {style.label}
                   </span>
                   {/* ⚠️ 折り返して全部見せる。切り詰めると肝心の数字が消える */}
-                  <span className="text-slate-700 dark:text-slate-200 break-all">{entry.message}</span>
+                  <span
+                    className={`break-all ${
+                      entry.level === 'warn'
+                        ? 'text-amber-700 dark:text-amber-300 font-bold'
+                        : 'text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {entry.message}
+                  </span>
                 </div>
                 {entry.detail && (
                   <div className="pl-[52px] text-slate-500 dark:text-slate-400 break-all">{entry.detail}</div>

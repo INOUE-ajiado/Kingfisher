@@ -161,16 +161,17 @@ export const useGlobalShortcuts = () => {
       if (hasModifier) return;
 
       // コマ送りキー (PageDown / ↓ / テンキー3)
+      // ⚠️ どのキーで動いたかを DEBUG ログへ残す。2 画面連動の追跡でここが要る
       if (e.key === 'PageDown' || e.key === 'ArrowDown' || e.code === 'Numpad3') {
       e.preventDefault();
-      nextCell();
+      nextCell(`キー ${e.key === 'ArrowDown' ? '↓' : e.key}`);
       return;
       }
 
       // コマ戻しキー (PageUp / ↑ / テンキー9)
       if (e.key === 'PageUp' || e.key === 'ArrowUp' || e.code === 'Numpad9') {
       e.preventDefault();
-      prevCell();
+      prevCell(`キー ${e.key === 'ArrowUp' ? '↑' : e.key}`);
       return;
       }
 

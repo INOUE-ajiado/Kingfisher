@@ -255,8 +255,8 @@ export const MenuBar: React.FC = () => {
       id: 'cell',
       label: 'セル (C)',
       items: [
-        { label: '次のセルへ', shortcut: 'PageDown / ↓', action: nextCell },
-        { label: '前のセルへ', shortcut: 'PageUp / ↑', action: prevCell },
+        { label: '次のセルへ', shortcut: 'PageDown / ↓', action: () => nextCell('メニュー「次のセルへ」') },
+        { label: '前のセルへ', shortcut: 'PageUp / ↑', action: () => prevCell('メニュー「前のセルへ」') },
         { type: 'divider' },
         { label: 'ゴミ取り (ノイズ除去)', shortcut: '', action: () => setActiveModal('preferences') },
         { label: '線画の二値化', shortcut: '', action: () => setActiveModal('preferences') },
