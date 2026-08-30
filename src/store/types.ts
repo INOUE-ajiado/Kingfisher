@@ -117,6 +117,12 @@ export interface MergedFrameMapItem {
   frameNumber: string;
   fileNameA?: string;
   fileNameB?: string;
+  /**
+   * 片側にしか無く、しかもそのフォルダに相手がいないコマ
+   * (例: paint 側だけにある _pool の撮影素材)。
+   * ⚠️ コマ送り (stepCell) はここを飛ばす。ツリーから選べば開ける。
+   */
+  unpairedFolder?: boolean;
 }
 
 /** パスのファイル名部分だけ ("Cut029/a/a0001.tga" -> "a0001.tga") */
@@ -323,6 +329,24 @@ export function buildMergedFrameData(
     }
 
     put(freeKeyFor(path, num, 'B'), path, 'B');
+  });
+
+  /**
+   * 「相手のいないフォルダのコマ」に印を付ける。
+   *
+   * ⚠️ 片側にしか無いだけでは付けないこと。同じ名前のフォルダが両側にあるなら、
+   * それは「相手が欠けているセル」であって参照素材ではない (Win B が NO DATA に
+   * なるだけで、コマ送りで通るべき)。フォルダごと相手がいないときだけ印を付ける。
+   */
+  const unmatchedBDirs = new Set(bDirs.filter((dir) => !aDirs.includes(dir)));
+  frameMap.forEach((item) => {
+    if (item.fileNameA && item.fileNameB) return;
+    const path = (item.fileNameA ?? item.fileNameB)!;
+    const dir = dirTailOf(path);
+    const hasPartnerDir = item.fileNameA
+      ? bDirs.includes(dir) || unmatchedBDirs.size > 0
+      : aDirs.includes(dir) || unmatchedADirs.size > 0;
+    if (!hasPartnerDir) item.unpairedFolder = true;
   });
 
   const representativeOf = (key: string): string => {
