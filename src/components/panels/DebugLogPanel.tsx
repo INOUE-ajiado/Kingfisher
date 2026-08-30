@@ -19,6 +19,7 @@ const CATEGORY_STYLE: Record<DebugLogCategory, { label: string; className: strin
   window: { label: '窓', className: 'bg-emerald-600 text-white' },
   sync: { label: '連動', className: 'bg-rose-600 text-white' },
   file: { label: 'ファイル', className: 'bg-slate-600 text-white' },
+  view: { label: '表示', className: 'bg-cyan-600 text-white' },
 };
 
 /**
@@ -48,7 +49,11 @@ export const DebugLogPanel: React.FC = () => {
   const unifiedCount = usePaintStore((s) => s.unifiedFileList.length);
   const resolveFileNameForView = usePaintStore((s) => s.resolveFileNameForView);
 
-  const entries = syncOnly ? all.filter((e) => e.category === 'cell' || e.category === 'sync') : all;
+  // ⚠️ 絞り込みに 'view' も入れること。「コマを送ったら倍率が変わった」の前後関係は
+  // この 3 つが並んでいないと追えない
+  const entries = syncOnly
+    ? all.filter((e) => e.category === 'cell' || e.category === 'sync' || e.category === 'view')
+    : all;
 
   const offsetText = syncFrameOffset > 0 ? `+${syncFrameOffset}` : String(syncFrameOffset);
   const nameA = resolveFileNameForView(currentFileIndex, 0) ?? '実体なし';
@@ -60,7 +65,7 @@ export const DebugLogPanel: React.FC = () => {
 
   /** コピーにも添える「今の状態」。行だけ貼られても前提が分からないため */
   const statusLines = [
-    `表示: ${syncOnly ? '2 画面の連動のみ (セル・連動)' : 'すべて'}`,
+    `表示: ${syncOnly ? '2 画面の連動のみ (セル・連動・表示倍率)' : 'すべて'}`,
     `状態: 2 画面=${isSplitView ? 'ON' : 'OFF'} / 左右連動=${syncMode ? `ON (コマ差 ${offsetText})` : 'OFF'}` +
       ` / Win A=${currentFileIndex} (${nameA}) / Win B=${splitFileIndex} (${nameB}) / 全 ${unifiedCount} コマ`,
     ...(mismatched ? [`⚠️ コマ差の食い違い: 本来 Win B は ${expectedB} のはず`] : []),
@@ -132,7 +137,7 @@ export const DebugLogPanel: React.FC = () => {
             onClick={() => setSyncOnly((v) => !v)}
             title={
               syncOnly
-                ? '2 画面の連動 (セルの移動・連動の切替) だけを表示中。押すとすべて表示'
+                ? '2 画面の連動 (セルの移動・連動・表示倍率) だけを表示中。押すとすべて表示'
                 : 'すべて表示中。押すと 2 画面の連動に関する行だけに絞る'
             }
             className={`px-1 py-0.5 rounded text-[9px] font-bold border flex items-center gap-0.5 transition-colors ${

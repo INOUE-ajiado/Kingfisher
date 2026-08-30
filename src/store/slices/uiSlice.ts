@@ -4,6 +4,12 @@
 
 import { StateCreator } from 'zustand';
 import { PaintStore, UiSlice } from '../types';
+import { logDebug } from '../../engine/debugLog';
+
+/** 表示倍率を人が読める形に (0.625 -> 63%) */
+function percent(scale: number): string {
+  return `${Math.round(scale * 100)}%`;
+}
 
 export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) => ({
   isDarkMode: false,
@@ -80,6 +86,7 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
     set((state) => {
       const newScale = Math.min(5.0, state.canvasTransform.scale * 1.2);
       const newTransform = { ...state.canvasTransform, scale: newScale };
+      logDebug('view', `表示倍率 ${percent(state.canvasTransform.scale)} → ${percent(newScale)} (拡大)`);
       if (state.syncMode && state.isSplitView) {
         return { canvasTransform: newTransform, splitCanvasTransform: newTransform };
       }
@@ -90,6 +97,7 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
     set((state) => {
       const newScale = Math.max(0.2, state.canvasTransform.scale / 1.2);
       const newTransform = { ...state.canvasTransform, scale: newScale };
+      logDebug('view', `表示倍率 ${percent(state.canvasTransform.scale)} → ${percent(newScale)} (縮小)`);
       if (state.syncMode && state.isSplitView) {
         return { canvasTransform: newTransform, splitCanvasTransform: newTransform };
       }
@@ -97,9 +105,16 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
     }),
 
   resetCanvasTransform: () =>
-    set({
-      canvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
-      splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+    set((state) => {
+      logDebug(
+        'view',
+        `表示倍率 ${percent(state.canvasTransform.scale)} → 100% (等倍に戻す)`,
+        `Win A / Win B の両方を等倍・原点へ`
+      );
+      return {
+        canvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+        splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+      };
     }),
 
   renderTrigger: 0,

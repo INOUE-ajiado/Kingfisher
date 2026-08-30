@@ -22,7 +22,7 @@ import { RollViewer } from './RollViewer';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
 import { RollId } from '../../store/types';
-import { PLAYBACK_SOURCE } from '../../engine/debugLog';
+import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -543,23 +543,33 @@ export const CellWindow: React.FC = () => {
   const lastFitTransformRef = useRef<{ scale: number; offsetX: number; offsetY: number } | null>(null);
 
   // 画面サイズ（PCディスプレイのキャンバスエリア高さ）に合わせて、仮想フレーム/セル画像が上下にぴったり収まるサイズに自動計算＆初期位置設定
-  const fitToScreenHeight = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  const fitToScreenHeight = useCallback(
+    (reason: string) => {
+      const container = containerRef.current;
+      if (!container) return;
 
-    const availableHeight = container.clientHeight - 48; // 上下24pxずつのマージン余白
-    const targetHeight = currentImage ? currentImage.height : 480;
-    if (availableHeight <= 0 || targetHeight <= 0) return;
+      const availableHeight = container.clientHeight - 48; // 上下24pxずつのマージン余白
+      const targetHeight = currentImage ? currentImage.height : 480;
+      if (availableHeight <= 0 || targetHeight <= 0) return;
 
-    const fitScale = Math.min(Math.max(0.2, availableHeight / targetHeight), 3.0);
-    const fitTransform = { scale: fitScale, offsetX: 0, offsetY: 0 };
+      const fitScale = Math.min(Math.max(0.2, availableHeight / targetHeight), 3.0);
+      const fitTransform = { scale: fitScale, offsetX: 0, offsetY: 0 };
 
-    // 「自動で合わせた値」を控えておく。これと現在値がずれていれば
-    // ユーザーが自分でズーム・パンしたと判断できる。
-    lastFitTransformRef.current = fitTransform;
-    setCanvasTransform(fitTransform);
-    setSplitCanvasTransform(fitTransform);
-  }, [currentImage, setCanvasTransform, setSplitCanvasTransform]);
+      const before = usePaintStore.getState().canvasTransform.scale;
+      logDebug(
+        'view',
+        `表示倍率 ${Math.round(before * 100)}% → ${Math.round(fitScale * 100)}% (自動フィット)`,
+        `${reason} / 画像 ${currentImage ? `${currentImage.width}x${currentImage.height}` : '(なし)'} / 表示領域の高さ ${availableHeight}px / Win A と Win B の両方に適用`
+      );
+
+      // 「自動で合わせた値」を控えておく。これと現在値がずれていれば
+      // ユーザーが自分でズーム・パンしたと判断できる。
+      lastFitTransformRef.current = fitTransform;
+      setCanvasTransform(fitTransform);
+      setSplitCanvasTransform(fitTransform);
+    },
+    [currentImage, setCanvasTransform, setSplitCanvasTransform]
+  );
 
   /**
    * 自動フィットは「画像のサイズが変わった時」だけ行う。
@@ -574,8 +584,31 @@ export const CellWindow: React.FC = () => {
     if (!currentImage) return;
     const sizeKey = `${currentImage.width}x${currentImage.height}`;
     if (lastFittedSizeRef.current === sizeKey) return;
+
+    const previous = lastFittedSizeRef.current;
     lastFittedSizeRef.current = sizeKey;
-    fitToScreenHeight();
+
+    // ⚠️ ユーザーが自分で決めた倍率は壊さないこと。設定シートのようにサイズの違う
+    // ファイルを 1 枚挟むだけで、拡大して塗っていた倍率が飛んでしまう
+    // (2026-08-31 の報告)。合わせ直すのは、自動で合わせた値のままのときだけ。
+    const fitted = lastFitTransformRef.current;
+    const current = usePaintStore.getState().canvasTransform;
+    const isUserAdjusted =
+      !!fitted &&
+      (fitted.scale !== current.scale ||
+        fitted.offsetX !== current.offsetX ||
+        fitted.offsetY !== current.offsetY);
+
+    if (isUserAdjusted) {
+      logDebug(
+        'view',
+        `画像サイズが変わったが、表示倍率は ${Math.round(current.scale * 100)}% のまま保つ`,
+        `${previous ?? '(初回)'} → ${sizeKey} / 自分でズーム・パンした値を優先`
+      );
+      return;
+    }
+
+    fitToScreenHeight(`画像サイズが変わった (${previous ?? '(初回)'} → ${sizeKey})`);
   }, [currentImage, fitToScreenHeight]);
 
   /**
@@ -592,7 +625,7 @@ export const CellWindow: React.FC = () => {
           fitted.offsetX !== current.offsetX ||
           fitted.offsetY !== current.offsetY);
       if (isUserAdjusted) return;
-      fitToScreenHeight();
+      fitToScreenHeight('ウィンドウのリサイズ');
     };
 
     window.addEventListener('resize', handleResize);
@@ -1110,12 +1143,27 @@ export const CellWindow: React.FC = () => {
     }
   };
 
+  /** 最後に記録したホイールズームの倍率。連続して回すたびに 1 行ずつ出さないため */
+  const lastLoggedWheelScaleRef = useRef<number | null>(null);
+
   const handleWheel = (e: React.WheelEvent, isLeftView: boolean) => {
     e.preventDefault();
     const currentTransform = isLeftView ? canvasTransform : splitCanvasTransform;
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
     const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
     const newTransform = { ...currentTransform, scale: newScale };
+
+    // ⚠️ 1 回転ごとに書かないこと。トラックパッドでは 1 操作で何十回も来る。
+    // 前に記録した倍率から 1 割以上動いたときだけ残す
+    const lastLogged = lastLoggedWheelScaleRef.current;
+    if (lastLogged === null || Math.abs(newScale - lastLogged) / lastLogged >= 0.1) {
+      lastLoggedWheelScaleRef.current = newScale;
+      logDebug(
+        'view',
+        `表示倍率 ${Math.round(currentTransform.scale * 100)}% → ${Math.round(newScale * 100)}% (ホイール)`,
+        `${isLeftView ? 'Win A' : 'Win B'}${syncMode && isSplitView ? ' (連動中なので両方)' : ''}`
+      );
+    }
 
     if (syncMode && isSplitView) {
       setCanvasTransform(newTransform);
