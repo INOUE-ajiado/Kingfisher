@@ -12,7 +12,10 @@ function percent(scale: number): string {
 }
 
 export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) => ({
-  isDarkMode: false,
+  // 既定はダークモード (2026-08-31 のユーザー指定)。
+  // ⚠️ index.html の <html class="dark"> と揃えること。片方だけ変えると、
+  // 起動直後の一瞬だけ明るい画面が出る (React が乗る前は CSS だけで決まる)。
+  isDarkMode: true,
 
   toggleDarkMode: () => set((state) => ({ isDarkMode: !state.isDarkMode })),
 
