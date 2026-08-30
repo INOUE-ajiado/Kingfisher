@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
-import { RollId } from '../../store/types';
+import { RollId, ROLL_IDS } from '../../store/types';
+import { logDebug } from '../../engine/debugLog';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
@@ -84,6 +85,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const fpsSamplesRef = useRef<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  /** シークバーのドラッグをまとめるための控え (始点と時計) */
+  const seekBurstRef = useRef<string | null>(null);
+  const seekTimerRef = useRef<number | null>(null);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
@@ -108,6 +113,29 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     minWidth: 320,
     minHeight: 260,
   });
+
+  /**
+   * 2 面の再生位置を 1 行で。「ロール A c001.mov 1.250s / ロール B r001.mov 1.250s」
+   *
+   * ⚠️ 時刻はストアではなく <video> から読む。再生中の時刻は再描画を避けるため
+   * ストアへ入れていない (毎コマ更新すると塗り作業に影響する)。
+   */
+  const describeRollTimes = useCallback((): string => {
+    const roll = usePaintStore.getState().roll;
+    return ROLL_IDS.map((rid) => {
+      const view = roll.views[rid];
+      if (!view.isOpen) return `${TONE[rid].label} 閉`;
+      const video = getRollVideo(rid);
+      const at = video ? `${video.currentTime.toFixed(3)}s` : '-';
+      return `${TONE[rid].label} ${view.fileName || '未読み込み'} ${at}`;
+    }).join(' / ');
+  }, []);
+
+  /** 連動の状態を添える (再生連動の有無と時刻差) */
+  const describeRollSync = useCallback((): string => {
+    const roll = usePaintStore.getState().roll;
+    return roll.sync ? `再生連動 ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : '再生連動 OFF';
+  }, []);
 
   /** 連動している相手の映像。連動していなければ null */
   const partnerVideo = useCallback((): HTMLVideoElement | null => {
@@ -291,11 +319,21 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (!video.paused) {
       video.pause();
       partner?.pause();
+      logDebug(
+        'roll',
+        `一時停止 — ${tone.label} から${both ? ' (Space: 2 面同時)' : ''}`,
+        `${describeRollTimes()} / ${describeRollSync()}`
+      );
       return;
     }
 
     // 連動中は流し始める前に頭を揃える
     syncPartnerTime(video.currentTime);
+    logDebug(
+      'roll',
+      `再生 — ${tone.label} から${both ? ' (Space: 2 面同時)' : ''}${partner ? ' / 相手も動かす' : ''}`,
+      `${describeRollTimes()} / ${describeRollSync()}`
+    );
     // ⚠️ 握り潰さないこと。ボタンからの再生はユーザー操作なので普通は通るが、
     // 自動再生ポリシーで弾かれると「押しても何も起きない」だけになり原因が追えない。
     video.play().catch((err) => console.error('Failed to play roll:', err));
@@ -335,10 +373,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     setActiveRollId(rollId);
     video.pause();
     getRollVideo(otherRollId(rollId))?.pause();
+
+    const before = describeRollTimes();
     video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
     // 連動中は時刻差を保って合わせ、そうでなければ相手も同じコマ数だけ送る
     syncPartnerTime(video.currentTime);
     stepPartner(partnerDelta);
+
+    logDebug(
+      'roll',
+      `コマ送り ${delta > 0 ? '→ 進む' : '← 戻る'} ${Math.abs(delta)} コマ (${view.fps}fps) — ${tone.label} 主導 / ${describeRollSync()}`,
+      `${before}  →  ${describeRollTimes()}`
+    );
   };
 
   /** この面だけを送る (◀ ▶ ボタン)。左右のずれを作りたいときの逃げ道 */
@@ -347,8 +393,16 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (!video) return;
     setActiveRollId(rollId);
     video.pause();
+
+    const before = describeRollTimes();
     video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
     syncPartnerTime(video.currentTime);
+
+    logDebug(
+      'roll',
+      `コマ送り ${delta > 0 ? '→ 進む' : '← 戻る'} 1 コマ — ${tone.label} だけ (ボタン) / ${describeRollSync()}`,
+      `${before}  →  ${describeRollTimes()}`
+    );
   };
 
   /**
@@ -449,7 +503,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       }
       if (isRollStep) {
         // ツリーの並びに合わせる (↓ が次のロール)。選択連動中は相手の面も動く
-        usePaintStore.getState().stepRoll(rollId, e.key === 'ArrowDown' ? 1 : -1);
+        usePaintStore.getState().stepRoll(rollId, e.key === 'ArrowDown' ? 1 : -1, `キー ${e.key === 'ArrowDown' ? '↓' : '↑'}`);
         return;
       }
       const direction = e.key === 'ArrowRight' ? 1 : -1;
@@ -631,8 +685,24 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           onChange={(e) => {
             const v = videoRef.current;
             if (!v) return;
+            const before = seekBurstRef.current ?? describeRollTimes();
+            seekBurstRef.current = before;
             v.currentTime = Number(e.target.value);
             syncPartnerTime(v.currentTime);
+
+            // ⚠️ つまみを動かすたびに書かないこと。1 回のドラッグで何十回も来る。
+            // 手が止まったところで、始点と終点だけを 1 行にまとめる
+            if (seekTimerRef.current !== null) window.clearTimeout(seekTimerRef.current);
+            seekTimerRef.current = window.setTimeout(() => {
+              const from = seekBurstRef.current;
+              seekBurstRef.current = null;
+              seekTimerRef.current = null;
+              logDebug(
+                'roll',
+                `シークバーで移動 — ${tone.label} 主導 / ${describeRollSync()}`,
+                `${from}  →  ${describeRollTimes()}`
+              );
+            }, 250);
           }}
           className="w-full accent-indigo-600 cursor-pointer disabled:opacity-40"
         />
@@ -641,7 +711,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <div className="flex items-center gap-1">
             {view.files.length > 1 && (
               <button
-                onClick={() => stepRoll(rollId, -1)}
+                onClick={() => stepRoll(rollId, -1, `${tone.label} の ◀◀ ボタン`)}
                 disabled={disabled}
                 title="前のロールへ (↑)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
@@ -675,7 +745,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             </button>
             {view.files.length > 1 && (
               <button
-                onClick={() => stepRoll(rollId, 1)}
+                onClick={() => stepRoll(rollId, 1, `${tone.label} の ▶▶ ボタン`)}
                 disabled={disabled}
                 title="次のロールへ (↓)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"

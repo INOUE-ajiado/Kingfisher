@@ -48,11 +48,17 @@ export const DebugLogPanel: React.FC = () => {
   const splitFileIndex = usePaintStore((s) => s.splitFileIndex);
   const unifiedCount = usePaintStore((s) => s.unifiedFileList.length);
   const resolveFileNameForView = usePaintStore((s) => s.resolveFileNameForView);
+  const roll = usePaintStore((s) => s.roll);
 
   // ⚠️ 絞り込みに 'view' も入れること。「コマを送ったら倍率が変わった」の前後関係は
   // この 3 つが並んでいないと追えない
+  // ⚠️ ロールも含めること。セルとロールの連動は同じ「2 画面の連携」で、
+  // 片方だけ見えても前後関係が追えない
   const entries = syncOnly
-    ? all.filter((e) => e.category === 'cell' || e.category === 'sync' || e.category === 'view')
+    ? all.filter(
+        (e) =>
+          e.category === 'cell' || e.category === 'sync' || e.category === 'view' || e.category === 'roll'
+      )
     : all;
 
   const offsetText = syncFrameOffset > 0 ? `+${syncFrameOffset}` : String(syncFrameOffset);
@@ -63,12 +69,26 @@ export const DebugLogPanel: React.FC = () => {
   const mismatched =
     syncMode && isSplitView && !isSyncPairConsistent(currentFileIndex, splitFileIndex, syncFrameOffset, unifiedCount);
 
+  /** ロールの面が 1 つでも開いていれば、その並びも添える */
+  const rollOpen = roll.views.rollA.isOpen || roll.views.rollB.isOpen;
+  const rollPosition = (id: 'rollA' | 'rollB') => {
+    const view = roll.views[id];
+    if (!view.isOpen && view.files.length === 0) return '未使用';
+    const at = view.currentPath ? view.files.findIndex((v) => v.path === view.currentPath) + 1 : 0;
+    return `${at}/${view.files.length} (${view.fileName || '未読み込み'})`;
+  };
+  const rollStatus =
+    `ロール: 選択連動=${roll.fileSync ? `ON (ずれ ${roll.fileSyncOffset})` : 'OFF'}` +
+    ` / 再生連動=${roll.sync ? `ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : 'OFF'}` +
+    ` / A=${rollPosition('rollA')} / B=${rollPosition('rollB')}`;
+
   /** コピーにも添える「今の状態」。行だけ貼られても前提が分からないため */
   const statusLines = [
-    `表示: ${syncOnly ? '2 画面の連動のみ (セル・連動・表示倍率)' : 'すべて'}`,
+    `表示: ${syncOnly ? '2 画面の連動のみ (セル・ロール・連動・表示倍率)' : 'すべて'}`,
     `状態: 2 画面=${isSplitView ? 'ON' : 'OFF'} / 左右連動=${syncMode ? `ON (コマ差 ${offsetText})` : 'OFF'}` +
       ` / Win A=${currentFileIndex} (${nameA}) / Win B=${splitFileIndex} (${nameB}) / 全 ${unifiedCount} コマ`,
     ...(mismatched ? [`⚠️ コマ差の食い違い: 本来 Win B は ${expectedB} のはず`] : []),
+    ...(rollOpen ? [rollStatus] : []),
   ];
 
   // 追従が入っているときだけ、新しい行へスクロールする
@@ -137,8 +157,8 @@ export const DebugLogPanel: React.FC = () => {
             onClick={() => setSyncOnly((v) => !v)}
             title={
               syncOnly
-                ? '2 画面の連動 (セルの移動・連動・表示倍率) だけを表示中。押すとすべて表示'
-                : 'すべて表示中。押すと 2 画面の連動に関する行だけに絞る'
+                ? '2 画面の連動 (セル・ロールの移動・連動・表示倍率) だけを表示中。押すとすべて表示'
+                : 'すべて表示中。押すと 2 画面の連動 (セル・ロール) に関する行だけに絞る'
             }
             className={`px-1 py-0.5 rounded text-[9px] font-bold border flex items-center gap-0.5 transition-colors ${
               syncOnly
@@ -207,6 +227,7 @@ export const DebugLogPanel: React.FC = () => {
         </div>
         <div className="break-all">A={currentFileIndex} {nameA}</div>
         <div className="break-all">B={splitFileIndex} {nameB}</div>
+        {rollOpen && <div className="break-all pt-0.5 border-t border-slate-200 dark:border-slate-700">{rollStatus}</div>}
         {mismatched && <div className="break-all">⚠️ 本来 Win B は {expectedB} のはず (「差を揃える」で直せます)</div>}
       </div>
 

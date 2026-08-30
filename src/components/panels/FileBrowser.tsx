@@ -553,7 +553,7 @@ export const FileBrowser: React.FC = () => {
   /** ロールのツリーは、その面のものだけを開く (どちらへ出るか迷わせない) */
   const handleSelectRoll = (id: RollId, paths: string[]) => (localIdx: number) => {
     const path = paths[localIdx];
-    if (path) selectRollFile(id, path);
+    if (path) selectRollFile(id, path, '撮影ロールのツリーをクリック');
   };
 
   // ⌨️ キーボード方向キー (↑ ↓ ← → Enter Space) ナビゲーション処理
