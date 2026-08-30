@@ -147,6 +147,9 @@ export function buildMergedFrameData(
   listB: string[]
 ): { frameNumbers: string[]; frameMap: Map<string, MergedFrameMapItem>; unifiedFiles: string[] } {
   const frameMap = new Map<string, MergedFrameMapItem>();
+  /** 実ファイルのパス -> そのファイルが入ったキー */
+  const keyOfA = new Map<string, string>();
+  const keyOfB = new Map<string, string>();
 
   const assign = (path: string, side: 'A' | 'B') => {
     const num = extractFrameNumber(path);
@@ -158,47 +161,147 @@ export function buildMergedFrameData(
       return side === 'A' ? !!item.fileNameA : !!item.fileNameB;
     };
 
-    let key = num;
-    if (taken(key)) {
-      const dir = directoryOf(path);
-      key = `${dir}${num}`;
-      let n = 2;
-      while (taken(key)) {
-        key = `${dir}${num}#${n}`;
-        n += 1;
+    /**
+     * ⚠️ 相対パスが一致するなら、番号を見るまでもなく同じセル。
+     *
+     * 番号だけで対応づけると、A 側にサブフォルダが 2 つあるとき
+     * (カットを丸ごと Win A へ開いた場合など) 番号を先に取った別フォルダの
+     * ファイルと対になってしまい、Win A と Win B で別のセルが並ぶ
+     * (_bg/x0001 の隣に _go/y0001 が出る / 2026-08-31 の報告)。
+     */
+    const samePath = side === 'B' ? keyOfA.get(path) : undefined;
+
+    let key: string;
+    if (samePath && !frameMap.get(samePath)!.fileNameB) {
+      key = samePath;
+    } else {
+      key = num;
+      if (taken(key)) {
+        const dir = directoryOf(path);
+        key = `${dir}${num}`;
+        let n = 2;
+        while (taken(key)) {
+          key = `${dir}${num}#${n}`;
+          n += 1;
+        }
       }
     }
 
     const item = frameMap.get(key) || { frameNumber: key };
-    if (side === 'A') item.fileNameA = path;
-    else item.fileNameB = path;
+    if (side === 'A') {
+      item.fileNameA = path;
+      keyOfA.set(path, key);
+    } else {
+      item.fileNameB = path;
+      keyOfB.set(path, key);
+    }
     frameMap.set(key, item);
   };
 
   listA.forEach((f) => assign(f, 'A'));
   listB.forEach((f) => assign(f, 'B'));
 
-  /**
-   * 並べ替えはコマ番号ではなく「実ファイルのパス」で行う。
-   *
-   * ⚠️ 番号だけで並べないこと。サブフォルダをまたいで同じ番号があると、
-   * 番号を先に取った側だけが数値キーになり、取れなかった側は
-   * ディレクトリ付きキーになって末尾へ回る。その結果、
-   *   _bg/x0001 → _bg/x0002 → _bg/x0003 → _go/y0004 → _go/y0005 → _go/y0001 …
-   * のように、コマ送りの途中で別フォルダへ飛び、あとから戻ってくる並びになる
-   * (2026-08-31 の報告)。
-   * ⚠️ パスで並べるとフォルダごとにまとまり、その中は自然順になる。
-   * ツリー (fileListA / fileListB の順) とコマ送りの順が一致することが要点。
-   * ⚠️ 比較は compareNatural で行うこと。素の比較では a1, a10, a2 と並ぶ。
-   */
   const representativeOf = (key: string): string => {
     const item = frameMap.get(key)!;
     return item.fileNameA || item.fileNameB || key;
   };
 
-  const frameNumbers = Array.from(frameMap.keys()).sort((a, b) =>
-    compareNatural(representativeOf(a), representativeOf(b))
-  );
+  /** 連番として比べられる番号。数字を持たないファイルは null */
+  const numberOf = (key: string): number | null => {
+    const num = extractFrameNumber(representativeOf(key));
+    return /^[0-9]+$/.test(num) ? parseInt(num, 10) : null;
+  };
+
+  /**
+   * 並び順は「フォルダごとにまとめ、その中は自然順」。ツリー (fileListA の順) と
+   * コマ送りの順を一致させるための決まり。
+   *
+   * ⚠️ コマ番号だけで並べないこと。サブフォルダをまたいで同じ番号があると、
+   * 番号を先に取った側だけが数値キーになり、取れなかった側は末尾へ回る。その結果
+   *   _bg/x0001 → x0002 → x0003 → _go/y0004 → y0005 → _go/y0001 …
+   * と、コマ送りの途中で別フォルダへ飛び、あとから戻ってくる (2026-08-31 の報告)。
+   * ⚠️ かといってパスだけで並べるのも駄目で、Win B にしか無いコマ (追加リテイク) が
+   * B 側のフォルダ名で並んでしまい、番号と無関係な場所 (先頭など) に現れる。
+   * B だけのコマは「B の並びで直前にあった、両方にあるコマ」のフォルダへ寄せ、
+   * その中では番号が収まる位置へ差し込む。
+   * ⚠️ 入力の順に依存しないこと。フォルダも中身も compareNatural で並べ直す
+   * (呼び出し側は sortNatural 済みの一覧を渡すので、結果は同じ並びになる)。
+   */
+  const homeDir = new Map<string, string>();
+  // ⚠️ 前後どちらも見ること。B の 1 本目が B だけのコマだと、
+  // 前だけ見ていては寄せ先が決まらず、末尾へ回ってしまう
+  const anchorPass = (paths: string[]) => {
+    let anchorDir: string | null = null;
+    paths.forEach((path) => {
+      const key = keyOfB.get(path)!;
+      const item = frameMap.get(key)!;
+      if (item.fileNameA) {
+        anchorDir = directoryOf(item.fileNameA);
+        return;
+      }
+      if (anchorDir !== null && !homeDir.has(key)) homeDir.set(key, anchorDir);
+    });
+  };
+  anchorPass(listB);
+  anchorPass(listB.slice().reverse());
+  // 手がかりが無くても、同じフォルダが A 側にあるならそこへ (同じフォルダの追加コマ)
+  listB.forEach((path) => {
+    const key = keyOfB.get(path)!;
+    if (frameMap.get(key)!.fileNameA || homeDir.has(key)) return;
+    homeDir.set(key, directoryOf(path));
+  });
+
+  const aKeysByDir = new Map<string, string[]>();
+  listA.forEach((path) => {
+    const dir = directoryOf(path);
+    const keys = aKeysByDir.get(dir) ?? [];
+    keys.push(keyOfA.get(path)!);
+    aKeysByDir.set(dir, keys);
+  });
+
+  const bOnlyByDir = new Map<string, string[]>();
+  /** 寄せ先が決まらない (両方にあるコマが 1 つも無い) B のコマは最後にまとめる */
+  const orphans: string[] = [];
+  listB.forEach((path) => {
+    const key = keyOfB.get(path)!;
+    if (frameMap.get(key)!.fileNameA) return;
+    const dir = homeDir.get(key);
+    if (dir === undefined || !aKeysByDir.has(dir)) {
+      orphans.push(key);
+      return;
+    }
+    const keys = bOnlyByDir.get(dir) ?? [];
+    keys.push(key);
+    bOnlyByDir.set(dir, keys);
+  });
+
+  const frameNumbers: string[] = [];
+  Array.from(aKeysByDir.keys())
+    .sort(compareNatural)
+    .forEach((dir) => {
+      const keys = aKeysByDir
+        .get(dir)!
+        .slice()
+        .sort((a, b) => compareNatural(representativeOf(a), representativeOf(b)));
+
+      // B だけのコマを、そのフォルダの中で番号が収まる位置へ差し込む
+      (bOnlyByDir.get(dir) ?? []).forEach((key) => {
+        const value = numberOf(key);
+        let at = keys.length;
+        if (value !== null) {
+          const ahead = keys.findIndex((k) => {
+            const other = numberOf(k);
+            return other !== null && other > value;
+          });
+          if (ahead >= 0) at = ahead;
+        }
+        keys.splice(at, 0, key);
+      });
+
+      frameNumbers.push(...keys);
+    });
+
+  frameNumbers.push(...orphans.sort((a, b) => compareNatural(representativeOf(a), representativeOf(b))));
 
   const unifiedFiles = frameNumbers.map(representativeOf);
 
