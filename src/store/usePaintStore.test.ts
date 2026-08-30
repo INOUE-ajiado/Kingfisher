@@ -283,6 +283,44 @@ describe('file スライス — ツリー選択のインデックス対応', () 
     expect(extractFrameNumber('C029/_go/b_go0003.tga')).toBe('0003');
   });
 
+  it('Win B にだけある参照用フォルダが、セルや設定シートの枠を奪わない', () => {
+    // 報告いただいた形: paint 側にだけ _pool/ (撮影素材の .jpg) が入っている。
+    // ⚠️ 番号だけで枠を取らせると、_pool の .jpg が A のセルや設定シートと対になり、
+    // 本物のセルが行き場を失って Win A が軒並み「実体なし」になる
+    s().setFolderHandleA(null, 'trace', [
+      'ATO_025_trace/_sheet/c025t_sheet0001.tga',
+      'ATO_025_trace/a/a0001.tga',
+      'ATO_025_trace/a/a0002.tga',
+    ]);
+    s().setFolderHandleB(null, 'paint', [
+      'ATO_025_paint/_pool/ATO_025/A/A0001.jpg',
+      'ATO_025_paint/_pool/ATO_025/A/A0002.jpg',
+      // ⚠️ 同じ名前のフォルダが両側にあることが手がかりになる。
+      // 片側にしか無いフォルダ同士は「異名連番の A/B」として突き合わせるため、
+      // B に _sheet が無い場合は _pool と対になりうる (異名連番を活かすための割り切り)
+      'ATO_025_paint/_sheet/cut.tga',
+      'ATO_025_paint/a/a0001.tga',
+      'ATO_025_paint/a/a0002.tga',
+    ]);
+
+    // セル同士が対になる
+    expect(s().indexOfFileForView('ATO_025_trace/a/a0001.tga', 0)).toBe(
+      s().indexOfFileForView('ATO_025_paint/a/a0001.tga', 1)
+    );
+    expect(s().indexOfFileForView('ATO_025_trace/a/a0002.tga', 0)).toBe(
+      s().indexOfFileForView('ATO_025_paint/a/a0002.tga', 1)
+    );
+
+    // 設定シートは _pool の .jpg と対にならない
+    const sheet = s().indexOfFileForView('ATO_025_trace/_sheet/c025t_sheet0001.tga', 0);
+    expect(s().resolveFileNameForView(sheet, 1)).toBeNull();
+
+    // 参照用の .jpg は相手なしで、セルの後ろへ回る
+    const pool = s().indexOfFileForView('ATO_025_paint/_pool/ATO_025/A/A0001.jpg', 1);
+    expect(s().resolveFileNameForView(pool, 0)).toBeNull();
+    expect(pool).toBeGreaterThan(s().indexOfFileForView('ATO_025_trace/a/a0002.tga', 0));
+  });
+
   it('ルート名が違う 2 つのフォルダでも、同じ位置・同じ名前なら対になる', () => {
     // 報告いただいた実データの形 (trace と paint)。
     // ⚠️ 番号が埋まったときのキーにフルパスを使っていた頃は、

@@ -225,11 +225,17 @@ export function buildMergedFrameData(
    * (2026-08-31 の報告)。ルートを除いた位置で作れば、両側で同じキーになる。
    */
   const freeKeyFor = (path: string, num: string, side: 'A' | 'B') => {
-    if (isFree(num, side)) return num;
+    /**
+     * ⚠️ B の新しい枠を作るとき、A のファイルが入っている枠を使わないこと。
+     * そこは「対にしない」と判断した相手なので、空いているからと入れてしまうと
+     * 結局その A と対になる (_pool の .jpg が設定シートと並んでいた)。
+     */
+    const usable = (key: string) => isFree(key, side) && !(side === 'B' && frameMap.get(key)?.fileNameA);
+    if (usable(num)) return num;
     const tail = dirTailOf(path);
     let key = `${tail}${num}`;
     let n = 2;
-    while (!isFree(key, side)) {
+    while (!usable(key)) {
       key = `${tail}${num}#${n}`;
       n += 1;
     }
@@ -256,33 +262,61 @@ export function buildMergedFrameData(
   listA.forEach((path) => put(freeKeyFor(path, extractFrameNumber(path), 'A'), path, 'A'));
 
   /**
+   * フォルダの対応づけ。
+   *
+   * ⚠️ 番号だけで A の枠を取らせないこと。B 側にだけある参照用のフォルダ
+   * (例: _pool/ に置いた撮影素材の .jpg 200 枚) が、番号だけを頼りに
+   * A のセルや設定シートの枠を奪ってしまう。実際に、A のセルが軒並み
+   * 「実体なし」と対になっていた (2026-08-31 の報告)。
+   * 同じ名前のフォルダがあればそこが相手。無い場合だけ、
+   * 相手の見つからないフォルダ同士で番号を突き合わせる (異名連番の A/B)。
+   */
+  const dirsOf = (list: string[]) => {
+    const dirs: string[] = [];
+    list.forEach((path) => {
+      const dir = dirTailOf(path);
+      if (!dirs.includes(dir)) dirs.push(dir);
+    });
+    return dirs;
+  };
+  const aDirs = dirsOf(listA);
+  const bDirs = dirsOf(listB);
+  /** 相手の見つからない A のフォルダ (異名連番の受け皿) */
+  const unmatchedADirs = new Set(aDirs.filter((dir) => !bDirs.includes(dir)));
+  const dirPartnerOf = (bDir: string) => (aDirs.includes(bDir) ? bDir : null);
+
+  /**
    * B のファイルを A の枠へ入れる。
    *
-   * 順に、
-   *  1. ルートを除いた相対パスが同じ枠 (同じ位置の同じ名前 = 同じセル)
-   *  2. 同じコマ番号でまだ空いている枠のうち、フォルダの位置が同じもの
-   *  3. 同じコマ番号でまだ空いている枠 (異名連番。A と B でフォルダ名が違う場合)
-   *  4. どれも無ければ B だけのコマとして新しい枠
+   * ⚠️ まず「ルートを除いた相対パスが同じ」ものを全部先に対にすること。
+   * これが一番強い手がかりで、後回しにすると、先に処理された別のファイルが
+   * 番号だけを頼りにその枠を埋めてしまう (_pool の .jpg が a/ のセルの枠を
+   * 取り、あとから来た本物の a/a0001.tga が行き場を失っていた)。
    *
-   * ⚠️ 2 を飛ばして 3 だけにしないこと。A 側にサブフォルダが 2 つあると、
-   * 番号を先に取った別フォルダのファイルと対になり、2 つの窓に別のセルが並ぶ。
+   * そのあと、残りを番号で突き合わせる。相手は「同じ名前のフォルダ」、
+   * 無ければ「相手の見つからないフォルダ同士」に限る。
    */
+  const pendingB: string[] = [];
   listB.forEach((path) => {
-    const num = extractFrameNumber(path);
-    const tail = dirTailOf(path);
-
     const samePath = aKeyByRelPath.get(pathWithoutRoot(path));
     if (samePath && isFree(samePath, 'B')) {
       put(samePath, path, 'B');
       return;
     }
+    pendingB.push(path);
+  });
 
-    const candidates = (aKeysByNumber.get(num) ?? []).filter((key) => isFree(key, 'B'));
-    const sameDir = candidates.find((key) => aDirTail.get(key) === tail);
-    if (sameDir) {
-      put(sameDir, path, 'B');
-      return;
-    }
+  pendingB.forEach((path) => {
+    const num = extractFrameNumber(path);
+    const tail = dirTailOf(path);
+    const partner = dirPartnerOf(tail);
+
+    const candidates = (aKeysByNumber.get(num) ?? []).filter((key) => {
+      if (!isFree(key, 'B')) return false;
+      const aTail = aDirTail.get(key) ?? '';
+      return partner === null ? unmatchedADirs.has(aTail) : aTail === partner;
+    });
+
     if (candidates.length > 0) {
       put(candidates[0], path, 'B');
       return;
@@ -290,7 +324,6 @@ export function buildMergedFrameData(
 
     put(freeKeyFor(path, num, 'B'), path, 'B');
   });
-
 
   const representativeOf = (key: string): string => {
     const item = frameMap.get(key)!;
@@ -330,7 +363,11 @@ export function buildMergedFrameData(
         anchorDir = directoryOf(item.fileNameA);
         return;
       }
-      if (anchorDir !== null && !homeDir.has(key)) homeDir.set(key, anchorDir);
+      // ⚠️ 相手の見つからないフォルダ (B にだけある参照用フォルダ) は、
+      // A の並びへ差し込まないこと。セルの列に 200 枚の参照画像が割り込む
+      if (anchorDir !== null && !homeDir.has(key) && dirPartnerOf(dirTailOf(path)) !== null) {
+        homeDir.set(key, anchorDir);
+      }
     });
   };
   anchorPass(listB);
@@ -339,6 +376,7 @@ export function buildMergedFrameData(
   listB.forEach((path) => {
     const key = keyOfB.get(path)!;
     if (frameMap.get(key)!.fileNameA || homeDir.has(key)) return;
+    if (dirPartnerOf(dirTailOf(path)) === null) return; // 相手のいないフォルダは最後へ
     homeDir.set(key, directoryOf(path));
   });
 
