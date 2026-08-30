@@ -476,15 +476,20 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={(e) => void handleDrop(e)}
-      className={`flex flex-col bg-white dark:bg-slate-900 border-2 ${
+      /*
+        ⚠️ ドッキング中は 1px 枠・角丸なし・影なし。作業領域はエッジ・トゥ・エッジで、
+        太い枠と角丸のぶんだけ映像が小さくなる (2026-08-31 のユーザー指定)。
+        浮かせたときは背景に溶けないよう従来の見た目を残す。
+      */
+      className={`flex flex-col bg-white dark:bg-slate-900 ${
+        view.isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'
+      } ${
         isOverDockTarget
           ? 'border-blue-500 ring-4 ring-blue-500/50'
           : isDragOver
           ? 'border-amber-400 ring-4 ring-amber-400/50'
           : tone.border
-      } ${isActive && partnerOpen ? 'ring-2 ring-amber-400/70' : ''} rounded shadow-2xl relative ${
-        view.isFloating ? '' : 'flex-1'
-      }`}
+      } ${isActive && partnerOpen ? 'ring-1 ring-inset ring-amber-400/70' : ''} relative`}
     >
       {isDragOver && (
         <div className="absolute inset-0 bg-indigo-950/90 border-2 border-dashed border-amber-300 rounded flex flex-col items-center justify-center text-amber-300 z-50 pointer-events-none p-4 select-none">
