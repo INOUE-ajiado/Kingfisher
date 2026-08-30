@@ -617,13 +617,43 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     const linked = state.syncMode && state.isSplitView;
 
     const driverIndex = driver === 1 ? state.splitFileIndex : state.currentFileIndex;
-    const nextDriver = clamp(driverIndex + delta);
+
+    /**
+     * 相手のいないフォルダのコマ (paint 側だけにある _pool の撮影素材など) は、
+     * コマ送りでは飛ばす (2026-08-31 のユーザー指定)。
+     *
+     * ⚠️ 今そこに居るときは 1 コマずつ普通に送ること。飛ばす規則をそのまま当てると、
+     * ツリーから参照素材を開いたあと ↑ ↓ がどこへも行けなくなる。
+     * ⚠️ 飛ばした先が端で、行き先がすべて対象なら動かさないこと。
+     * 参照素材の上に着地させない。
+     */
+    const isSkippable = (index: number) => {
+      const number = state.mergedFrameNumbers[index];
+      return !!number && !!state.mergedFrameMap.get(number)?.unpairedFolder;
+    };
+
+    let nextDriver = clamp(driverIndex + delta);
+    let skipped = 0;
+    if (!isSkippable(driverIndex)) {
+      while (nextDriver !== driverIndex && isSkippable(nextDriver)) {
+        const further = clamp(nextDriver + delta);
+        if (further === nextDriver) {
+          nextDriver = driverIndex; // これ以上進めない。参照素材の上には止まらない
+          break;
+        }
+        nextDriver = further;
+        skipped += 1;
+      }
+    }
+
     if (nextDriver === driverIndex) {
       // ⚠️ 黙って返さないこと。「押しても動かない」ときに端なのか無反応なのか分からない
       logDebug(
         'cell',
-        `コマ送り ${delta > 0 ? '↓ 次へ' : '↑ 前へ'}${source ? ` (${source})` : ''} — 端なので動かさない`,
-        `主導 ${driver === 1 ? 'Win B' : 'Win A'} が ${driverIndex} / 全 ${state.unifiedFileList.length} コマ。${describeAB(state)}`
+        `コマ送り ${delta > 0 ? '↓ 次へ' : '↑ 前へ'}${source ? ` (${source})` : ''} — ` +
+          `${skipped > 0 ? 'この先は相手のいないフォルダのコマだけなので動かさない' : '端なので動かさない'}`,
+        `主導 ${driver === 1 ? 'Win B' : 'Win A'} が ${driverIndex} / 全 ${state.unifiedFileList.length} コマ` +
+          `${skipped > 0 ? ` (この先は相手のいないフォルダのコマ ${skipped} 件だけ)` : ''}。${describeAB(state)}`
       );
       return;
     }
@@ -666,7 +696,8 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       `コマ送り ${delta > 0 ? '↓ 次へ' : '↑ 前へ'}${source ? ` (${source})` : ''} — 主導 ${driver === 1 ? 'Win B' : 'Win A'}` +
         `${linked ? ` / 連動 コマ差 ${formatOffset(state.syncFrameOffset)}` : ' / 連動なし'}`,
       `Win A ${state.currentFileIndex} → ${after.currentFileIndex} (${nameAt(after, after.currentFileIndex, 0)}) / ` +
-        `Win B ${state.splitFileIndex} → ${after.splitFileIndex} (${nameAt(after, after.splitFileIndex, 1)})`
+        `Win B ${state.splitFileIndex} → ${after.splitFileIndex} (${nameAt(after, after.splitFileIndex, 1)})` +
+        `${skipped > 0 ? ` / 相手のいないフォルダのコマを ${skipped} 件飛ばした` : ''}`
     );
     logSyncMismatch(after);
   },

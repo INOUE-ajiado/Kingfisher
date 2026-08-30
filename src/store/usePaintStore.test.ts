@@ -321,6 +321,43 @@ describe('file スライス — ツリー選択のインデックス対応', () 
     expect(pool).toBeGreaterThan(s().indexOfFileForView('ATO_025_trace/a/a0002.tga', 0));
   });
 
+  it('相手のいないフォルダのコマは、コマ送りで飛ばす', () => {
+    // paint 側だけにある _pool の撮影素材。セルの後ろに 200 枚続くので、
+    // ↓ で入り込むと Win A が空のまま延々と進んでしまう (2026-08-31 のユーザー指定で飛ばす)
+    s().setFolderHandleA(null, 'trace', ['trace/a/a0001.tga', 'trace/a/a0002.tga']);
+    s().setFolderHandleB(null, 'paint', [
+      'paint/a/a0001.tga',
+      'paint/a/a0002.tga',
+      'paint/_pool/A/A0001.jpg',
+      'paint/_pool/A/A0002.jpg',
+    ]);
+    usePaintStore.setState({ isSplitView: true, syncMode: false, activeViewIndex: 0, currentFileIndex: 0 });
+
+    expect(s().unifiedFileList.length).toBe(4);
+
+    s().nextCell();
+    expect(s().resolveFileNameForView(s().currentFileIndex, 0)).toBe('trace/a/a0002.tga');
+
+    // ここから先は参照素材しかない → 動かさない (参照素材の上に着地させない)
+    s().nextCell();
+    expect(s().resolveFileNameForView(s().currentFileIndex, 0)).toBe('trace/a/a0002.tga');
+  });
+
+  it('参照素材を開いているときは、そこから 1 コマずつ動ける', () => {
+    // ⚠️ 飛ばす規則をそのまま当てると、ツリーから開いたあと ↑ ↓ がどこへも行けなくなる
+    s().setFolderHandleA(null, 'trace', ['trace/a/a0001.tga']);
+    s().setFolderHandleB(null, 'paint', [
+      'paint/a/a0001.tga',
+      'paint/_pool/A/A0001.jpg',
+      'paint/_pool/A/A0002.jpg',
+    ]);
+    const pool = s().indexOfFileForView('paint/_pool/A/A0001.jpg', 1);
+    usePaintStore.setState({ isSplitView: true, syncMode: false, activeViewIndex: 1, splitFileIndex: pool });
+
+    s().nextCell();
+    expect(s().resolveFileNameForView(s().splitFileIndex, 1)).toBe('paint/_pool/A/A0002.jpg');
+  });
+
   it('ルート名が違う 2 つのフォルダでも、同じ位置・同じ名前なら対になる', () => {
     // 報告いただいた実データの形 (trace と paint)。
     // ⚠️ 番号が埋まったときのキーにフルパスを使っていた頃は、
