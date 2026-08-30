@@ -125,15 +125,54 @@ function withSyncedPartner(roll: RollState, id: RollId, index: number): RollStat
   const target = partner.files[at];
   if (!target || target.path === partner.currentPath) return roll;
 
-  logDebug(
-    'roll',
-    `選択連動で ${rollLabel(otherId)} も移動: ${target.path}`,
-    `一覧 ${at + 1} / ${partner.files.length} (ずれ ${roll.fileSyncOffset})`
-  );
+  // ⚠️ ここではログを書かない。呼び出し元 (selectRollFile / alignRollFiles) が
+  // 2 面の前後をまとめて 1 行に書く。二重に出すと前後関係が読みにくくなる
   return withView(roll, otherId, openedView(partner, target));
 }
 
 const rollLabel = (id: RollId) => (id === 'rollA' ? 'ロール A' : 'ロール B');
+
+/** 一覧の中の位置 (1 始まり)。まだ開いていなければ 0 */
+function positionOf(view: RollViewState): number {
+  return view.currentPath ? view.files.findIndex((v) => v.path === view.currentPath) + 1 : 0;
+}
+
+/** 「ロール A 3/10 (c003.mov) / ロール B 3/10 (r003.mov)」 */
+function describeRollPair(roll: RollState): string {
+  return ROLL_IDS.map((id) => {
+    const view = roll.views[id];
+    if (!view.isOpen && view.files.length === 0) return `${rollLabel(id)} 未使用`;
+    return `${rollLabel(id)} ${positionOf(view)}/${view.files.length} (${view.fileName || '未読み込み'})`;
+  }).join(' / ');
+}
+
+/**
+ * 選択連動のずれが記録どおりか。
+ *
+ * ⚠️ 端で切り詰められた並びは食い違いではない。どちらが主導でも辻褄が合えば正しい
+ * (セルの isSyncPairConsistent と同じ考え方)。
+ */
+function logRollSyncMismatch(roll: RollState): void {
+  if (!roll.fileSync) return;
+  const a = roll.views.rollA;
+  const b = roll.views.rollB;
+  if (a.files.length === 0 || b.files.length === 0) return;
+
+  const atA = a.files.findIndex((v) => v.path === a.currentPath);
+  const atB = b.files.findIndex((v) => v.path === b.currentPath);
+  if (atA < 0 || atB < 0) return;
+
+  const clampA = (v: number) => Math.max(0, Math.min(a.files.length - 1, v));
+  const clampB = (v: number) => Math.max(0, Math.min(b.files.length - 1, v));
+  if (atB === clampB(atA + roll.fileSyncOffset) || atA === clampA(atB - roll.fileSyncOffset)) return;
+
+  logDebug(
+    'sync',
+    `ロールの選択連動のずれが食い違っています (記録 ${roll.fileSyncOffset} / 実際 ${atB - atA})`,
+    `${describeRollPair(roll)} — 「差を揃える」で直せます`,
+    'warn'
+  );
+}
 
 export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set, get) => ({
   roll: initialRoll,
@@ -248,31 +287,49 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
    * ⚠️ ツリーの連動中は相手の面も動かすこと。ここを通さずに面ごとに選ばせると、
    * 2 本のツリーで同じ位置を毎回 2 回選ぶことになる (連動の意味が無くなる)。
    */
-  selectRollFile: (id, path) =>
+  selectRollFile: (id, path, source) =>
     set((state) => {
       const view = state.roll.views[id];
       if (path === view.currentPath) return state;
       const at = view.files.findIndex((v) => v.path === path);
       if (at < 0) return state;
 
-      logDebug('roll', `${rollLabel(id)} で選択: ${path}`, `一覧 ${at + 1} / ${view.files.length}${state.roll.fileSync ? ' / 選択連動あり' : ''}`);
-      const roll = withView({ ...state.roll, activeId: id }, id, openedView(view, view.files[at]));
+      const before = describeRollPair(state.roll);
+      const opened = withView({ ...state.roll, activeId: id }, id, openedView(view, view.files[at]));
+      const roll = opened.fileSync ? withSyncedPartner(opened, id, at) : opened;
+
+      logDebug(
+        'roll',
+        `${rollLabel(id)} で選択: ${at + 1}/${view.files.length} (${path})${source ? ` — ${source}` : ''}` +
+          `${roll.fileSync ? ` / 選択連動 ずれ ${roll.fileSyncOffset}` : ' / 選択連動なし'}`,
+        `${before}  →  ${describeRollPair(roll)}`
+      );
+      logRollSyncMismatch(roll);
+
       return {
         // ツリーでロールを選んだ時点で、↑ ↓ と Space はロールのものになる
         activeSurface: 'roll' as const,
-        roll: roll.fileSync ? withSyncedPartner(roll, id, at) : roll,
+        roll,
       };
     }),
 
-  stepRoll: (id, delta) => {
+  stepRoll: (id, delta, source) => {
     const view = get().roll.views[id];
     const files = view.files;
     if (files.length <= 1) return;
 
     const at = files.findIndex((v) => v.path === view.currentPath);
     const next = Math.max(0, Math.min(files.length - 1, (at < 0 ? 0 : at) + delta));
-    if (next === at) return;
-    get().selectRollFile(id, files[next].path);
+    if (next === at) {
+      // ⚠️ 黙って返さないこと。「押しても動かない」ときに端なのか無反応なのか分からない
+      logDebug(
+        'roll',
+        `${rollLabel(id)} を${delta > 0 ? '次のロールへ' : '前のロールへ'}${source ? ` (${source})` : ''} — 端なので動かさない`,
+        describeRollPair(get().roll)
+      );
+      return;
+    }
+    get().selectRollFile(id, files[next].path, source ?? `${rollLabel(id)} の前後送り`);
   },
 
   /**
@@ -300,6 +357,13 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
         `ProRes・DNxHD・非圧縮などはブラウザでは再生できません。\n\n` +
         conversionHint(view.fileName);
 
+    logDebug(
+      'roll',
+      `${rollLabel(id)} を再生できません: ${view.fileName}`,
+      codec ? `コーデック ${codec.label} (${codec.fourcc})` : 'コーデックを判別できていません',
+      'warn'
+    );
+
     set((state) => ({
       roll: withView(state.roll, id, {
         ...state.roll.views[id],
@@ -316,6 +380,12 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       // 手動で決めた値を自動推定で上書きしない
       if (source === 'auto' && view.fpsSource === 'manual') return state;
       if (!(fps > 0) || !Number.isFinite(fps)) return state;
+      if (view.fps !== fps) {
+        logDebug(
+          'roll',
+          `${rollLabel(id)} のコマ送り基準を ${view.fps}fps → ${fps}fps (${source === 'auto' ? '自動推定' : '手動'})`
+        );
+      }
       return { roll: withView(state.roll, id, { ...view, fps, fpsSource: source }) };
     }),
 
@@ -339,7 +409,11 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
         logDebug('sync', 'ロールの再生連動は入れられない (2 面開いていない)');
         return state;
       }
-      logDebug('sync', `ロールの再生連動を入れた (時刻差 ${offset.toFixed(3)} 秒)`);
+      logDebug(
+        'sync',
+        `ロールの再生連動を入れた (時刻差 ${offset.toFixed(3)} 秒)`,
+        describeRollPair(state.roll)
+      );
       return { roll: { ...state.roll, sync: true, syncOffset: offset } };
     }),
 
@@ -356,7 +430,7 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
   toggleRollFileSync: () =>
     set((state) => {
       if (state.roll.fileSync) {
-        logDebug('sync', 'ロールの選択連動を切った');
+        logDebug('sync', 'ロールの選択連動を切った', describeRollPair(state.roll));
         return { roll: { ...state.roll, fileSync: false } };
       }
 
@@ -371,7 +445,11 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       const atB = indexOfCurrent(rollB);
       // どちらかがまだ開いていなければ、ずれの決めようが無いので 0 から始める
       const offset = atA >= 0 && atB >= 0 ? atB - atA : 0;
-      logDebug('sync', `ロールの選択連動を入れた (ずれ ${offset})`, `ロール A=${atA + 1} 本目 / ロール B=${atB + 1} 本目`);
+      logDebug(
+        'sync',
+        `ロールの選択連動を入れた (ずれ ${offset})`,
+        `この 2 本を対にして固定: ${describeRollPair(state.roll)}`
+      );
       return { roll: { ...state.roll, fileSync: true, fileSyncOffset: offset } };
     }),
 
@@ -380,8 +458,12 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
     set((state) => {
       const atA = indexOfCurrent(state.roll.views.rollA);
       if (atA < 0) return state;
-      logDebug('sync', `ロールのずれを 0 に揃えた (ずれ ${state.roll.fileSyncOffset} → 0)`);
-      const roll = { ...state.roll, fileSyncOffset: 0 };
-      return { roll: withSyncedPartner(roll, 'rollA', atA) };
+      const roll = withSyncedPartner({ ...state.roll, fileSyncOffset: 0 }, 'rollA', atA);
+      logDebug(
+        'sync',
+        `ロールのずれを 0 に揃えた (ずれ ${state.roll.fileSyncOffset} → 0)`,
+        `${describeRollPair(state.roll)}  →  ${describeRollPair(roll)}`
+      );
+      return { roll };
     }),
 });

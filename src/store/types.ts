@@ -865,10 +865,10 @@ export interface RollSlice {
    * ツリーから選ばれたときに初めて開くため
    */
   setRollFolderFiles: (id: RollId, videos: DroppedVideo[], folderName: string) => void
-  /** 一覧の中から 1 本を選んで開く */
-  selectRollFile: (id: RollId, path: string) => void
+  /** 一覧の中から 1 本を選んで開く。source には「どこから選んだか」を渡す (DEBUG ログに残る) */
+  selectRollFile: (id: RollId, path: string, source?: string) => void
   /** 一覧の中で前後のロールへ移る */
-  stepRoll: (id: RollId, delta: number) => void
+  stepRoll: (id: RollId, delta: number, source?: string) => void
   /** <video> が再生を拒否したときに呼ぶ。コーデックを調べて理由を出す */
   reportRollPlaybackFailure: (id: RollId) => Promise<void>
   setRollFps: (id: RollId, fps: number, source: 'auto' | 'manual') => void
