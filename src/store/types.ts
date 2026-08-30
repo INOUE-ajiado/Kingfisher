@@ -127,6 +127,25 @@ export function extractFrameNumber(fileName: string): string {
   return numMatch ? numMatch[1].padStart(4, '0') : fileName;
 }
 
+/**
+ * 連動中の Win A / Win B の位置が、記録しているコマ差と辻褄が合っているか。
+ *
+ * ⚠️ 「B === A + コマ差」だけで見ないこと。端では追従する側が切り詰められるため、
+ * 主導した側から見れば正しいのに食い違いと判定してしまう
+ * (例: 全 4 コマ・コマ差 +1 で B が先頭へ来ると A=0 / B=0)。
+ * どちらが主導でも辻褄が合えば正しい、と見る。
+ */
+export function isSyncPairConsistent(
+  indexA: number,
+  indexB: number,
+  offset: number,
+  total: number
+): boolean {
+  const last = Math.max(0, total - 1);
+  const clamp = (v: number) => Math.max(0, Math.min(last, v));
+  return indexB === clamp(indexA + offset) || indexA === clamp(indexB - offset);
+}
+
 /** 相対パスのディレクトリ部分 ("_go/a0001.tga" -> "_go/") */
 function directoryOf(path: string): string {
   const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf(String.fromCharCode(92)));
@@ -416,7 +435,7 @@ export interface ViewSlice {
   toggleIsSplitView: () => void
   toggleSyncMode: () => void
   setActiveViewIndex: (idx: 0 | 1) => void
-  setSplitFileIndex: (index: number) => void
+  setSplitFileIndex: (index: number, source?: string) => void
   setSplitCanvasTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void;
 }
 
@@ -469,10 +488,11 @@ export interface FileSlice {
   setFolderHandle: (handle: any, name: string, files: string[]) => void
   setCustomDropFolderA: (folderName: string, fileMap: Map<string, File>, fileList: string[]) => void
   setCustomDropFolderB: (folderName: string, fileMap: Map<string, File>, fileList: string[]) => void
-  setCurrentFileIndex: (index: number) => void
-  stepCell: (delta: number) => void
-  nextCell: () => void
-  prevCell: () => void
+  setCurrentFileIndex: (index: number, source?: string) => void
+  stepCell: (delta: number, source?: string) => void
+  /** source には「どこから動かしたか」(キー名・ボタン名) を渡す。DEBUG ログに残る */
+  nextCell: (source?: string) => void
+  prevCell: (source?: string) => void
   /** 統合フレーム番号から、指定ビュー側の実ファイル名を解決する (異名連番対応) */
   resolveFileNameForView: (index: number, view: 0 | 1) => string | null;
 

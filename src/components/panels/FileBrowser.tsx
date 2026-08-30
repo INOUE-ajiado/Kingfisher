@@ -502,13 +502,13 @@ export const FileBrowser: React.FC = () => {
   const handleSelectFromTreeA = (localIdx: number) => {
     const path = fileListA[localIdx];
     if (!path) return;
-    setCurrentFileIndex(toUnifiedIndex(path, localIdx));
+    setCurrentFileIndex(toUnifiedIndex(path, localIdx), 'ツリー Win A の行をクリック');
   };
 
   const handleSelectFromTreeB = (localIdx: number) => {
     const path = fileListB[localIdx];
     if (!path) return;
-    setSplitFileIndex(toUnifiedIndexForView(path, 1, localIdx));
+    setSplitFileIndex(toUnifiedIndexForView(path, 1, localIdx), 'ツリー Win B の行をクリック');
   };
 
   // 各ツリー内で「今表示中のセル」がどれかを求める
@@ -544,10 +544,10 @@ export const FileBrowser: React.FC = () => {
   // 連番フレーム行クリック時の連動・個別のルーティング挙動
   // 連動中の Win B への追従はストア側 (setCurrentFileIndex) が担う。
   // ここで両方に同じ番号を入れると、連動開始時のコマ差が失われる。
-  const handleSelectFrame = (idx: number) => {
+  const handleSelectFrame = (idx: number, source = 'ツリー (統合) の行をクリック') => {
     // セルは「今アクティブな方」へ出す
-    if (activeViewIndex === 1) setSplitFileIndex(idx);
-    else setCurrentFileIndex(idx);
+    if (activeViewIndex === 1) setSplitFileIndex(idx, source);
+    else setCurrentFileIndex(idx, source);
   };
 
   /** ロールのツリーは、その面のものだけを開く (どちらへ出るか迷わせない) */
@@ -568,7 +568,7 @@ export const FileBrowser: React.FC = () => {
       const nextNode = flatVisibleNodes[nextIdx].node;
       setFocusedPath(nextNode.path);
       if (!nextNode.isFolder && nextNode.fileIndex !== undefined) {
-        handleSelectFrame(nextNode.fileIndex);
+        handleSelectFrame(nextNode.fileIndex, 'ツリーでキー ↓');
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -576,7 +576,7 @@ export const FileBrowser: React.FC = () => {
       const prevNode = flatVisibleNodes[prevIdx].node;
       setFocusedPath(prevNode.path);
       if (!prevNode.isFolder && prevNode.fileIndex !== undefined) {
-        handleSelectFrame(prevNode.fileIndex);
+        handleSelectFrame(prevNode.fileIndex, 'ツリーでキー ↑');
       }
     } else if (e.key === 'ArrowRight') {
       e.preventDefault();
@@ -607,7 +607,7 @@ export const FileBrowser: React.FC = () => {
         if (node.isFolder) {
           togglePath(node.path);
         } else if (node.fileIndex !== undefined) {
-          handleSelectFrame(node.fileIndex);
+          handleSelectFrame(node.fileIndex, 'ツリーで Enter / Space');
         }
       }
     }
@@ -723,8 +723,8 @@ export const FileBrowser: React.FC = () => {
   };
 
   // 連動中の相手側への追従はストアが担う (連動開始時のコマ差を保つため)
-  const handleSelectWinAOnly = (idx: number) => setCurrentFileIndex(idx);
-  const handleSelectWinBOnly = (idx: number) => setSplitFileIndex(idx);
+  const handleSelectWinAOnly = (idx: number) => setCurrentFileIndex(idx, '連番表の Win A 列をクリック');
+  const handleSelectWinBOnly = (idx: number) => setSplitFileIndex(idx, '連番表の Win B 列をクリック');
 
   return (
     <>
@@ -1034,7 +1034,7 @@ export const FileBrowser: React.FC = () => {
                         </td>
 
                         <td
-                          onClick={() => handleSelectFrame(index)}
+                          onClick={() => handleSelectFrame(index, '連番表のフレーム列をクリック')}
                           className={`py-1 text-center font-mono text-[11px] cursor-pointer truncate px-1 ${
                             isActiveA || isActiveB
                               ? 'font-bold text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-900/30 rounded'
@@ -1092,7 +1092,7 @@ export const FileBrowser: React.FC = () => {
                           )}
                         </td>
                         <td
-                          onClick={() => handleSelectFrame(index)}
+                          onClick={() => handleSelectFrame(index, '連番表のフレーム列をクリック')}
                           className="py-1 text-center font-mono text-[11px] cursor-pointer truncate px-1 text-slate-700 dark:text-slate-300"
                         >
                           {fileName}

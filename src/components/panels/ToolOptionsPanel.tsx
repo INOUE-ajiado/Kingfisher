@@ -496,7 +496,7 @@ export const ToolOptionsPanel: React.FC = () => {
         </button>
 
         <button
-          onClick={nextCell}
+          onClick={() => nextCell('ツールオプションのコマ送りボタン')}
           className="w-full py-2 rounded bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-sm"
         >
           <span>Next Cell (PgDn)</span>

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { usePaintStore, extractFrameNumber } from './usePaintStore';
+import { isSyncPairConsistent } from './types';
 import { buildSequentialRenamePlan } from '../engine/renamePlan';
 import { TGAImage } from '../engine/tga';
 import { createUiSlice } from './slices/uiSlice';
@@ -1070,6 +1071,17 @@ describe('view スライス — 左右連動', () => {
     s().setFolderHandleB(null, 'retake', ['0003.tga', '0004.tga']);
 
     expect(s().resolveFileNameForView(s().splitFileIndex, 1)).toBe('0003.tga');
+  });
+
+  it('端で切り詰められた並びは「食い違い」ではない', () => {
+    // ⚠️ DEBUG ログの警告判定に使う。片方が端で止まっただけの並びを
+    // 食い違いと呼ぶと、正常な操作のたびに警告が出て意味を成さなくなる
+    // 全 5 コマ / コマ差 +1
+    expect(isSyncPairConsistent(0, 1, 1, 5)).toBe(true); // 素直な並び
+    expect(isSyncPairConsistent(0, 0, 1, 5)).toBe(true); // Win B が主導で先頭 (A は -1 へ行けない)
+    expect(isSyncPairConsistent(4, 4, 1, 5)).toBe(true); // Win A が主導で末尾 (B は 5 へ行けない)
+    expect(isSyncPairConsistent(0, 2, 1, 5)).toBe(false); // どちらから見ても辻褄が合わない
+    expect(isSyncPairConsistent(0, 1, 0, 5)).toBe(false); // 記録は 0 なのに 1 ずれている
   });
 
   it('連動を解除すると相手は動かなくなる', () => {

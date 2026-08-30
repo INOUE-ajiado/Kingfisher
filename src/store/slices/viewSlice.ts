@@ -6,6 +6,7 @@ import { StateCreator } from 'zustand';
 import { detectPegHolesAndCalculateTransform } from '../../engine/pegStabilizer';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
+import { isSyncPairConsistent } from '../types';
 
 export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set, get) => ({
   // 色指定参照ウィンドウ (Color Spec Reference Window)
@@ -189,14 +190,21 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         // 以前は Win B を Win A の位置へ強制的に合わせていたため、
         // 狙って選んだコマがずれてしまっていた。
         const offset = state.splitFileIndex - state.currentFileIndex;
+        const nameA = state.resolveFileNameForView(state.currentFileIndex, 0) ?? '実体なし';
+        const nameB = state.resolveFileNameForView(state.splitFileIndex, 1) ?? '実体なし';
         logDebug(
           'sync',
-          `左右連動を入れた (コマ差 ${offset})`,
-          `Win A=${state.currentFileIndex} / Win B=${state.splitFileIndex}。押した時点の差をそのまま保つ`
+          `左右連動を入れた (コマ差 ${offset > 0 ? `+${offset}` : offset})`,
+          `この 2 枚を対にして固定: Win A=${state.currentFileIndex} (${nameA}) ⇄ Win B=${state.splitFileIndex} (${nameB})`
         );
         return { syncMode: true, syncFrameOffset: offset };
       }
-      logDebug('sync', '左右連動を切った');
+      logDebug(
+        'sync',
+        '左右連動を切った',
+        `切った時点 Win A=${state.currentFileIndex} (${state.resolveFileNameForView(state.currentFileIndex, 0) ?? '実体なし'}) / ` +
+          `Win B=${state.splitFileIndex} (${state.resolveFileNameForView(state.splitFileIndex, 1) ?? '実体なし'})`
+      );
       return { syncMode: false };
     }),
 
@@ -215,7 +223,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     logDebug(
       'sync',
       'コマ差を 0 に揃えた',
-      `Win B ${state.splitFileIndex} → ${state.currentFileIndex} (コマ差 ${state.syncFrameOffset} → 0)`
+      `Win B ${state.splitFileIndex} → ${state.currentFileIndex} (${state.resolveFileNameForView(state.currentFileIndex, 1) ?? '実体なし'}) / コマ差 ${state.syncFrameOffset} → 0`
     );
   },
 
@@ -228,7 +236,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
   setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
 
-  setSplitFileIndex: (index) => {
+  setSplitFileIndex: (index, source) => {
     const state = get();
     if (index === state.splitFileIndex) {
       // 同じコマでも、選んだ以上はキーの効き先をセルへ戻す
@@ -261,12 +269,29 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     set(patch as any);
 
     const after = get();
+    const linked = state.syncMode && state.isSplitView;
+    const name = (idx: number, view: 0 | 1) => after.resolveFileNameForView(idx, view) ?? '実体なし';
+    const offsetText = state.syncFrameOffset > 0 ? `+${state.syncFrameOffset}` : String(state.syncFrameOffset);
     logDebug(
       'cell',
-      `Win B のコマ移動 ${state.splitFileIndex} → ${index} (${after.resolveFileNameForView(index, 1) ?? '実体なし'})`,
-      state.syncMode && state.isSplitView
-        ? `連動 (コマ差 ${state.syncFrameOffset}) で Win A ${state.currentFileIndex} → ${after.currentFileIndex} (${after.resolveFileNameForView(after.currentFileIndex, 0) ?? '実体なし'})`
-        : '連動なし (Win A は据え置き)'
+      `Win B を選択: ${state.splitFileIndex} → ${index} (${name(index, 1)})${source ? ` — ${source}` : ''}`,
+      linked
+        ? `連動 (コマ差 ${offsetText}) で Win A ${state.currentFileIndex} → ${after.currentFileIndex} (${name(after.currentFileIndex, 0)})`
+        : `連動なし (Win A は ${after.currentFileIndex} のまま)`
     );
+
+    // 記録しているコマ差と実際の位置が食い違っていたら警告として残す
+    if (linked) {
+      const total = after.unifiedFileList.length;
+      const expected = Math.max(0, Math.min(Math.max(0, total - 1), after.currentFileIndex + after.syncFrameOffset));
+      if (!isSyncPairConsistent(after.currentFileIndex, after.splitFileIndex, after.syncFrameOffset, total)) {
+        logDebug(
+          'sync',
+          `コマ差の食い違いを検出 (記録 ${offsetText} / 実際 ${after.splitFileIndex - after.currentFileIndex})`,
+          `Win A=${after.currentFileIndex} (${name(after.currentFileIndex, 0)}) / Win B=${after.splitFileIndex} (${name(after.splitFileIndex, 1)}) — 本来 Win B は ${expected} のはず`,
+          'warn'
+        );
+      }
+    }
   },
 });

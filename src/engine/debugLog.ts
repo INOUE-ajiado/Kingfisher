@@ -14,12 +14,22 @@
 
 export type DebugLogCategory = 'cell' | 'roll' | 'folder' | 'window' | 'sync' | 'file';
 
+/** 目立たせたい行 (食い違いの検出など) */
+export type DebugLogLevel = 'info' | 'warn';
+
+/**
+ * 再生の自動送り。
+ * ⚠️ これを源とするコマ移動は記録しないこと。毎コマ走るのでログが埋まる。
+ */
+export const PLAYBACK_SOURCE = '再生の自動送り';
+
 export interface DebugLogEntry {
   /** 通し番号。表示にもコピーにも使う */
   seq: number;
   /** 記録した時刻 (epoch ミリ秒) */
   at: number;
   category: DebugLogCategory;
+  level: DebugLogLevel;
   message: string;
   /** 位置・パスなどの内訳 */
   detail?: string;
@@ -41,9 +51,14 @@ function emit(): void {
 }
 
 /** 1 行記録する */
-export function logDebug(category: DebugLogCategory, message: string, detail?: string): void {
+export function logDebug(
+  category: DebugLogCategory,
+  message: string,
+  detail?: string,
+  level: DebugLogLevel = 'info'
+): void {
   seq += 1;
-  const entry: DebugLogEntry = { seq, at: Date.now(), category, message, detail };
+  const entry: DebugLogEntry = { seq, at: Date.now(), category, level, message, detail };
   // ⚠️ 配列を作り直すこと。useSyncExternalStore は参照が変わらないと描き直さない
   entries = entries.length >= MAX_ENTRIES ? [...entries.slice(1), entry] : [...entries, entry];
   emit();
@@ -78,18 +93,23 @@ export function formatLogTime(at: number): string {
  * 先頭に環境と件数を入れる。ログだけ貼られても、いつ・どの版で起きたのかが
  * 分からないと追えないため。
  */
-export function formatDebugLog(): string {
+export function formatDebugLog(options?: { entries?: DebugLogEntry[]; notes?: string[] }): string {
+  const target = options?.entries ?? entries;
   const head = [
     `# Kingfisher 操作ログ`,
     `日時: ${new Date().toLocaleString('ja-JP')}`,
-    `件数: ${entries.length} (上限 ${MAX_ENTRIES})`,
+    `件数: ${target.length}${target.length !== entries.length ? ` (全 ${entries.length} 件のうち)` : ''} (上限 ${MAX_ENTRIES})`,
+    // ⚠️ 絞り込みと今の状態を必ず添えること。行だけ貼られても前提が分からない
+    ...(options?.notes ?? []),
     `URL: ${typeof location !== 'undefined' ? location.href : '-'}`,
     `UA: ${typeof navigator !== 'undefined' ? navigator.userAgent : '-'}`,
     '',
   ];
 
-  const body = entries.map((e) => {
-    const line = `[${formatLogTime(e.at)}] #${String(e.seq).padStart(4, '0')} [${e.category.padEnd(6)}] ${e.message}`;
+  const body = target.map((e) => {
+    // 食い違いの行は ! を付けて、目で追えるようにする
+    const mark = e.level === 'warn' ? '!' : ' ';
+    const line = `[${formatLogTime(e.at)}]${mark}#${String(e.seq).padStart(4, '0')} [${e.category.padEnd(6)}] ${e.message}`;
     return e.detail ? `${line}\n${' '.repeat(24)}${e.detail}` : line;
   });
 
