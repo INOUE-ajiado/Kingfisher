@@ -274,6 +274,36 @@ describe('file スライス — ツリー選択のインデックス対応', () 
     ]);
   });
 
+  it('同じ相対パスのファイルは、番号を先取りされていても取り違えない', () => {
+    // カットを丸ごと Win A へ、その中の _go だけを Win B へ開いた形。
+    // ⚠️ 番号だけで対応づけていた頃は、B の _go/y0001 が
+    // 番号 0001 を先に取った A の _bg/x0001 と対になり、
+    // Win A と Win B に別のセルが並んでいた
+    const listA = ['Cut/_bg/x0001.tga', 'Cut/_bg/x0002.tga', 'Cut/_go/y0001.tga', 'Cut/_go/y0002.tga'];
+    s().setFolderHandleA(null, 'Cut', listA);
+    s().setFolderHandleB(null, '_go', ['Cut/_go/y0001.tga', 'Cut/_go/y0002.tga']);
+
+    expect(s().unifiedFileList).toEqual(listA);
+    // 同じ位置には必ず同じセルが並ぶ
+    expect(s().resolveFileNameForView(0, 1)).toBeNull();
+    expect(s().resolveFileNameForView(2, 0)).toBe('Cut/_go/y0001.tga');
+    expect(s().resolveFileNameForView(2, 1)).toBe('Cut/_go/y0001.tga');
+    expect(s().resolveFileNameForView(3, 1)).toBe('Cut/_go/y0002.tga');
+  });
+
+  it('Win B だけのコマは、B のフォルダ名ではなく番号の場所へ入る', () => {
+    // B のフォルダ名が A より前に来ても、先頭へ飛び出さないこと
+    s().setFolderHandleA(null, 'Cut', ['Cut/_go/a0001.tga', 'Cut/_go/a0002.tga']);
+    s().setFolderHandleB(null, '_bg', ['Cut/_bg/b0001.tga', 'Cut/_bg/b0003.tga']);
+
+    expect(s().unifiedFileList).toEqual([
+      'Cut/_go/a0001.tga',
+      'Cut/_go/a0002.tga',
+      'Cut/_bg/b0003.tga',
+    ]);
+    expect(s().resolveFileNameForView(0, 1)).toBe('Cut/_bg/b0001.tga');
+  });
+
   it('どのファイルも自分自身の位置へ解決される (往復して一致する)', () => {
     const listA = [
       'Cut/_go/a0001.tga',
