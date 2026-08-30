@@ -975,7 +975,9 @@ export const CellWindow: React.FC = () => {
     const canvas = isLeftView ? leftCanvasRef.current : rightCanvasRef.current;
     if (!targetImg || !canvas) return;
 
-    const currentTransform = isLeftView ? canvasTransform : splitCanvasTransform;
+    // ⚠️ 掴んだ時点の位置もストアの最新から取る (ホイールの直後に掴むとずれる)
+    const live = usePaintStore.getState();
+    const currentTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
 
     // ⚠️ 左クリック (0) (panツール/Spaceキー押下時), 中ボタン (1), 右ボタン (2) でパン移動
     if (
@@ -1073,11 +1075,14 @@ export const CellWindow: React.FC = () => {
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>, isLeftView: boolean) => {
     const targetImg = isLeftView ? currentImage : splitImage;
     const canvas = isLeftView ? leftCanvasRef.current : rightCanvasRef.current;
-    const currentTransform = isLeftView ? canvasTransform : splitCanvasTransform;
 
     if (isPanning) {
+      // ⚠️ 倍率はストアの最新を使うこと。描画時の値を広げると、
+      // 直前のホイール操作で変えた倍率を巻き戻してしまう
+      const live = usePaintStore.getState();
+      const liveTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
       const newTransform = {
-        ...currentTransform,
+        ...liveTransform,
         offsetX: e.clientX - panStart.x,
         offsetY: e.clientY - panStart.y,
       };
@@ -1143,27 +1148,58 @@ export const CellWindow: React.FC = () => {
     }
   };
 
-  /** 最後に記録したホイールズームの倍率。連続して回すたびに 1 行ずつ出さないため */
-  const lastLoggedWheelScaleRef = useRef<number | null>(null);
+  /**
+   * ホイールでのズームは 1 回転ずつ書かず、手を止めたところで 1 行にまとめる。
+   *
+   * ⚠️ 1 回転ごとに書くと、ひと転がしで何十行も流れて肝心の操作が押し出される。
+   * ⚠️ まとめても始点と終点は本物を使うこと (最初の 1 回転の直前と、止まった時点)。
+   * 途中を省いた数字を書くと、あとで前後がつながらず読めなくなる。
+   */
+  const wheelBurstRef = useRef<{ from: number; notches: number } | null>(null);
+  const wheelTimerRef = useRef<number | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
+    };
+  }, []);
+
+  /**
+   * ホイールでの拡大・縮小。
+   *
+   * ⚠️ 倍率は必ずストアから読み直すこと (canvasTransform をそのまま使わない)。
+   * ホイールは 1 フレームの間に何度も来るが、React の再描画は 1 回しか挟まらないため、
+   * 描画時に閉じ込めた値から計算すると同じ倍率から何度も計算することになり、
+   * 何回転させても 1 段しか変わらない。DEBUG ログでも「41% → 37%」の次が
+   * 「33% → 30%」のように前後がつながらない形で見えていた (2026-08-31 の報告)。
+   */
   const handleWheel = (e: React.WheelEvent, isLeftView: boolean) => {
     e.preventDefault();
-    const currentTransform = isLeftView ? canvasTransform : splitCanvasTransform;
+    const live = usePaintStore.getState();
+    const currentTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
     const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
     const newTransform = { ...currentTransform, scale: newScale };
 
-    // ⚠️ 1 回転ごとに書かないこと。トラックパッドでは 1 操作で何十回も来る。
-    // 前に記録した倍率から 1 割以上動いたときだけ残す
-    const lastLogged = lastLoggedWheelScaleRef.current;
-    if (lastLogged === null || Math.abs(newScale - lastLogged) / lastLogged >= 0.1) {
-      lastLoggedWheelScaleRef.current = newScale;
+    const burst = wheelBurstRef.current ?? { from: currentTransform.scale, notches: 0 };
+    burst.notches += 1;
+    wheelBurstRef.current = burst;
+
+    if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
+    const where = `${isLeftView ? 'Win A' : 'Win B'}${syncMode && isSplitView ? ' (連動中なので両方)' : ''}`;
+    wheelTimerRef.current = window.setTimeout(() => {
+      const settled = wheelBurstRef.current;
+      wheelBurstRef.current = null;
+      wheelTimerRef.current = null;
+      if (!settled) return;
+      const after = usePaintStore.getState();
+      const scaleNow = (isLeftView ? after.canvasTransform : after.splitCanvasTransform).scale;
       logDebug(
         'view',
-        `表示倍率 ${Math.round(currentTransform.scale * 100)}% → ${Math.round(newScale * 100)}% (ホイール)`,
-        `${isLeftView ? 'Win A' : 'Win B'}${syncMode && isSplitView ? ' (連動中なので両方)' : ''}`
+        `表示倍率 ${Math.round(settled.from * 100)}% → ${Math.round(scaleNow * 100)}% (ホイール)`,
+        `${where} / ${settled.notches} 回転ぶん`
       );
-    }
+    }, 250);
 
     if (syncMode && isSplitView) {
       setCanvasTransform(newTransform);
