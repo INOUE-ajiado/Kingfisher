@@ -275,6 +275,48 @@ describe('file スライス — ツリー選択のインデックス対応', () 
     ]);
   });
 
+  it('フォルダ名の数字をコマ番号として拾わない', () => {
+    // ⚠️ ATO_OP_029_trace/_sheet/cut.tga が「029 コマ目」になっていた (2026-08-31 の報告)。
+    // 連番を持たないファイルがコマの列に紛れ込み、対応づけが 1 つずれる
+    expect(extractFrameNumber('ATO_OP_029_trace/_sheet/cut.tga')).toBe('cut.tga');
+    expect(extractFrameNumber('ATO_OP_029_trace/a/a0001.tga')).toBe('0001');
+    expect(extractFrameNumber('C029/_go/b_go0003.tga')).toBe('0003');
+  });
+
+  it('ルート名が違う 2 つのフォルダでも、同じ位置・同じ名前なら対になる', () => {
+    // 報告いただいた実データの形 (trace と paint)。
+    // ⚠️ 番号が埋まったときのキーにフルパスを使っていた頃は、
+    // 先頭のフォルダ名が違うだけで A の a0001 と B の a0001 が別のコマになり、
+    // 統合リストが 1 コマ増えて「a0001 だけ相手が居ない」状態になっていた
+    const files = (root: string) => [
+      `${root}/_sheet/c029t_sheet0001.tga`,
+      `${root}/_sheet/cut.tga`,
+      `${root}/a/a0001.tga`,
+      `${root}/a/a0002.tga`,
+    ];
+    s().setFolderHandleA(null, 'trace', files('ATO_OP_029_trace'));
+    s().setFolderHandleB(null, 'paint', files('ATO_OP_029_paint'));
+
+    expect(s().unifiedFileList).toEqual(files('ATO_OP_029_trace'));
+    for (let i = 0; i < 4; i++) {
+      expect(s().resolveFileNameForView(i, 0)).toBe(files('ATO_OP_029_trace')[i]);
+      expect(s().resolveFileNameForView(i, 1)).toBe(files('ATO_OP_029_paint')[i]);
+    }
+  });
+
+  it('名前が違っても、同じ位置のフォルダ同士で対になる', () => {
+    // A の中で番号が埋まっている (_sheet が 0001 を先取り) 状態で、
+    // B の a/b0001.tga が _sheet 側と対にならないこと。
+    // ⚠️ 番号だけで空いている枠を取ると、Win A に _sheet、Win B に a が並ぶ
+    s().setFolderHandleA(null, 'trace', ['trace/_sheet/x0001.tga', 'trace/a/a0001.tga']);
+    s().setFolderHandleB(null, 'paint', ['paint/a/b0001.tga']);
+
+    expect(s().resolveFileNameForView(0, 0)).toBe('trace/_sheet/x0001.tga');
+    expect(s().resolveFileNameForView(0, 1)).toBeNull();
+    expect(s().resolveFileNameForView(1, 0)).toBe('trace/a/a0001.tga');
+    expect(s().resolveFileNameForView(1, 1)).toBe('paint/a/b0001.tga');
+  });
+
   it('同じ相対パスのファイルは、番号を先取りされていても取り違えない', () => {
     // カットを丸ごと Win A へ、その中の _go だけを Win B へ開いた形。
     // ⚠️ 番号だけで対応づけていた頃は、B の _go/y0001 が

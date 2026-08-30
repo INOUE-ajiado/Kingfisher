@@ -119,12 +119,40 @@ export interface MergedFrameMapItem {
   fileNameB?: string;
 }
 
-// ファイル名から「4桁等の連番数字」を抽出する関数 (例: b_go0003.tga -> "0003", a0012.tga -> "0012")
+/** パスのファイル名部分だけ ("Cut029/a/a0001.tga" -> "a0001.tga") */
+export function baseNameOf(path: string): string {
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf(String.fromCharCode(92)));
+  return idx < 0 ? path : path.slice(idx + 1);
+}
+
+/**
+ * 先頭のフォルダ名を落とした相対パス ("ATO_029_trace/a/a0001.tga" -> "a/a0001.tga")。
+ *
+ * ⚠️ A と B は別のフォルダを開くので、先頭の名前は必ず違う (trace / paint)。
+ * 中の構造を比べたいときは必ずここを通すこと。
+ */
+export function pathWithoutRoot(path: string): string {
+  const idx = Math.min(
+    ...[path.indexOf('/'), path.indexOf(String.fromCharCode(92))].filter((v) => v >= 0).concat(Infinity)
+  );
+  return idx === Infinity ? path : path.slice(idx + 1);
+}
+
+/**
+ * ファイル名から「4桁等の連番数字」を抽出する (例: b_go0003.tga -> "0003", a0012.tga -> "0012")。
+ *
+ * ⚠️ パス全体から探さないこと。フォルダ名の数字を拾ってしまう。
+ * 実例: ATO_OP_029_trace/_sheet/cut.tga が「029 コマ目」になり、
+ * 数字を持たないはずのファイルが連番の中に紛れ込んでいた (2026-08-31 の報告)。
+ * ⚠️ 数字が無いときはファイル名をそのまま返す。パスを返すと、A と B で
+ * 先頭のフォルダ名が違うだけで別のコマ扱いになる。
+ */
 export function extractFrameNumber(fileName: string): string {
-  const match = fileName.match(/(?:^|[^0-9])([0-9]{2,4})(?=[^0-9]*\.[a-z0-9]+$)/i);
+  const name = baseNameOf(fileName);
+  const match = name.match(/(?:^|[^0-9])([0-9]{2,4})(?=[^0-9]*\.[a-z0-9]+$)/i);
   if (match) return match[1];
-  const numMatch = fileName.match(/([0-9]+)(?=[^0-9]*\.[a-z0-9]+$)/i);
-  return numMatch ? numMatch[1].padStart(4, '0') : fileName;
+  const numMatch = name.match(/([0-9]+)(?=[^0-9]*\.[a-z0-9]+$)/i);
+  return numMatch ? numMatch[1].padStart(4, '0') : name;
 }
 
 /**
@@ -170,46 +198,54 @@ export function buildMergedFrameData(
   const keyOfA = new Map<string, string>();
   const keyOfB = new Map<string, string>();
 
-  const assign = (path: string, side: 'A' | 'B') => {
-    const num = extractFrameNumber(path);
+  /** ルートを除いたフォルダ位置。A と B でルート名が違っても比べられる ("a/") */
+  const dirTailOf = (path: string) => directoryOf(pathWithoutRoot(path));
 
-    // その番号がこちら側でまだ空いていればそのまま使う (A と B の対応づけ)
-    const taken = (key: string) => {
-      const item = frameMap.get(key);
-      if (!item) return false;
-      return side === 'A' ? !!item.fileNameA : !!item.fileNameB;
-    };
+  /** ルートを除いた相対パス -> A のキー (同じ位置・同じ名前なら同じセル) */
+  const aKeyByRelPath = new Map<string, string>();
+  /** コマ番号 -> A のキー (先に入った順) */
+  const aKeysByNumber = new Map<string, string[]>();
+  /** A のキー -> ルートを除いたフォルダ位置 */
+  const aDirTail = new Map<string, string>();
 
-    /**
-     * ⚠️ 相対パスが一致するなら、番号を見るまでもなく同じセル。
-     *
-     * 番号だけで対応づけると、A 側にサブフォルダが 2 つあるとき
-     * (カットを丸ごと Win A へ開いた場合など) 番号を先に取った別フォルダの
-     * ファイルと対になってしまい、Win A と Win B で別のセルが並ぶ
-     * (_bg/x0001 の隣に _go/y0001 が出る / 2026-08-31 の報告)。
-     */
-    const samePath = side === 'B' ? keyOfA.get(path) : undefined;
+  const isFree = (key: string, side: 'A' | 'B') => {
+    const item = frameMap.get(key);
+    if (!item) return true;
+    return side === 'A' ? !item.fileNameA : !item.fileNameB;
+  };
 
-    let key: string;
-    if (samePath && !frameMap.get(samePath)!.fileNameB) {
-      key = samePath;
-    } else {
-      key = num;
-      if (taken(key)) {
-        const dir = directoryOf(path);
-        key = `${dir}${num}`;
-        let n = 2;
-        while (taken(key)) {
-          key = `${dir}${num}#${n}`;
-          n += 1;
-        }
-      }
+  /**
+   * 新しい枠のキーを作る。
+   *
+   * ⚠️ 埋まっているときのキーにフォルダのフルパスを使わないこと。
+   * 先頭のフォルダ名は A と B で必ず違う (trace / paint) ため、
+   * 同じ位置・同じ名前のファイルなのに別のキーになり、永久に対にならない。
+   * 実例: A=trace/a/a0001.tga と B=paint/a/a0001.tga が別のコマになり、
+   * 統合リストが 1 コマ増えて「a0001 だけ相手が居ない」状態になっていた
+   * (2026-08-31 の報告)。ルートを除いた位置で作れば、両側で同じキーになる。
+   */
+  const freeKeyFor = (path: string, num: string, side: 'A' | 'B') => {
+    if (isFree(num, side)) return num;
+    const tail = dirTailOf(path);
+    let key = `${tail}${num}`;
+    let n = 2;
+    while (!isFree(key, side)) {
+      key = `${tail}${num}#${n}`;
+      n += 1;
     }
+    return key;
+  };
 
+  const put = (key: string, path: string, side: 'A' | 'B') => {
     const item = frameMap.get(key) || { frameNumber: key };
     if (side === 'A') {
       item.fileNameA = path;
       keyOfA.set(path, key);
+      aKeyByRelPath.set(pathWithoutRoot(path), key);
+      const list = aKeysByNumber.get(extractFrameNumber(path)) ?? [];
+      list.push(key);
+      aKeysByNumber.set(extractFrameNumber(path), list);
+      aDirTail.set(key, dirTailOf(path));
     } else {
       item.fileNameB = path;
       keyOfB.set(path, key);
@@ -217,8 +253,44 @@ export function buildMergedFrameData(
     frameMap.set(key, item);
   };
 
-  listA.forEach((f) => assign(f, 'A'));
-  listB.forEach((f) => assign(f, 'B'));
+  listA.forEach((path) => put(freeKeyFor(path, extractFrameNumber(path), 'A'), path, 'A'));
+
+  /**
+   * B のファイルを A の枠へ入れる。
+   *
+   * 順に、
+   *  1. ルートを除いた相対パスが同じ枠 (同じ位置の同じ名前 = 同じセル)
+   *  2. 同じコマ番号でまだ空いている枠のうち、フォルダの位置が同じもの
+   *  3. 同じコマ番号でまだ空いている枠 (異名連番。A と B でフォルダ名が違う場合)
+   *  4. どれも無ければ B だけのコマとして新しい枠
+   *
+   * ⚠️ 2 を飛ばして 3 だけにしないこと。A 側にサブフォルダが 2 つあると、
+   * 番号を先に取った別フォルダのファイルと対になり、2 つの窓に別のセルが並ぶ。
+   */
+  listB.forEach((path) => {
+    const num = extractFrameNumber(path);
+    const tail = dirTailOf(path);
+
+    const samePath = aKeyByRelPath.get(pathWithoutRoot(path));
+    if (samePath && isFree(samePath, 'B')) {
+      put(samePath, path, 'B');
+      return;
+    }
+
+    const candidates = (aKeysByNumber.get(num) ?? []).filter((key) => isFree(key, 'B'));
+    const sameDir = candidates.find((key) => aDirTail.get(key) === tail);
+    if (sameDir) {
+      put(sameDir, path, 'B');
+      return;
+    }
+    if (candidates.length > 0) {
+      put(candidates[0], path, 'B');
+      return;
+    }
+
+    put(freeKeyFor(path, num, 'B'), path, 'B');
+  });
+
 
   const representativeOf = (key: string): string => {
     const item = frameMap.get(key)!;
