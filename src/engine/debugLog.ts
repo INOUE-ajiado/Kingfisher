@@ -12,7 +12,7 @@
  * 呼ばないこと。ログが埋まって肝心の操作が流れる。
  */
 
-export type DebugLogCategory = 'cell' | 'roll' | 'folder' | 'window' | 'sync' | 'file';
+export type DebugLogCategory = 'cell' | 'roll' | 'folder' | 'window' | 'sync' | 'file' | 'view';
 
 /** 目立たせたい行 (食い違いの検出など) */
 export type DebugLogLevel = 'info' | 'warn';
