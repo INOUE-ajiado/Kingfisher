@@ -525,8 +525,14 @@ export const CellWindow: React.FC = () => {
       // 入っておらず、中の .mov / .mp4 が見えない。ハンドルとエントリも渡して中を探す。
       const videos = await collectDroppedVideoFiles(plainFiles, handles, entries);
       if (videos.length > 0) {
-        // 開く面は「今アクティブなロール」。連動して見比べたい側へ落とせる
-        loadRollFiles(roll.activeId, videos, commonRootName(videos));
+        /**
+         * ⚠️ 落とした窓に合わせて面を決めること (Win A → ロール A / Win B → ロール B)。
+         * 「今アクティブなロール」にしていた頃は、2 画面で見比べようと Win B へ
+         * 落としてもロール A が差し替わり、ロール B へ入れる手段が無かった
+         * (2026-08-31 の報告)。
+         */
+        const targetRoll: RollId = isWinA ? 'rollA' : 'rollB';
+        loadRollFiles(targetRoll, videos, commonRootName(videos));
         return;
       }
       alert(
@@ -1279,6 +1285,8 @@ export const CellWindow: React.FC = () => {
               <div className="absolute inset-0 bg-blue-950/90 backdrop-blur-xs border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
                 <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-blue-400" />
                 <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win A で開く</span>
+                {/* 映像を落としたときの行き先を先に伝える (ロール B へ入れる導線が分かりにくかった) */}
+                <span className="text-[10px] opacity-80 mt-1">撮影ロール (.mov / .mp4) なら ロール A で開きます</span>
                 <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
               </div>
             )}
@@ -1423,6 +1431,7 @@ export const CellWindow: React.FC = () => {
                 <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs border-2 border-dashed border-emerald-300 rounded flex flex-col items-center justify-center text-emerald-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
                   <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-emerald-400" />
                   <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win B で開く</span>
+                  <span className="text-[10px] opacity-80 mt-1">撮影ロール (.mov / .mp4) なら ロール B で開きます</span>
                   <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
                 </div>
               )}
