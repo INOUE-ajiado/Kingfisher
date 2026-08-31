@@ -99,6 +99,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     offsetX: 0,
     offsetY: 0,
     rotation: 0,
+    scale: 1,
     manualX: 0,
     manualY: 0,
     manualRotation: 0,
@@ -183,6 +184,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         offsetX: transform.offsetX,
         offsetY: transform.offsetY,
         rotation: transform.rotation,
+        scale: transform.scale,
         message: isNewReference
           ? `このコマを基準にしました (${detection.message})`
           : `基準へ合わせました (${detection.message})`,
@@ -193,7 +195,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       'view',
       isNewReference
         ? 'タップ穴の補正: このコマを基準にした'
-        : `タップ穴の補正: X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°`,
+        : `タップ穴の補正: X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}° / 倍率 ${(transform.scale * 100).toFixed(2)}%`,
       `${detection.message} / 中央の穴 (${Math.round(detection.center.x)}, ${Math.round(detection.center.y)})`
     );
     triggerRender();
@@ -226,6 +228,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         offsetX: 0,
         offsetY: 0,
         rotation: 0,
+        scale: 1,
         message: `このコマを基準にしました (${detection.message})`,
       },
     }));
@@ -291,7 +294,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         }
 
         const transform = pegTransformTo(detection, reference, image.width, image.height);
-        if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0) {
+        if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
           applied += 1; // すでに合っている
           continue;
         }
@@ -306,7 +309,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         logDebug(
           'view',
           `タップ補正を焼き込み: ${path}`,
-          `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°`
+          `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}° / 倍率 ${(transform.scale * 100).toFixed(2)}%`
         );
       }
     } catch (err: any) {
@@ -356,6 +359,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           offsetX: 0,
           offsetY: 0,
           rotation: 0,
+          scale: 1,
           message: '',
         },
       };
