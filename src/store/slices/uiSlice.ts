@@ -23,6 +23,17 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
 
   toggleRightSidebarOpen: () => set((state) => ({ isRightSidebarOpen: !state.isRightSidebarOpen })),
 
+  /**
+   * 右サイドパネルの幅。
+   * ⚠️ 既定を狭くしないこと。DEBUG ログはパスや位置を 1 行に並べるので、
+   * 320px では折り返しだらけで読めない (2026-09-01 のユーザー指定で 420 へ)。
+   * ⚠️ 上限は広めに取る。ログを読むときは一時的に 2 倍近くまで広げる使い方がある。
+   */
+  rightSidebarWidth: 420,
+
+  setRightSidebarWidth: (width) =>
+    set({ rightSidebarWidth: Math.max(180, Math.min(1000, Math.round(width))) }),
+
   canvasBgMatteMode: 'checkerboard',
 
   canvasCustomBgColor: '#00ff00',

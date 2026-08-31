@@ -479,6 +479,9 @@ export interface UiSlice {
   toggleDarkMode: () => void
   isRightSidebarOpen: boolean
   toggleRightSidebarOpen: () => void
+  /** 右サイドパネルの幅 (px)。ドラッグでも、DEBUG ログの「広げる」でも変わる */
+  rightSidebarWidth: number
+  setRightSidebarWidth: (width: number) => void
   canvasBgMatteMode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom'
   canvasCustomBgColor: string
   setCanvasBgMatteMode: (mode: 'checkerboard' | 'black' | 'white' | 'magenta' | 'custom') => void
