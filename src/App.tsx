@@ -27,6 +27,8 @@ import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 export const App: React.FC = () => {
   const {
     isDarkMode,
+    rightSidebarWidth,
+    setRightSidebarWidth,
     panelVisibility,
     isRightSidebarOpen,
     toggleRightSidebarOpen,
@@ -156,7 +158,7 @@ export const App: React.FC = () => {
     }
   };
 
-  const [rightSidebarWidth, setRightSidebarWidth] = React.useState<number>(320);
+  // ⚠️ 幅はストアが持つ。DEBUG ログの「広げる」からも触るため
   const isRightResizing = React.useRef(false);
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(320);
@@ -258,8 +260,7 @@ export const App: React.FC = () => {
   const handleRightResizeMove = (e: React.PointerEvent) => {
     if (!isRightResizing.current) return;
     const deltaX = startXRef.current - e.clientX;
-    const newWidth = Math.min(600, Math.max(180, startWidthRef.current + deltaX));
-    setRightSidebarWidth(newWidth);
+    setRightSidebarWidth(startWidthRef.current + deltaX);
   };
 
   const handleRightResizeUp = (e: React.PointerEvent) => {
@@ -315,7 +316,7 @@ export const App: React.FC = () => {
                 onPointerMove={handleRightResizeMove}
                 onPointerUp={handleRightResizeUp}
                 onPointerCancel={handleRightResizeUp}
-                title="ドラッグで右サイドパネルの幅を調整 (180px 〜 600px)"
+                title="ドラッグで右サイドパネルの幅を調整 (180px 〜 1000px)"
                 className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-500/40 active:bg-blue-600 z-30 transition-colors touch-none"
               />
 

@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Bug, ClipboardCopy, Check, Trash2, ArrowDownToLine, Link, AlertTriangle } from 'lucide-react';
+import {
+  Bug,
+  ClipboardCopy,
+  Check,
+  Trash2,
+  ArrowDownToLine,
+  Link,
+  AlertTriangle,
+  ChevronsLeftRight,
+} from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSyncPairConsistent } from '../../store/types';
 import {
@@ -10,6 +19,9 @@ import {
   getDebugLog,
   subscribeDebugLog,
 } from '../../engine/debugLog';
+
+/** 「広げる」で使う幅。1 行がだいたい折り返さずに読める */
+const WIDE_WIDTH = 760;
 
 /** 種別ごとの色。パッと見て「どの系統の操作か」を追えるようにする */
 const CATEGORY_STYLE: Record<DebugLogCategory, { label: string; className: string }> = {
@@ -50,6 +62,25 @@ export const DebugLogPanel: React.FC = () => {
   const unifiedCount = usePaintStore((s) => s.unifiedFileList.length);
   const resolveFileNameForView = usePaintStore((s) => s.resolveFileNameForView);
   const roll = usePaintStore((s) => s.roll);
+  const rightSidebarWidth = usePaintStore((s) => s.rightSidebarWidth);
+  const setRightSidebarWidth = usePaintStore((s) => s.setRightSidebarWidth);
+
+  /**
+   * ログを読むあいだだけ右パネルを広げる。
+   * ⚠️ 戻すときのために、広げる前の幅を覚えておくこと。
+   * 既定へ戻すと、自分で決めた幅が消えてしまう。
+   */
+  const widthBeforeRef = useRef<number | null>(null);
+  const isWide = rightSidebarWidth >= WIDE_WIDTH - 1;
+  const toggleWide = () => {
+    if (isWide) {
+      setRightSidebarWidth(widthBeforeRef.current ?? 420);
+      widthBeforeRef.current = null;
+      return;
+    }
+    widthBeforeRef.current = rightSidebarWidth;
+    setRightSidebarWidth(WIDE_WIDTH);
+  };
 
   // ⚠️ 絞り込みに 'view' も入れること。「コマを送ったら倍率が変わった」の前後関係は
   // この 3 つが並んでいないと追えない
@@ -163,6 +194,18 @@ export const DebugLogPanel: React.FC = () => {
 
         <div className="flex items-center gap-1 flex-shrink-0">
           <button
+            onClick={toggleWide}
+            title={isWide ? '右パネルの幅を元に戻す' : 'ログを読むために右パネルを広げる'}
+            className={`p-0.5 rounded border transition-colors ${
+              isWide
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+          >
+            <ChevronsLeftRight className="w-3 h-3" />
+          </button>
+
+          <button
             onClick={() => setSyncOnly((v) => !v)}
             title={
               syncOnly
@@ -240,7 +283,14 @@ export const DebugLogPanel: React.FC = () => {
         {mismatched && <div className="break-all">⚠️ 本来 Win B は {expectedB} のはず (「差を揃える」で直せます)</div>}
       </div>
 
-      <div ref={listRef} className="flex-1 overflow-y-auto font-mono text-[10px] leading-relaxed min-h-0">
+      {/* ⚠️ 広げたときは折り返さない。1 行に前後がまとまっている方が追いやすい。
+          その代わり横へスクロールできるようにしておく */}
+      <div
+        ref={listRef}
+        className={`flex-1 overflow-y-auto font-mono text-[10px] leading-relaxed min-h-0 ${
+          isWide ? 'overflow-x-auto' : ''
+        }`}
+      >
         {entries.length === 0 ? (
           <div className="text-[10px] text-slate-400 dark:text-slate-500 py-2 px-1 leading-relaxed font-sans">
             {syncOnly ? '2 画面の連動に関する記録はまだありません。' : 'まだ記録がありません。'}
@@ -266,7 +316,7 @@ export const DebugLogPanel: React.FC = () => {
                   </span>
                   {/* ⚠️ 折り返して全部見せる。切り詰めると肝心の数字が消える */}
                   <span
-                    className={`break-all ${
+                    className={`${isWide ? 'whitespace-nowrap' : 'break-all'} ${
                       entry.level === 'warn'
                         ? 'text-amber-700 dark:text-amber-300 font-bold'
                         : 'text-slate-700 dark:text-slate-200'
@@ -276,7 +326,13 @@ export const DebugLogPanel: React.FC = () => {
                   </span>
                 </div>
                 {entry.detail && (
-                  <div className="pl-[52px] text-slate-500 dark:text-slate-400 break-all">{entry.detail}</div>
+                  <div
+                    className={`pl-[52px] text-slate-500 dark:text-slate-400 ${
+                      isWide ? 'whitespace-nowrap' : 'break-all'
+                    }`}
+                  >
+                    {entry.detail}
+                  </div>
                 )}
               </div>
             );
