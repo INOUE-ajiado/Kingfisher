@@ -3,7 +3,14 @@
  */
 
 import { StateCreator } from 'zustand';
-import { detectPegHoles, pegTransformTo, referenceFromDetection } from '../../engine/pegStabilizer';
+import {
+  bakePegTransform,
+  detectPegHoles,
+  pegTransformTo,
+  referenceFromDetection,
+} from '../../engine/pegStabilizer';
+import { decodeTGA, encodeTGA } from '../../engine/tga';
+import { ensureWritePermission, resolveFileHandle } from '../../engine/fileSystemPath';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
@@ -215,6 +222,102 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     }));
     logDebug('view', 'タップ穴の基準をこのコマにした', detection.message);
     triggerRender();
+  },
+
+  /**
+   * 選んだファイルへタップ補正を焼き込む。
+   *
+   * ⚠️ 制作データを直接上書きするので、呼び出し側で必ず確認を取ること。
+   * ⚠️ 基準が無ければ、並びの先頭のファイルを基準にする (そのファイルは動かさない)。
+   *   ここで「理想の位置」を作らないこと。紙もタップの間隔も現場ごとに違う。
+   * ⚠️ 途中で失敗しても、そこまでの結果と失敗の理由を返すこと。
+   *   どこまで進んだのか分からないと、やり直す判断ができない。
+   * ⚠️ 書き終えたらキャッシュを捨てること。捨てないと補正前の画像が出続ける。
+   */
+  applyPegCorrectionToFiles: async (view, paths) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', applied: 0 };
+    if (!folderHandle) {
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, applied: 0 };
+    }
+    if (!(await ensureWritePermission(folderHandle))) {
+      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, applied: 0 };
+    }
+
+    let reference = state.pegStabilizer.reference;
+    let applied = 0;
+    const skipped: string[] = [];
+
+    logDebug('view', `タップ補正の焼き込みを開始: ${paths.length} 件 — ${label}`, paths.slice(0, 3).join(' / '));
+
+    try {
+      for (const path of paths) {
+        if (!/[.]tga$/i.test(path)) {
+          skipped.push(`${path} (TGA ではありません)`);
+          continue;
+        }
+
+        const fileHandle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+        const file = await fileHandle.getFile();
+        const image = decodeTGA(await file.arrayBuffer());
+
+        const detection = detectPegHoles(image.data, image.width, image.height);
+        if (!detection.detected) {
+          skipped.push(`${path} (${detection.message})`);
+          continue;
+        }
+
+        if (!reference) {
+          // 先頭を基準にする。基準そのものは動かさない
+          reference = referenceFromDetection(detection);
+          logDebug('view', `タップ補正の基準: ${path}`, detection.message);
+          continue;
+        }
+
+        const transform = pegTransformTo(detection, reference, image.width, image.height);
+        if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0) {
+          applied += 1; // すでに合っている
+          continue;
+        }
+
+        const moved = bakePegTransform(image.data, image.width, image.height, transform);
+        const writable = await fileHandle.createWritable();
+        await writable.write(encodeTGA({ ...image, data: moved }));
+        await writable.close();
+
+        get().invalidateCachedImage(get().getImageCacheKey(view, path));
+        applied += 1;
+        logDebug(
+          'view',
+          `タップ補正を焼き込み: ${path}`,
+          `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°`
+        );
+      }
+    } catch (err: any) {
+      console.error('Failed to apply peg correction:', err);
+      logDebug('view', 'タップ補正の焼き込みが途中で失敗しました', String(err?.message || err), 'warn');
+      return {
+        ok: false,
+        message: `途中で失敗しました: ${err?.message || err}\n${applied} 件は書き換え済みです。`,
+        applied,
+      };
+    }
+
+    if (reference) set((s2) => ({ pegStabilizer: { ...s2.pegStabilizer, reference } }));
+
+    // 表示中のコマを読み直させる
+    get().triggerRender();
+
+    const detail = skipped.length > 0 ? `\n\n見送り ${skipped.length} 件:\n${skipped.slice(0, 8).join('\n')}` : '';
+    logDebug('view', `タップ補正の焼き込みが完了: ${applied} 件 / 見送り ${skipped.length} 件`);
+    return {
+      ok: true,
+      message: `${applied} 件にタップ補正を焼き込みました。${detail}`,
+      applied,
+    };
   },
 
   clearPegReference: () =>

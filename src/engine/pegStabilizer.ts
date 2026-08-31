@@ -347,3 +347,51 @@ export function pegTransformTo(
     rotation: Math.round(rotation * 1000) / 1000,
   };
 }
+
+/**
+ * 補正を画素へ焼き込む。
+ *
+ * ⚠️ 補間しないこと (最近傍で運ぶ)。彩色データは「色そのもの」で塗り分けを持つので、
+ * 中間色ができると別の色として扱われ、バケツ塗りや色置換が効かなくなる。
+ * ⚠️ はみ出したところは純白 (= 透明) で埋める。encodeTGA が alpha 0 を純白として
+ * 書き戻す規約に合わせる。
+ * ⚠️ 表示と同じ順で動かすこと (画像の中心を軸に回してから平行移動)。
+ * ここがずれると、画面で合わせたものが焼き込むとずれる。
+ */
+export function bakePegTransform(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  transform: PegTransform
+): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(width * height * 4);
+  // 透明 = 純白。RGB も 255 にしておく
+  out.fill(255);
+  for (let i = 3; i < out.length; i += 4) out[i] = 0;
+
+  const rad = (transform.rotation * Math.PI) / 180;
+  const cos = Math.cos(-rad);
+  const sin = Math.sin(-rad);
+  const cx = width / 2;
+  const cy = height / 2;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // 出力の画素が、元のどこから来たのかを逆にたどる
+      const tx = x - transform.offsetX - cx;
+      const ty = y - transform.offsetY - cy;
+      const sx = Math.round(cx + tx * cos - ty * sin);
+      const sy = Math.round(cy + tx * sin + ty * cos);
+      if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
+
+      const from = (sy * width + sx) * 4;
+      const to = (y * width + x) * 4;
+      out[to] = data[from];
+      out[to + 1] = data[from + 1];
+      out[to + 2] = data[from + 2];
+      out[to + 3] = data[from + 3];
+    }
+  }
+
+  return out;
+}
