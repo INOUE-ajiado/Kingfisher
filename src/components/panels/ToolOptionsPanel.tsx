@@ -89,8 +89,10 @@ export const ToolOptionsPanel: React.FC = () => {
 
             {/* ⚠️ 理由を必ず出すこと。黙って 0 だと、補正が効いていないのか
                 ずれていないのかが区別できない */}
+            {/* ⚠️ 折り返して全部見せる。試した順や落ちた理由が切れると、
+                次に何を直せばよいか分からなくなる */}
             {pegStabilizer.message && (
-              <div className="text-[10px] leading-snug text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 rounded px-1.5 py-1 break-all">
+              <div className="text-[10px] leading-snug text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 rounded px-1.5 py-1 break-all whitespace-pre-line max-h-28 overflow-y-auto">
                 {pegStabilizer.message}
               </div>
             )}
