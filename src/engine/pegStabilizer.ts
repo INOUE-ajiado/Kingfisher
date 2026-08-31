@@ -181,16 +181,62 @@ function findBlobs(
   return blobs;
 }
 
-/** 穴らしい大きさ・形かどうか */
-function looksLikeHole(blob: Blob, width: number): boolean {
-  if (blob.touchesSide) return false;
+/** なぜ候補から外れたか。見つからないときの説明に使う */
+type RejectReason = 'ok' | 'edge' | 'small' | 'large' | 'thin';
+
+/**
+ * 穴らしい大きさ・形かどうか。
+ *
+ * ⚠️ 落とした理由を返すこと。「0 個でした」だけでは、しきい値が悪いのか
+ * 大きさの見当が外れているのか分からず、次に何を直せばよいか決められない。
+ */
+function classifyBlob(blob: Blob, width: number): RejectReason {
+  if (blob.touchesSide) return 'edge';
   const minSide = width * 0.006;
   const maxSide = width * 0.09;
-  if (blob.width < minSide || blob.width > maxSide) return false;
-  if (blob.height < minSide * 0.6 || blob.height > maxSide) return false;
+  if (blob.width < minSide || blob.height < minSide * 0.6) return 'small';
+  if (blob.width > maxSide || blob.height > maxSide) return 'large';
   const aspect = blob.width / Math.max(1, blob.height);
   // 丸穴も長円 (中央) も通す。極端に細長い帯は落とす
-  return aspect >= 0.2 && aspect <= 6;
+  if (aspect < 0.2 || aspect > 6) return 'thin';
+  return 'ok';
+}
+
+/**
+ * 帯の中の暗さから、しきい値を見当づける。
+ *
+ * ⚠️ 固定のしきい値だけにしないこと。スキャンの露出は素材ごとに違い、
+ * 穴が真っ黒に出るとは限らない (灰色に出る紙がある / 2026-09-01 の報告)。
+ * いちばん暗い側から数 % を穴の候補とみなす見当をつけ、そこから探す。
+ */
+function adaptiveThreshold(
+  data: Uint8ClampedArray,
+  width: number,
+  fromY: number,
+  toY: number,
+  step: number
+): number {
+  const histogram = new Uint32Array(256);
+  let total = 0;
+  for (let y = fromY; y < toY; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const idx = (y * width + x) * 4;
+      if (data[idx + 3] === 0) continue;
+      const lum = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+      histogram[Math.max(0, Math.min(255, Math.round(lum)))] += 1;
+      total += 1;
+    }
+  }
+  if (total === 0) return DEFAULTS.threshold;
+
+  // 暗い方から 3% ぶんを含む明るさ + 余裕
+  const want = Math.max(1, Math.floor(total * 0.03));
+  let seen = 0;
+  for (let v = 0; v < 256; v++) {
+    seen += histogram[v];
+    if (seen >= want) return Math.max(30, Math.min(200, v + 12));
+  }
+  return DEFAULTS.threshold;
 }
 
 /**
@@ -269,29 +315,57 @@ export function detectPegHoles(
     { edge: 'bottom', fromY: Math.max(0, height - bandHeight), toY: height },
   ];
 
-  let lastMessage = 'タップ穴が見つかりませんでした';
-
-  // ⚠️ 「暗い穴」を先に試し、見つからなければ「透明な穴」で読み直す。
-  // 素材によってどちらで入ってくるか決まらないため
+  /**
+   * ⚠️ 1 通りで諦めないこと。素材によって、穴が黒く出るか透明で入るか、
+   * どれだけ暗いかが違う。帯 (上/下) × 読み方 (暗い/透明) × しきい値 (自動/既定/緩め)
+   * を順に試し、どこでどう落ちたかを説明として残す。
+   */
   const looks: HoleLook[] = ['dark', 'transparent'];
+  const tries: string[] = [];
+  let bestNote = '';
+  let bestCandidates = -1;
 
-  for (const look of looks) {
   for (const band of bands) {
-    const blobs = findBlobs(data, width, band.fromY, band.toY, threshold, step, look);
-    const candidates = blobs.filter((b) => looksLikeHole(b, width));
+  for (const look of looks) {
+    const thresholds =
+      look === 'transparent'
+        ? [threshold]
+        : Array.from(
+            new Set([adaptiveThreshold(data, width, band.fromY, band.toY, step), threshold, 130])
+          );
 
-    if (candidates.length < 3) {
-      lastMessage = `穴らしい形が ${candidates.length} 個しか見つかりませんでした (${band.edge === 'top' ? '上端' : '下端'}の帯 / ${look === 'dark' ? '暗い穴' : '透明な穴'}として走査 / 塊 ${blobs.length} 個)`;
-      continue;
-    }
+    for (const level of thresholds) {
+      const blobs = findBlobs(data, width, band.fromY, band.toY, level, step, look);
+      const reasons = { ok: 0, edge: 0, small: 0, large: 0, thin: 0 };
+      const candidates: Blob[] = [];
+      blobs.forEach((b) => {
+        const why = classifyBlob(b, width);
+        reasons[why] += 1;
+        if (why === 'ok') candidates.push(b);
+      });
 
-    const picked = pickTriple(candidates, width);
-    if (!picked) {
-      lastMessage = `穴の候補は ${candidates.length} 個ありましたが、タップの並び (左右対称・一直線) に合う 3 つがありませんでした`;
-      continue;
-    }
+      const where = `${band.edge === 'top' ? '上端' : '下端'} / ${look === 'dark' ? `暗い穴 (${level} 以下)` : '透明な穴'}`;
+      const note =
+        `${where}: 塊 ${blobs.length} 個 → 穴らしい形 ${candidates.length} 個` +
+        (blobs.length > 0
+          ? ` (小さすぎ ${reasons.small} / 大きすぎ ${reasons.large} / 細長い ${reasons.thin} / 端に接触 ${reasons.edge})`
+          : '');
+      tries.push(note);
+      if (candidates.length > bestCandidates) {
+        bestCandidates = candidates.length;
+        bestNote = note;
+      }
 
-    const [left, mid, right] = picked.holes;
+      if (candidates.length < 3) continue;
+
+      const picked = pickTriple(candidates, width);
+      if (!picked) {
+        tries[tries.length - 1] = `${note} — 左右対称・一直線に並ぶ 3 つがありません`;
+        bestNote = tries[tries.length - 1];
+        continue;
+      }
+
+      const [left, mid, right] = picked.holes;
     const angle = (Math.atan2(right.y - left.y, right.x - left.x) * 180) / Math.PI;
     const spacing = (mid.x - left.x + (right.x - mid.x)) / 2;
 
@@ -305,10 +379,15 @@ export function detectPegHoles(
       edge: band.edge,
       message: `${band.edge === 'top' ? '上端' : '下端'}で 3 つの穴を検出 (間隔 ${Math.round(spacing)}px / 傾き ${angle.toFixed(2)}°)`,
     };
+    }
   }
   }
 
-  return failed(lastMessage);
+  // ⚠️ 「見つかりません」で終わらせないこと。どこまで行って何で落ちたかを返す
+  return failed(
+    `タップ穴が見つかりませんでした。もっとも近かったのは ${bestNote || '(走査できませんでした)'}` +
+      `\n試した順: ${tries.join(' / ')}`
+  );
 }
 
 /** 検出結果を、そのまま合わせ先として使う */

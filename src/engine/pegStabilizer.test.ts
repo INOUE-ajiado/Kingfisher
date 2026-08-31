@@ -134,6 +134,47 @@ describe('タップ穴の検出', () => {
     expect(result.center.x).toBeCloseTo(W / 2, 0);
   });
 
+  it('穴が真っ黒でなくても (灰色でも) 見つける', () => {
+    // ⚠️ スキャンの露出は素材ごとに違う。固定のしきい値だけだと、
+    // 灰色に写った穴を取りこぼす (2026-09-01 の報告)
+    const data = blankPaper();
+    const grey = (cx: number, cy: number, r: number) => {
+      for (let y = cy - r; y <= cy + r; y++) {
+        for (let x = cx - r; x <= cx + r; x++) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
+          const o = (y * W + x) * 4;
+          data[o] = 120; data[o + 1] = 120; data[o + 2] = 120; data[o + 3] = 255;
+        }
+      }
+    };
+    grey(W / 2 - 220, 60, 12);
+    grey(W / 2, 60, 15);
+    grey(W / 2 + 220, 60, 12);
+
+    const result = detectPegHoles(data, W, H);
+    expect(result.detected).toBe(true);
+    expect(result.holes).toHaveLength(3);
+  });
+
+  it('失敗の説明に、どこで何個まで行ったかが入る', () => {
+    // ⚠️ 「0 個でした」だけでは、しきい値が悪いのか大きさの見当が外れているのか
+    // 分からず、次に何を直せばよいか決められない
+    const data = blankPaper();
+    // 大きすぎる黒い帯 (穴ではない) を上端に置く
+    for (let y = 30; y < 90; y++) {
+      for (let x = 100; x < W - 100; x++) {
+        const o = (y * W + x) * 4;
+        data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; data[o + 3] = 255;
+      }
+    }
+
+    const result = detectPegHoles(data, W, H);
+    expect(result.detected).toBe(false);
+    expect(result.message).toContain('もっとも近かったのは');
+    expect(result.message).toContain('大きすぎ');
+    expect(result.message).toContain('試した順');
+  });
+
   it('抜けて透明になった穴も拾う (紙が不透明な素材)', () => {
     const data = blankPaper();
     const clear = (cx: number, cy: number, r: number) => {
