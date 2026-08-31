@@ -163,7 +163,9 @@ export const App: React.FC = () => {
 
   // パネル個別の縦幅 (高さ px) ステート
   const [panelHeights, setPanelHeights] = React.useState<Record<string, number>>({
-    toolOptions: 100,
+    // ⚠️ 中身 (タップ補正 〜 オニオンスキン) が最初から見える高さで始める。
+    // 実際の高さは読み込み後に測って合わせる (autoFitPanel)
+    toolOptions: 460,
     fileBrowser: 480,
     colorChart: 260,
     layerPanel: 180,
@@ -171,12 +173,48 @@ export const App: React.FC = () => {
     debugLog: 220,
   });
 
+  /**
+   * 中身に合わせて高さを決めた面。
+   * ⚠️ ユーザーが自分でつまみを動かした面は二度と測り直さないこと。
+   * 決めた高さが読み込みのたびに戻ってしまう。
+   */
+  const userResizedRef = React.useRef<Record<string, boolean>>({});
+  const panelContentRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+
+  /**
+   * ツールオプションは中身が縦に長い (タップ補正・彩色設定・レイヤー参照・背景マット・
+   * オニオンスキン)。既定の高さで切れていると、下の方があることに気づけないため、
+   * 開いた時点で中身が入る高さに合わせる (2026-09-01 のユーザー指定)。
+   */
+  const autoFitPanel = React.useCallback((key: string) => {
+    if (userResizedRef.current[key]) return;
+    const el = panelContentRefs.current[key];
+    if (!el) return;
+    const content = el.firstElementChild as HTMLElement | null;
+    const wanted = Math.max(160, Math.min(760, (content?.scrollHeight ?? 0) + 4));
+    if (wanted <= 160) return;
+    setPanelHeights((prev) => (Math.abs((prev[key] ?? 0) - wanted) < 6 ? prev : { ...prev, [key]: wanted }));
+  }, []);
+
+  React.useEffect(() => {
+    if (!panelVisibility.toolOptions) return;
+    // 描き終わってから測る (アイコンや折り返しで高さが決まるため)
+    const timer = window.setTimeout(() => autoFitPanel('toolOptions'), 60);
+    const onResize = () => autoFitPanel('toolOptions');
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [panelVisibility.toolOptions, autoFitPanel]);
+
   const activeResizingKeyRef = React.useRef<string | null>(null);
   const startYRef = React.useRef(0);
   const startHeightRef = React.useRef(0);
 
   const handleRowResizeDown = (key: string, currentHeight: number, e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    userResizedRef.current[key] = true;
     activeResizingKeyRef.current = key;
     startYRef.current = e.clientY;
     startHeightRef.current = currentHeight;
@@ -321,6 +359,9 @@ export const App: React.FC = () => {
                     return (
                       <React.Fragment key={panel.key}>
                         <div
+                          ref={(el) => {
+                            panelContentRefs.current[panel.key] = el;
+                          }}
                           style={isLast ? undefined : { height: `${h}px` }}
                           className={`flex flex-col overflow-hidden ${isLast ? 'flex-1 min-h-[60px]' : 'flex-shrink-0'}`}
                         >
