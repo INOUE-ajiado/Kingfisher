@@ -6,8 +6,9 @@ import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2 } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor } from 'lucide-react';
 import { RollId, ROLL_IDS } from '../../store/types';
+import { logDebug } from '../../engine/debugLog';
 
 /**
  * 選択中ファイルの色。Win A は青 / Win B は緑、ロールはウィンドウの枠と同じ
@@ -270,6 +271,8 @@ export const FileBrowser: React.FC = () => {
     indexOfFileForView,
     duplicateFiles,
     deleteFiles,
+    pegStabilizer,
+    applyPegCorrectionToFiles,
   } = usePaintStore();
 
   const togglePath = (path: string, forceState?: boolean) => {
@@ -383,6 +386,7 @@ export const FileBrowser: React.FC = () => {
   };
 
   const clearMarks = () => {
+    if (markedPaths.length > 0) logDebug('file', `複数選択を解除 (${markedPaths.length} 件 → 0)`);
     setMarkedPaths([]);
     setMarkAnchor(null);
   };
@@ -393,9 +397,21 @@ export const FileBrowser: React.FC = () => {
    */
   const markFileInView = (view: 0 | 1, list: string[]) =>
     (path: string, modifiers: { ctrl: boolean; shift: boolean }): boolean => {
+      const label = view === 1 ? 'Win B' : 'Win A';
+
       if (!modifiers.ctrl && !modifiers.shift) {
-        // 通常クリックは選択を解除して移動へ譲る
-        if (markedPaths.length > 0) clearMarks();
+        /**
+         * ⚠️ 通常クリックでも起点 (markAnchor) を覚えること。
+         * 覚えていないと、次の Shift + クリックで範囲の始まりが決まらず、
+         * 1 件だけ選ばれて「複数選択できない」ことになる (2026-09-01 の報告)。
+         * エクスプローラーや Finder と同じ振る舞い。
+         */
+        if (markedPaths.length > 0) {
+          logDebug('file', `複数選択を解除 (${markedPaths.length} 件 → 0) — ${label}`, path);
+          setMarkedPaths([]);
+        }
+        setMarkedView(view);
+        setMarkAnchor(path);
         return false;
       }
 
@@ -403,19 +419,37 @@ export const FileBrowser: React.FC = () => {
       const base = view === markedView ? markedPaths : [];
       if (view !== markedView) setMarkedView(view);
 
-      if (modifiers.shift && markAnchor && view === markedView) {
-        const from = list.indexOf(markAnchor);
+      if (modifiers.shift && view === markedView) {
+        const from = markAnchor ? list.indexOf(markAnchor) : -1;
         const to = list.indexOf(path);
         if (from >= 0 && to >= 0) {
           const [lo, hi] = from <= to ? [from, to] : [to, from];
-          setMarkedPaths(list.slice(lo, hi + 1));
+          const range = list.slice(lo, hi + 1);
+          setMarkedPaths(range);
+          logDebug(
+            'file',
+            `複数選択: Shift で ${range.length} 件 — ${label}`,
+            `${range[0]} 〜 ${range[range.length - 1]} (起点 ${markAnchor})`
+          );
           return true;
         }
+        // ⚠️ 黙って 1 件選択へ落とさないこと。なぜ範囲にならなかったのかが分からなくなる
+        logDebug(
+          'file',
+          'Shift の範囲を作れませんでした (1 件だけ選びます)',
+          `起点 ${markAnchor ?? '(なし)'} は一覧の ${from} 番目 / 選んだ ${path} は ${to} 番目 — ${label} の一覧 ${list.length} 件`,
+          'warn'
+        );
       }
 
       const next = base.includes(path) ? base.filter((p) => p !== path) : [...base, path];
       setMarkedPaths(next);
       setMarkAnchor(path);
+      logDebug(
+        'file',
+        `複数選択: ${modifiers.ctrl ? 'Ctrl' : 'Shift'} で ${base.includes(path) ? '外して' : '足して'} ${next.length} 件 — ${label}`,
+        path
+      );
       return true;
     };
 
@@ -456,6 +490,31 @@ export const FileBrowser: React.FC = () => {
     if (result.ok) clearMarks();
   };
 
+  /**
+   * 選んだファイルにタップ補正を焼き込む。
+   *
+   * ⚠️ 上書きするので必ず確認を取る。基準が無ければ並びの先頭が基準になり、
+   * その 1 枚は動かない — それを先に伝えること。
+   */
+  const handleApplyPeg = async () => {
+    const target = markedInOrder;
+    if (target.length === 0) return;
+
+    const names = target.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
+    const more = target.length > 5 ? `\n…ほか ${target.length - 5} 件` : '';
+    const base = pegStabilizer.reference
+      ? '今の基準へ合わせます。'
+      : '先頭のファイルを基準にし、その 1 枚はそのまま残します。';
+    const ok = window.confirm(
+      `${target.length} 件にタップ補正を焼き込みます。元のファイルを上書きし、元に戻せません。\n` +
+        `${base}\n\n${names}${more}`
+    );
+    if (!ok) return;
+
+    const result = await applyPegCorrectionToFiles(markedView, target);
+    alert(result.message);
+  };
+
   const handleDelete = async () => {
     const names = markedInOrder.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
     const more = markedInOrder.length > 5 ? `\n…ほか ${markedInOrder.length - 5} 件` : '';
@@ -488,6 +547,16 @@ export const FileBrowser: React.FC = () => {
       label: markedInOrder.length > 1 ? `パスをコピー (${markedInOrder.length} 項目)` : 'パスをコピー',
       icon: <ClipboardCopy className="w-3.5 h-3.5" />,
       onSelect: copyPathsToClipboard,
+    },
+    { type: 'divider' },
+    {
+      id: 'peg',
+      label:
+        markedInOrder.length > 1
+          ? `タップ補正を焼き込む (${markedInOrder.length} 項目)`
+          : 'タップ補正を焼き込む',
+      icon: <Anchor className="w-3.5 h-3.5" />,
+      onSelect: handleApplyPeg,
     },
     { type: 'divider' },
     {

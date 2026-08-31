@@ -561,6 +561,11 @@ export interface ViewSlice {
   setPegReferenceFromCurrent: () => void
   /** 基準を捨てて補正を戻す */
   clearPegReference: () => void
+  /**
+   * 選んだファイルにタップ補正を焼き込んで上書きする。
+   * ⚠️ 元に戻せないので、呼び出し側で必ず確認を取ること。
+   */
+  applyPegCorrectionToFiles: (view: 0 | 1, paths: string[]) => Promise<{ ok: boolean; message: string; applied: number }>
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
   /**
    * Win A を出しているか。

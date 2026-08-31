@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectPegHoles, pegTransformTo, referenceFromDetection } from './pegStabilizer';
+import { bakePegTransform, detectPegHoles, pegTransformTo, referenceFromDetection } from './pegStabilizer';
 
 /**
  * タップ穴の自動検出。
@@ -181,5 +181,50 @@ describe('基準へ合わせる補正量', () => {
     const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
 
     expect(pegTransformTo(none, reference, W, H)).toEqual({ offsetX: 0, offsetY: 0, rotation: 0 });
+  });
+});
+
+describe('補正の焼き込み', () => {
+  it('ずれた紙を焼き込むと、穴が基準の位置へ来る', () => {
+    const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
+
+    const shiftedData = paperWithPegs(14, 9, 1.5);
+    const shifted = detectPegHoles(shiftedData, W, H);
+    const transform = pegTransformTo(shifted, reference, W, H);
+
+    const baked = bakePegTransform(shiftedData, W, H, transform);
+    const after = detectPegHoles(baked, W, H);
+
+    expect(after.detected).toBe(true);
+    expect(after.center.x).toBeCloseTo(reference.center.x, -0.5);
+    expect(after.center.y).toBeCloseTo(reference.center.y, -0.5);
+    expect(Math.abs(after.angle - reference.angle)).toBeLessThan(0.4);
+  });
+
+  it('色を混ぜない (最近傍で運ぶ)', () => {
+    // ⚠️ 補間すると中間色ができ、色で塗り分ける彩色データが壊れる
+    const data = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) {
+      const o = i * 4;
+      data[o] = 255; data[o + 1] = 0; data[o + 2] = 0; data[o + 3] = 255;
+    }
+    const baked = bakePegTransform(data, W, H, { offsetX: 3.5, offsetY: 2.5, rotation: 1.2 });
+
+    const colors = new Set<string>();
+    for (let i = 0; i < W * H; i++) {
+      const o = i * 4;
+      if (baked[o + 3] === 0) continue;
+      colors.add(`${baked[o]},${baked[o + 1]},${baked[o + 2]}`);
+    }
+    expect(Array.from(colors)).toEqual(['255,0,0']);
+  });
+
+  it('はみ出したところは透明にする (純白 = 透明の規約)', () => {
+    const data = paperWithPegs();
+    const baked = bakePegTransform(data, W, H, { offsetX: 40, offsetY: 0, rotation: 0 });
+
+    // 左端 (元画像の外から来た列) は透明
+    expect(baked[(10 * W + 5) * 4 + 3]).toBe(0);
+    expect(baked[(10 * W + 5) * 4]).toBe(255);
   });
 });
