@@ -156,6 +156,37 @@ describe('タップ穴の検出', () => {
     expect(result.holes).toHaveLength(3);
   });
 
+  it('大きな画像でも穴の位置を細かく決める (間引きの刻みに丸めない)', () => {
+    // ⚠️ 間引いた格子の重心をそのまま使うと、大きなスキャンでは 2〜3px 刻みになり、
+    // その誤差がそのまま補正のずれになる
+    // ⚠️ 間引きの刻みが 3px になる大きさ (長辺 4200 → step 3)
+    const BW = 4200;
+    const BH = 1200;
+    const data = new Uint8ClampedArray(BW * BH * 4);
+    data.fill(255);
+    const put = (cx: number, cy: number, r: number) => {
+      for (let y = Math.floor(cy - r); y <= cy + r; y++)
+        for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
+          const o = (y * BW + x) * 4;
+          data[o] = 0; data[o + 1] = 0; data[o + 2] = 0; data[o + 3] = 255;
+        }
+    };
+    // 中央の穴を x = 1400.5 に置く (間引き 2px の格子には乗らない位置)
+    put(2100.5, 150.5, 34);
+    put(2100.5 - 900, 150.5, 26);
+    put(2100.5 + 900, 150.5, 26);
+
+    const result = detectPegHoles(data, BW, BH);
+    expect(result.detected).toBe(true);
+    expect(Math.abs(result.center.x - 2100.5)).toBeLessThan(0.5);
+    expect(Math.abs(result.center.y - 150.5)).toBeLessThan(0.5);
+    // ⚠️ 間引いた格子のままだと、大きさが刻み (2px) の倍数に丸まる。
+    // 元の解像度で取り直していれば、直径 69px がそのまま出る
+    expect(result.holes[1].width).toBe(68);
+    expect(result.holes[1].height).toBe(68);
+  });
+
   it('しきい値を手で決めたときは、その値だけで探す', () => {
     // ⚠️ 手で決めた値に勝手な候補を混ぜると、「この値でどう見えるか」を確かめられない
     const data = blankPaper();
@@ -254,7 +285,7 @@ describe('基準へ合わせる補正量', () => {
     const none = detectPegHoles(blankPaper(), W, H);
     const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
 
-    expect(pegTransformTo(none, reference, W, H)).toEqual({ offsetX: 0, offsetY: 0, rotation: 0 });
+    expect(pegTransformTo(none, reference, W, H)).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 });
   });
 });
 
@@ -275,6 +306,37 @@ describe('補正の焼き込み', () => {
     expect(Math.abs(after.angle - reference.angle)).toBeLessThan(0.4);
   });
 
+  it('穴の間隔が縮んだ紙は、倍率でも合わせる', () => {
+    // ⚠️ スキャナの送りむらで数 % 伸び縮みする。平行移動と回転だけでは重ならない
+    const base = detectPegHoles(paperWithPegs(), W, H);
+    const reference = referenceFromDetection(base);
+
+    // 間隔を 3% 縮めた紙 (spacing 220 → 213)
+    const data = blankPaper();
+    const punchAt = (dx: number, rx: number, ry: number) => punch(data, W, W / 2 + dx, 60, rx, ry);
+    punchAt(-213, 11, 11);
+    punchAt(0, 18, 10);
+    punchAt(213, 11, 11);
+
+    const shrunk = detectPegHoles(data, W, H);
+    const t = pegTransformTo(shrunk, reference, W, H);
+
+    expect(t.scale).toBeGreaterThan(1.02);
+    expect(t.scale).toBeLessThan(1.05);
+
+    const baked = bakePegTransform(data, W, H, t);
+    const after = detectPegHoles(baked, W, H);
+    expect(after.detected).toBe(true);
+    expect(Math.abs(after.spacing - reference.spacing)).toBeLessThan(4);
+  });
+
+  it('穴を取り違えたような極端な比は倍率にしない', () => {
+    // ⚠️ 絵ごと拡大してしまうため、ありえない比は 1 に落とす
+    const reference = { center: { x: 400, y: 60 }, angle: 0, spacing: 400 };
+    const detection = detectPegHoles(paperWithPegs(), W, H); // spacing 220 前後
+    expect(pegTransformTo(detection, reference, W, H).scale).toBe(1);
+  });
+
   it('色を混ぜない (最近傍で運ぶ)', () => {
     // ⚠️ 補間すると中間色ができ、色で塗り分ける彩色データが壊れる
     const data = new Uint8ClampedArray(W * H * 4);
@@ -282,7 +344,7 @@ describe('補正の焼き込み', () => {
       const o = i * 4;
       data[o] = 255; data[o + 1] = 0; data[o + 2] = 0; data[o + 3] = 255;
     }
-    const baked = bakePegTransform(data, W, H, { offsetX: 3.5, offsetY: 2.5, rotation: 1.2 });
+    const baked = bakePegTransform(data, W, H, { offsetX: 3.5, offsetY: 2.5, rotation: 1.2, scale: 1.02 });
 
     const colors = new Set<string>();
     for (let i = 0; i < W * H; i++) {
@@ -295,7 +357,7 @@ describe('補正の焼き込み', () => {
 
   it('はみ出したところは透明にする (純白 = 透明の規約)', () => {
     const data = paperWithPegs();
-    const baked = bakePegTransform(data, W, H, { offsetX: 40, offsetY: 0, rotation: 0 });
+    const baked = bakePegTransform(data, W, H, { offsetX: 40, offsetY: 0, rotation: 0, scale: 1 });
 
     // 左端 (元画像の外から来た列) は透明
     expect(baked[(10 * W + 5) * 4 + 3]).toBe(0);

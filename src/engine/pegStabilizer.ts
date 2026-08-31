@@ -58,6 +58,11 @@ export interface PegTransform {
   offsetY: number;
   /** 度。表示側は画像の中心を軸に回す */
   rotation: number;
+  /**
+   * 倍率。穴の間隔の比から求める (スキャナの送りむらで数 % 伸び縮みする)。
+   * ⚠️ 大きく外れた値は使わないこと。穴を取り違えたときに絵ごと拡大してしまう。
+   */
+  scale: number;
 }
 
 export interface PegDetectOptions {
@@ -291,8 +296,66 @@ function pickTriple(candidates: Blob[], width: number): { holes: Blob[]; score: 
   return best;
 }
 
-function toHole(blob: Blob): PegHole {
-  return { x: blob.x, y: blob.y, width: blob.width, height: blob.height, area: blob.area };
+/**
+ * 塊の重心を、元の解像度で取り直す。
+ *
+ * ⚠️ 間引いた格子の重心をそのまま使わないこと。大きなスキャンでは 2〜3px 刻みになり、
+ * その誤差がそのまま補正のずれになる。塊の周りだけを 1px 刻みで見直せば、
+ * 走査の重さは変わらないまま位置が細かく決まる。
+ */
+function refineHole(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  blob: Blob,
+  threshold: number,
+  look: HoleLook,
+  step: number
+): PegHole {
+  const margin = step * 2;
+  const fromX = Math.max(0, Math.floor(blob.x - blob.width / 2 - margin));
+  const toX = Math.min(width - 1, Math.ceil(blob.x + blob.width / 2 + margin));
+  const fromY = Math.max(0, Math.floor(blob.y - blob.height / 2 - margin));
+  const toY = Math.min(height - 1, Math.ceil(blob.y + blob.height / 2 + margin));
+
+  let count = 0;
+  let sumX = 0;
+  let sumY = 0;
+  let minX = toX;
+  let maxX = fromX;
+  let minY = toY;
+  let maxY = fromY;
+
+  for (let y = fromY; y <= toY; y++) {
+    for (let x = fromX; x <= toX; x++) {
+      const idx = (y * width + x) * 4;
+      const a = data[idx + 3];
+      const isHole =
+        look === 'dark'
+          ? a > 0 && (data[idx] + data[idx + 1] + data[idx + 2]) / 3 <= threshold
+          : a === 0;
+      if (!isHole) continue;
+      count += 1;
+      sumX += x;
+      sumY += y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (count === 0) {
+    return { x: blob.x, y: blob.y, width: blob.width, height: blob.height, area: blob.area };
+  }
+
+  return {
+    x: sumX / count,
+    y: sumY / count,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+    area: count,
+  };
 }
 
 /**
@@ -372,17 +435,18 @@ export function detectPegHoles(
         continue;
       }
 
-      const [left, mid, right] = picked.holes;
+      const refined = picked.holes.map((b) => refineHole(data, width, height, b, level, look, step));
+      const [left, mid, right] = refined;
     const angle = (Math.atan2(right.y - left.y, right.x - left.x) * 180) / Math.PI;
     const spacing = (mid.x - left.x + (right.x - mid.x)) / 2;
 
     return {
       detected: true,
       status: 'success',
-      holes: [toHole(left), toHole(mid), toHole(right)],
+      holes: refined,
       center: { x: mid.x, y: mid.y },
-      angle: Math.round(angle * 1000) / 1000,
-      spacing: Math.round(spacing * 10) / 10,
+      angle: Math.round(angle * 10000) / 10000,
+      spacing: Math.round(spacing * 1000) / 1000,
       edge: band.edge,
       message: `${band.edge === 'top' ? '上端' : '下端'}で 3 つの穴を検出 (間隔 ${Math.round(spacing)}px / 傾き ${angle.toFixed(2)}°)`,
     };
@@ -415,22 +479,33 @@ export function pegTransformTo(
   width: number,
   height: number
 ): PegTransform {
-  if (!detection.detected) return { offsetX: 0, offsetY: 0, rotation: 0 };
+  if (!detection.detected) return { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 };
 
   const rotation = reference.angle - detection.angle;
+
+  /**
+   * 倍率は穴の間隔の比。
+   * ⚠️ 大きく外れた値は捨てて 1 にすること。穴を取り違えたときに、
+   * 絵ごと拡大・縮小してしまう。スキャナの送りむらは数 % に収まる。
+   */
+  const ratio = detection.spacing > 0 ? reference.spacing / detection.spacing : 1;
+  const scale = ratio > 0.9 && ratio < 1.1 ? ratio : 1;
+
   const rad = (rotation * Math.PI) / 180;
   const cx = width / 2;
   const cy = height / 2;
 
+  // 画像の中心を軸に「回して・拡大縮小して」から平行移動する順に合わせる
   const dx = detection.center.x - cx;
   const dy = detection.center.y - cy;
-  const rotatedX = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
-  const rotatedY = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+  const movedX = cx + (dx * Math.cos(rad) - dy * Math.sin(rad)) * scale;
+  const movedY = cy + (dx * Math.sin(rad) + dy * Math.cos(rad)) * scale;
 
   return {
-    offsetX: Math.round((reference.center.x - rotatedX) * 10) / 10,
-    offsetY: Math.round((reference.center.y - rotatedY) * 10) / 10,
-    rotation: Math.round(rotation * 1000) / 1000,
+    offsetX: Math.round((reference.center.x - movedX) * 100) / 100,
+    offsetY: Math.round((reference.center.y - movedY) * 100) / 100,
+    rotation: Math.round(rotation * 10000) / 10000,
+    scale: Math.round(scale * 100000) / 100000,
   };
 }
 
@@ -458,14 +533,15 @@ export function bakePegTransform(
   const rad = (transform.rotation * Math.PI) / 180;
   const cos = Math.cos(-rad);
   const sin = Math.sin(-rad);
+  const invScale = 1 / (transform.scale || 1);
   const cx = width / 2;
   const cy = height / 2;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      // 出力の画素が、元のどこから来たのかを逆にたどる
-      const tx = x - transform.offsetX - cx;
-      const ty = y - transform.offsetY - cy;
+      // 出力の画素が、元のどこから来たのかを逆にたどる (平行移動 → 倍率 → 回転の順で戻す)
+      const tx = (x - transform.offsetX - cx) * invScale;
+      const ty = (y - transform.offsetY - cy) * invScale;
       const sx = Math.round(cx + tx * cos - ty * sin);
       const sy = Math.round(cy + tx * sin + ty * cos);
       if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;

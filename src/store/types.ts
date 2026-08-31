@@ -64,6 +64,8 @@ export interface PegStabilizerState {
   offsetX: number;
   offsetY: number;
   rotation: number;
+  /** 穴の間隔から求めた倍率 (スキャナの送りむらの補正) */
+  scale: number;
   manualX: number;
   manualY: number;
   manualRotation: number;

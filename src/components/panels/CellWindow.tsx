@@ -895,8 +895,10 @@ export const CellWindow: React.FC = () => {
           const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
           const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
 
+          // ⚠️ 焼き込みと同じ順 (回す → 倍率 → 平行移動)。順が違うと画面と結果がずれる
           ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
           ctx.rotate(totalRot);
+          ctx.scale(pegStabilizer.scale, pegStabilizer.scale);
           ctx.translate(-canvas.width / 2, -canvas.height / 2);
         }
 
@@ -963,6 +965,7 @@ export const CellWindow: React.FC = () => {
             const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
             ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
             ctx.rotate(totalRot);
+            ctx.scale(pegStabilizer.scale, pegStabilizer.scale);
             ctx.translate(-canvas.width / 2, -canvas.height / 2);
           }
           ctx.strokeStyle = '#10B981';
