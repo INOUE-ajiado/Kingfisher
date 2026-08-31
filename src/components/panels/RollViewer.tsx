@@ -7,7 +7,14 @@ import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
 import { resolveDropHandles } from '../../engine/fileSystemPath';
-import { registerRollVideo, getRollVideo, otherRollId } from './rollVideoRegistry';
+import {
+  registerRollVideo,
+  getRollVideo,
+  otherRollId,
+  beginPairedPlayback,
+  endPairedPlayback,
+  getPairedPlaybackOffset,
+} from './rollVideoRegistry';
 
 /** 再生速度の選択肢 */
 const SPEEDS = [0.25, 0.5, 1, 2];
@@ -137,9 +144,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     return roll.sync ? `再生連動 ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : '再生連動 OFF';
   }, []);
 
-  /** 連動している相手の映像。連動していなければ null */
+  /**
+   * 足並みを揃える相手の映像。
+   *
+   * ⚠️ 再生連動 (🔗) が入っているときだけでなく、Space の同時再生中も返すこと。
+   * 連動 OFF のまま 2 本を流すと、デコードの立ち上がりや尺の違いでずれていき、
+   * 見比べにならない (実測で 1.6 秒ずれた / 2026-08-31 の報告)。
+   */
   const partnerVideo = useCallback((): HTMLVideoElement | null => {
-    if (!usePaintStore.getState().roll.sync) return null;
+    if (!usePaintStore.getState().roll.sync && getPairedPlaybackOffset() === null) return null;
     return getRollVideo(otherRollId(rollId));
   }, [rollId]);
 
@@ -149,8 +162,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    */
   const partnerTimeFor = useCallback(
     (time: number): number => {
-      const { syncOffset } = usePaintStore.getState().roll;
-      return rollId === 'rollA' ? time + syncOffset : time - syncOffset;
+      const { sync, syncOffset } = usePaintStore.getState().roll;
+      // 連動中は 🔗 を押した時点の差、そうでなければ同時再生を始めた時点の差
+      const offset = sync ? syncOffset : getPairedPlaybackOffset() ?? 0;
+      return rollId === 'rollA' ? time + offset : time - offset;
     },
     [rollId]
   );
@@ -235,6 +250,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     fpsSamplesRef.current = [];
     setIsPlaying(false);
     setDuration(0);
+    // ⚠️ 同時再生の時刻差も手放す。別の素材へ移ったら前の差に意味は無い
+    endPairedPlayback();
   }, [view.objectUrl]);
 
   useEffect(() => {
@@ -319,6 +336,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (!video.paused) {
       video.pause();
       partner?.pause();
+      endPairedPlayback();
       logDebug(
         'roll',
         `一時停止 — ${tone.label} から${both ? ' (Space: 2 面同時)' : ''}`,
@@ -327,12 +345,29 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       return;
     }
 
+    /**
+     * ⚠️ Space の同時再生は、流している間の時刻差を覚えて足並みを保つ。
+     * ⚠️ 終わりまで再生しきった状態から押したときは、2 本とも頭へ戻すこと。
+     * ブラウザは終わった映像だけを頭から流し直すので、そのままだと
+     * 片方が途中、片方が頭という並びになり、見比べにならない。
+     */
+    if (both && partner) {
+      if (video.ended) {
+        video.currentTime = 0;
+        partner.currentTime = 0;
+        beginPairedPlayback(0);
+      } else {
+        beginPairedPlayback(rollId === 'rollA' ? partner.currentTime - video.currentTime : video.currentTime - partner.currentTime);
+      }
+    }
+
     // 連動中は流し始める前に頭を揃える
     syncPartnerTime(video.currentTime);
     logDebug(
       'roll',
       `再生 — ${tone.label} から${both ? ' (Space: 2 面同時)' : ''}${partner ? ' / 相手も動かす' : ''}`,
-      `${describeRollTimes()} / ${describeRollSync()}`
+      `${describeRollTimes()} / ${describeRollSync()}` +
+        `${getPairedPlaybackOffset() !== null ? ` / 同時再生の時刻差 ${getPairedPlaybackOffset()!.toFixed(3)}s を保つ` : ''}`
     );
     // ⚠️ 握り潰さないこと。ボタンからの再生はユーザー操作なので普通は通るが、
     // 自動再生ポリシーで弾かれると「押しても何も起きない」だけになり原因が追えない。
