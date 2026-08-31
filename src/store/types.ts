@@ -7,6 +7,7 @@
  */
 
 import { TGAImage } from '../engine/tga';
+import { PegHole, PegReference } from '../engine/pegStabilizer';
 import { RenamePlanItem } from '../engine/renamePlan';
 import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo, DroppedVideo } from '../engine/videoSource';
@@ -67,6 +68,15 @@ export interface PegStabilizerState {
   manualY: number;
   manualRotation: number;
   showGuide: boolean;
+  /** 直近の検出で見つかった穴 (左・中央・右)。ガイド表示に使う */
+  holes: PegHole[];
+  /**
+   * 合わせ先。ふつうはカットの 1 枚目を基準にして、以降をそこへ重ねる。
+   * ⚠️ 「理想の位置」を決め打ちにしないこと。紙のサイズもタップの間隔も現場ごとに違う。
+   */
+  reference: PegReference | null;
+  /** 直前の結果の説明 (見つからなかった理由もここに入れる) */
+  message: string;
 }
 
 export interface ReferenceCanvasState {
@@ -545,7 +555,12 @@ export interface ViewSlice {
   togglePegStabilizerEnabled: () => void
   setPegManualOffset: (x: number, y: number, rot: number) => void
   togglePegGuide: () => void
+  /** 表示中のコマのタップ穴を検出し、基準へ合わせる (基準が無ければこのコマを基準にする) */
   runPegStabilizerAutoDetect: () => void
+  /** 表示中のコマを基準にし直す */
+  setPegReferenceFromCurrent: () => void
+  /** 基準を捨てて補正を戻す */
+  clearPegReference: () => void
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
   /**
    * Win A を出しているか。

@@ -24,6 +24,8 @@ export const ToolOptionsPanel: React.FC = () => {
     pegStabilizer,
     togglePegStabilizerEnabled,
     runPegStabilizerAutoDetect,
+    setPegReferenceFromCurrent,
+    clearPegReference,
     setPegManualOffset,
     togglePegGuide,
     referenceCanvas,
@@ -66,9 +68,49 @@ export const ToolOptionsPanel: React.FC = () => {
           <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 text-[11px]">
             <div className="flex items-center justify-between text-slate-600 dark:text-slate-400 font-mono">
               <span>ステータス:</span>
-              <span className={`font-bold ${pegStabilizer.status === 'success' ? 'text-emerald-500' : 'text-slate-400'}`}>
-                {pegStabilizer.status === 'success' ? '補正適用中' : '未検出'}
+              <span
+                className={`font-bold ${
+                  pegStabilizer.status === 'success'
+                    ? 'text-emerald-500'
+                    : pegStabilizer.status === 'failed'
+                    ? 'text-amber-500'
+                    : 'text-slate-400'
+                }`}
+              >
+                {pegStabilizer.status === 'success'
+                  ? pegStabilizer.reference
+                    ? '基準へ補正中'
+                    : '基準を設定'
+                  : pegStabilizer.status === 'failed'
+                  ? '検出できず'
+                  : '未検出'}
               </span>
+            </div>
+
+            {/* ⚠️ 理由を必ず出すこと。黙って 0 だと、補正が効いていないのか
+                ずれていないのかが区別できない */}
+            {pegStabilizer.message && (
+              <div className="text-[10px] leading-snug text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/60 rounded px-1.5 py-1 break-all">
+                {pegStabilizer.message}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                onClick={setPegReferenceFromCurrent}
+                title="このコマのタップ穴を合わせ先にする (以降のコマはここへ揃える)"
+                className="py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[10px]"
+              >
+                このコマを基準に
+              </button>
+              <button
+                onClick={clearPegReference}
+                disabled={!pegStabilizer.reference}
+                title="基準を捨てて補正を戻す"
+                className="py-1 rounded bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold text-[10px] disabled:opacity-40"
+              >
+                基準を解除
+              </button>
             </div>
 
             <div className="grid grid-cols-3 gap-1 text-[10px] font-mono">
