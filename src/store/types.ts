@@ -581,10 +581,17 @@ export interface ViewSlice {
   /** 検出の調整値を変える (変えたら DEBUG ログに残る) */
   setPegOptions: (options: Partial<PegStabilizerState['options']>) => void
   /**
-   * 選んだファイルにタップ補正を焼き込んで上書きする。
-   * ⚠️ 元に戻せないので、呼び出し側で必ず確認を取ること。
+   * 選んだファイルにタップ補正を焼き込む。
+   *
+   * mode 'copy'      … 別フォルダへ書き出す (元は触らない / 既定・推奨)
+   * mode 'overwrite' … 元のファイルを上書きする。backup を付けると元を残す
+   * ⚠️ 上書きは元に戻せないので、呼び出し側で必ず確認を取ること。
    */
-  applyPegCorrectionToFiles: (view: 0 | 1, paths: string[]) => Promise<{ ok: boolean; message: string; applied: number }>
+  applyPegCorrectionToFiles: (
+    view: 0 | 1,
+    paths: string[],
+    options?: { mode?: 'copy' | 'overwrite'; backup?: boolean }
+  ) => Promise<{ ok: boolean; message: string; applied: number }>
   // --- 2画面分割 (Split View) & 連動 (Sync Mode) ---
   /**
    * Win A を出しているか。

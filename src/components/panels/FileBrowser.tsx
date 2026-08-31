@@ -496,8 +496,7 @@ export const FileBrowser: React.FC = () => {
    * ⚠️ 上書きするので必ず確認を取る。基準が無ければ並びの先頭が基準になり、
    * その 1 枚は動かない — それを先に伝えること。
    */
-  const handleApplyPeg = async () => {
-    const target = markedInOrder;
+  const applyPegTo = async (target: string[], mode: 'copy' | 'overwrite') => {
     if (target.length === 0) return;
 
     const names = target.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
@@ -505,15 +504,33 @@ export const FileBrowser: React.FC = () => {
     const base = pegStabilizer.reference
       ? '今の基準へ合わせます。'
       : '先頭のファイルを基準にし、その 1 枚はそのまま残します。';
+
+    if (mode === 'copy') {
+      const ok = window.confirm(
+        `${target.length} 件にタップ補正を焼き込み、選んだフォルダへ書き出します。\n` +
+          `元のファイルは触りません。\n${base}\n\n${names}${more}`
+      );
+      if (!ok) return;
+      const result = await applyPegCorrectionToFiles(markedView, target, { mode: 'copy' });
+      alert(result.message);
+      return;
+    }
+
+    // ⚠️ 上書きは元に戻せない。控えを残すかどうかまで確かめる
     const ok = window.confirm(
-      `${target.length} 件にタップ補正を焼き込みます。元のファイルを上書きし、元に戻せません。\n` +
-        `${base}\n\n${names}${more}`
+      `${target.length} 件を上書きします。元に戻せません。\n${base}\n\n${names}${more}`
     );
     if (!ok) return;
-
-    const result = await applyPegCorrectionToFiles(markedView, target);
+    const backup = window.confirm('上書きの前に、元のファイルを _orig 付きで残しますか？');
+    const result = await applyPegCorrectionToFiles(markedView, target, { mode: 'overwrite', backup });
     alert(result.message);
   };
+
+  const handleApplyPeg = () => applyPegTo(markedInOrder, 'copy');
+  const handleApplyPegOverwrite = () => applyPegTo(markedInOrder, 'overwrite');
+
+  /** フォルダ全体 (そのビューの一覧すべて) に適用する */
+  const handleApplyPegToFolder = () => applyPegTo(markedView === 1 ? fileListB : fileListA, 'copy');
 
   const handleDelete = async () => {
     const names = markedInOrder.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
@@ -553,10 +570,26 @@ export const FileBrowser: React.FC = () => {
       id: 'peg',
       label:
         markedInOrder.length > 1
-          ? `タップ補正を焼き込む (${markedInOrder.length} 項目)`
-          : 'タップ補正を焼き込む',
+          ? `タップ補正 → 別フォルダへ書き出す (${markedInOrder.length} 項目)`
+          : 'タップ補正 → 別フォルダへ書き出す',
       icon: <Anchor className="w-3.5 h-3.5" />,
       onSelect: handleApplyPeg,
+    },
+    {
+      id: 'peg-folder',
+      label: `タップ補正 → フォルダ全体を書き出す (${(markedView === 1 ? fileListB : fileListA).length} 枚)`,
+      icon: <Anchor className="w-3.5 h-3.5" />,
+      onSelect: handleApplyPegToFolder,
+    },
+    {
+      id: 'peg-overwrite',
+      label:
+        markedInOrder.length > 1
+          ? `タップ補正で上書き (${markedInOrder.length} 項目)`
+          : 'タップ補正で上書き',
+      icon: <Anchor className="w-3.5 h-3.5" />,
+      danger: true,
+      onSelect: handleApplyPegOverwrite,
     },
     { type: 'divider' },
     {

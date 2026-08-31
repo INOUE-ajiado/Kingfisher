@@ -15,6 +15,28 @@ import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
 
+/**
+ * 相対パスの途中のフォルダを作りながら、書き込み先のファイルを用意する。
+ *
+ * ⚠️ ルート名で始まるパスは 1 段落とすこと。ハンドルはそのルートを指しているので、
+ * 落とさないと「Cut の中の Cut」を作ってしまう (resolveFileHandle と同じ約束)。
+ */
+async function createFileIn(dirHandle: any, path: string, rootName?: string | null): Promise<any> {
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  if (rootName && parts.length > 1 && parts[0] === rootName) parts.shift();
+
+  let dir = dirHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i], { create: true });
+  }
+  return dir.getFileHandle(parts[parts.length - 1], { create: true });
+}
+
+/** 上書きの前に残す控えの名前 (a0001.tga → a0001_orig.tga) */
+function backupPathFor(path: string): string {
+  return path.replace(/(\.[^.]+)$/, '_orig$1');
+}
+
 export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set, get) => ({
   // 色指定参照ウィンドウ (Color Spec Reference Window)
   referenceCanvas: {
@@ -246,16 +268,37 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
    *   どこまで進んだのか分からないと、やり直す判断ができない。
    * ⚠️ 書き終えたらキャッシュを捨てること。捨てないと補正前の画像が出続ける。
    */
-  applyPegCorrectionToFiles: async (view, paths) => {
+  applyPegCorrectionToFiles: async (view, paths, options) => {
     const state = get();
     const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
     const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+    const mode = options?.mode ?? 'copy';
+    const backup = options?.backup ?? false;
 
     if (paths.length === 0) return { ok: true, message: '対象がありません。', applied: 0 };
     if (!folderHandle) {
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, applied: 0 };
     }
-    if (!(await ensureWritePermission(folderHandle))) {
+
+    /**
+     * ⚠️ 既定は「別フォルダへ書き出す」。制作データを上書きするのは、
+     * 意図してそう選んだときだけにする。
+     */
+    let outputHandle: any = null;
+    if (mode === 'copy') {
+      if (!('showDirectoryPicker' in window)) {
+        return { ok: false, message: 'この環境では書き出し先フォルダを選べません。', applied: 0 };
+      }
+      try {
+        outputHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return { ok: true, message: '書き出しをやめました。', applied: 0 };
+        return { ok: false, message: `書き出し先を開けませんでした: ${err?.message || err}`, applied: 0 };
+      }
+      if (!(await ensureWritePermission(outputHandle))) {
+        return { ok: false, message: '書き出し先への書き込みが許可されませんでした。', applied: 0 };
+      }
+    } else if (!(await ensureWritePermission(folderHandle))) {
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, applied: 0 };
     }
 
@@ -300,11 +343,28 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         }
 
         const moved = bakePegTransform(image.data, image.width, image.height, transform);
-        const writable = await fileHandle.createWritable();
-        await writable.write(encodeTGA({ ...image, data: moved }));
-        await writable.close();
+        const encoded = encodeTGA({ ...image, data: moved });
 
-        get().invalidateCachedImage(get().getImageCacheKey(view, path));
+        if (mode === 'copy') {
+          // 元のフォルダ構成を保ったまま、書き出し先へ同じ場所へ置く
+          const target = await createFileIn(outputHandle, path);
+          const writable = await target.createWritable();
+          await writable.write(encoded);
+          await writable.close();
+        } else {
+          if (backup) {
+            // ⚠️ 上書きの前に元を残す。焼き込みは元に戻せない
+            const original = await file.arrayBuffer();
+            const backupHandle = await createFileIn(folderHandle, backupPathFor(path), state.rootFolderName);
+            const backupWritable = await backupHandle.createWritable();
+            await backupWritable.write(original);
+            await backupWritable.close();
+          }
+          const writable = await fileHandle.createWritable();
+          await writable.write(encoded);
+          await writable.close();
+          get().invalidateCachedImage(get().getImageCacheKey(view, path));
+        }
         applied += 1;
         logDebug(
           'view',
@@ -328,10 +388,16 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     get().triggerRender();
 
     const detail = skipped.length > 0 ? `\n\n見送り ${skipped.length} 件:\n${skipped.slice(0, 8).join('\n')}` : '';
-    logDebug('view', `タップ補正の焼き込みが完了: ${applied} 件 / 見送り ${skipped.length} 件`);
+    const where =
+      mode === 'copy'
+        ? `書き出し先「${outputHandle?.name ?? ''}」へ`
+        : backup
+        ? '元のファイルへ (元は _orig 付きで残しました)'
+        : '元のファイルへ';
+    logDebug('view', `タップ補正の焼き込みが完了: ${applied} 件 / 見送り ${skipped.length} 件`, where);
     return {
       ok: true,
-      message: `${applied} 件にタップ補正を焼き込みました。${detail}`,
+      message: `${applied} 件にタップ補正を焼き込みました (${where})。${detail}`,
       applied,
     };
   },
