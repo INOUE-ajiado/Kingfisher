@@ -106,6 +106,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     holes: [],
     reference: null,
     message: '',
+    options: { autoThreshold: true, threshold: 70, searchPercent: 28 },
   },
 
   togglePegStabilizerEnabled: () =>
@@ -147,7 +148,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       return;
     }
 
-    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height);
+    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height, {
+      threshold: pegStabilizer.options.threshold,
+      autoThreshold: pegStabilizer.options.autoThreshold,
+      searchRatio: pegStabilizer.options.searchPercent / 100,
+    });
 
     if (!detection.detected) {
       set((state) => ({
@@ -198,7 +203,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     const { currentImage, triggerRender } = get();
     if (!currentImage) return;
 
-    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height);
+    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height, {
+      threshold: get().pegStabilizer.options.threshold,
+      autoThreshold: get().pegStabilizer.options.autoThreshold,
+      searchRatio: get().pegStabilizer.options.searchPercent / 100,
+    });
     if (!detection.detected) {
       set((state) => ({
         pegStabilizer: { ...state.pegStabilizer, status: 'failed', holes: [], message: detection.message },
@@ -264,7 +273,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         const file = await fileHandle.getFile();
         const image = decodeTGA(await file.arrayBuffer());
 
-        const detection = detectPegHoles(image.data, image.width, image.height);
+        const detection = detectPegHoles(image.data, image.width, image.height, {
+          threshold: state.pegStabilizer.options.threshold,
+          autoThreshold: state.pegStabilizer.options.autoThreshold,
+          searchRatio: state.pegStabilizer.options.searchPercent / 100,
+        });
         if (!detection.detected) {
           skipped.push(`${path} (${detection.message})`);
           continue;
@@ -319,6 +332,17 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       applied,
     };
   },
+
+  setPegOptions: (options) =>
+    set((state) => {
+      const next = { ...state.pegStabilizer.options, ...options };
+      logDebug(
+        'view',
+        'タップ穴の検出条件を変更',
+        `しきい値 ${next.autoThreshold ? '自動' : next.threshold} / 探索範囲 端から ${next.searchPercent}%`
+      );
+      return { pegStabilizer: { ...state.pegStabilizer, options: next } };
+    }),
 
   clearPegReference: () =>
     set((state) => {
