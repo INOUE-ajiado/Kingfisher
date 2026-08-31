@@ -77,6 +77,18 @@ export interface PegStabilizerState {
   reference: PegReference | null;
   /** 直前の結果の説明 (見つからなかった理由もここに入れる) */
   message: string;
+  /**
+   * 検出の調整値。自動で見つからない紙のために手で決められるようにする。
+   * ⚠️ 既定は自動。素材ごとに毎回いじらせないこと。
+   */
+  options: {
+    /** しきい値を画像から見当づけるか */
+    autoThreshold: boolean;
+    /** 手動のしきい値 (0-255)。これ以下の明るさを穴とみなす */
+    threshold: number;
+    /** 紙の端から何 % を探すか */
+    searchPercent: number;
+  };
 }
 
 export interface ReferenceCanvasState {
@@ -564,6 +576,8 @@ export interface ViewSlice {
   setPegReferenceFromCurrent: () => void
   /** 基準を捨てて補正を戻す */
   clearPegReference: () => void
+  /** 検出の調整値を変える (変えたら DEBUG ログに残る) */
+  setPegOptions: (options: Partial<PegStabilizerState['options']>) => void
   /**
    * 選んだファイルにタップ補正を焼き込んで上書きする。
    * ⚠️ 元に戻せないので、呼び出し側で必ず確認を取ること。

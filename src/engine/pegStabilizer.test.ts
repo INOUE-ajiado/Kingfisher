@@ -156,6 +156,39 @@ describe('タップ穴の検出', () => {
     expect(result.holes).toHaveLength(3);
   });
 
+  it('しきい値を手で決めたときは、その値だけで探す', () => {
+    // ⚠️ 手で決めた値に勝手な候補を混ぜると、「この値でどう見えるか」を確かめられない
+    const data = blankPaper();
+    const grey = (cx: number, cy: number, r: number) => {
+      for (let y = cy - r; y <= cy + r; y++)
+        for (let x = cx - r; x <= cx + r; x++) {
+          if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) continue;
+          const o = (y * W + x) * 4;
+          data[o] = 150; data[o + 1] = 150; data[o + 2] = 150; data[o + 3] = 255;
+        }
+    };
+    grey(W / 2 - 220, 60, 12);
+    grey(W / 2, 60, 15);
+    grey(W / 2 + 220, 60, 12);
+
+    // 60 以下だけを穴とみなす → 150 の穴は見つからない
+    expect(detectPegHoles(data, W, H, { autoThreshold: false, threshold: 60 }).detected).toBe(false);
+    // 180 まで広げれば見つかる
+    expect(detectPegHoles(data, W, H, { autoThreshold: false, threshold: 180 }).detected).toBe(true);
+  });
+
+  it('探索範囲を広げると、内側にある穴も見つかる', () => {
+    const data = blankPaper();
+    // 上端から 40% あたりに穴がある紙 (余白の大きいスキャン)
+    const y = Math.round(H * 0.38);
+    punch(data, W, W / 2 - 220, y, 11, 11);
+    punch(data, W, W / 2, y, 18, 10);
+    punch(data, W, W / 2 + 220, y, 11, 11);
+
+    expect(detectPegHoles(data, W, H, { searchRatio: 0.28 }).detected).toBe(false);
+    expect(detectPegHoles(data, W, H, { searchRatio: 0.5 }).detected).toBe(true);
+  });
+
   it('失敗の説明に、どこで何個まで行ったかが入る', () => {
     // ⚠️ 「0 個でした」だけでは、しきい値が悪いのか大きさの見当が外れているのか
     // 分からず、次に何を直せばよいか決められない

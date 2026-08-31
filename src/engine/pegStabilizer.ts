@@ -67,6 +67,12 @@ export interface PegDetectOptions {
   searchRatio?: number;
   /** 走査に使う格子の目安の長辺 (px)。大きい画像はここまで間引く */
   sampleTarget?: number;
+  /**
+   * しきい値を画像から見当づけるか。
+   * ⚠️ false のときは threshold だけを使うこと。手で決めた値に勝手な候補を混ぜると、
+   * 「この値でどう見えるか」を確かめられない。
+   */
+  autoThreshold?: boolean;
 }
 
 const DEFAULTS = {
@@ -305,6 +311,7 @@ export function detectPegHoles(
   }
 
   const threshold = options.threshold ?? DEFAULTS.threshold;
+  const autoThreshold = options.autoThreshold ?? true;
   const searchRatio = options.searchRatio ?? DEFAULTS.searchRatio;
   const sampleTarget = options.sampleTarget ?? DEFAULTS.sampleTarget;
   const step = Math.max(1, Math.round(Math.max(width, height) / sampleTarget));
@@ -330,9 +337,9 @@ export function detectPegHoles(
     const thresholds =
       look === 'transparent'
         ? [threshold]
-        : Array.from(
-            new Set([adaptiveThreshold(data, width, band.fromY, band.toY, step), threshold, 130])
-          );
+        : autoThreshold
+        ? Array.from(new Set([adaptiveThreshold(data, width, band.fromY, band.toY, step), threshold, 130]))
+        : [threshold];
 
     for (const level of thresholds) {
       const blobs = findBlobs(data, width, band.fromY, band.toY, level, step, look);

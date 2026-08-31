@@ -26,6 +26,7 @@ export const ToolOptionsPanel: React.FC = () => {
     runPegStabilizerAutoDetect,
     setPegReferenceFromCurrent,
     clearPegReference,
+    setPegOptions,
     setPegManualOffset,
     togglePegGuide,
     referenceCanvas,
@@ -96,6 +97,53 @@ export const ToolOptionsPanel: React.FC = () => {
                 {pegStabilizer.message}
               </div>
             )}
+
+            {/* 自動で見つからない紙のための手動調整。⚠️ 既定は自動のまま */}
+            <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+              <div className="flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400">
+                <span>探索範囲 (紙の端から)</span>
+                <span className="font-mono font-bold">{pegStabilizer.options.searchPercent}%</span>
+              </div>
+              <input
+                type="range"
+                min={8}
+                max={60}
+                step={1}
+                value={pegStabilizer.options.searchPercent}
+                onChange={(e) => setPegOptions({ searchPercent: Number(e.target.value) })}
+                title="タップ穴を探す帯の広さ。穴が内側にある紙では広げる"
+                className="w-full accent-blue-600 cursor-pointer"
+              />
+
+              <label className="flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pegStabilizer.options.autoThreshold}
+                  onChange={(e) => setPegOptions({ autoThreshold: e.target.checked })}
+                  className="rounded accent-blue-600 w-3.5 h-3.5"
+                />
+                <span>しきい値を自動で決める</span>
+              </label>
+
+              {!pegStabilizer.options.autoThreshold && (
+                <>
+                  <div className="flex items-center justify-between text-[10px] text-slate-600 dark:text-slate-400">
+                    <span>しきい値 (これ以下を穴とみなす)</span>
+                    <span className="font-mono font-bold">{pegStabilizer.options.threshold}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={220}
+                    step={1}
+                    value={pegStabilizer.options.threshold}
+                    onChange={(e) => setPegOptions({ threshold: Number(e.target.value) })}
+                    title="穴が灰色に写るスキャンでは上げる"
+                    className="w-full accent-blue-600 cursor-pointer"
+                  />
+                </>
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-1">
               <button
