@@ -38,7 +38,8 @@ export const DebugLogPanel: React.FC = () => {
   const [follow, setFollow] = useState(true);
   /** 2 画面の連動を追うときは、セルの移動と連動の行だけに絞る */
   const [syncOnly, setSyncOnly] = useState(false);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  /** ログの一覧そのもの。追従はこの中だけで行う */
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   // ⚠️ まとめて 1 つのオブジェクトで購読しないこと。毎回新しい参照になり描き直しが止まらない
   const isSplitView = usePaintStore((s) => s.isSplitView);
@@ -91,9 +92,17 @@ export const DebugLogPanel: React.FC = () => {
     ...(rollOpen ? [rollStatus] : []),
   ];
 
-  // 追従が入っているときだけ、新しい行へスクロールする
+  /**
+   * 追従が入っているときだけ、新しい行へスクロールする。
+   *
+   * ⚠️ scrollIntoView を使わないこと。祖先 (右サイドパネルの下段) まで一緒に
+   * スクロールし、ツールオプションが画面の外へ押し出される (2026-09-01 に実測)。
+   * 自分の一覧の scrollTop だけを動かす。
+   */
   useEffect(() => {
-    if (follow) bottomRef.current?.scrollIntoView({ block: 'nearest' });
+    if (!follow) return;
+    const list = listRef.current;
+    if (list) list.scrollTop = list.scrollHeight;
   }, [entries, follow]);
 
   /**
@@ -231,7 +240,7 @@ export const DebugLogPanel: React.FC = () => {
         {mismatched && <div className="break-all">⚠️ 本来 Win B は {expectedB} のはず (「差を揃える」で直せます)</div>}
       </div>
 
-      <div className="flex-1 overflow-y-auto font-mono text-[10px] leading-relaxed min-h-0">
+      <div ref={listRef} className="flex-1 overflow-y-auto font-mono text-[10px] leading-relaxed min-h-0">
         {entries.length === 0 ? (
           <div className="text-[10px] text-slate-400 dark:text-slate-500 py-2 px-1 leading-relaxed font-sans">
             {syncOnly ? '2 画面の連動に関する記録はまだありません。' : 'まだ記録がありません。'}
@@ -273,7 +282,6 @@ export const DebugLogPanel: React.FC = () => {
             );
           })
         )}
-        <div ref={bottomRef} />
       </div>
     </div>
   );
