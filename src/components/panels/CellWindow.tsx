@@ -923,26 +923,57 @@ export const CellWindow: React.FC = () => {
         }
       }
 
-      // 4. 理想タップ穴ガイドオーバーレイ (Peg Guide)
+      /**
+       * 4. タップ穴のガイド
+       *
+       * 赤 = 合わせ先 (基準にしたコマの穴)、緑 = 今のコマの穴を補正した位置。
+       * ⚠️ 決め打ちの円を描かないこと。紙のサイズもタップの間隔も現場ごとに違う。
+       * 検出した実際の位置を出さないと、合っているのか外しているのかが分からない。
+       */
       if (pegStabilizer.showGuide) {
-        ctx.strokeStyle = '#EF4444'; // 赤アウトライン
-        ctx.lineWidth = 2;
-        const cx = canvas.width / 2;
-        const cy = 50;
+        const ref = pegStabilizer.reference;
 
-        // 中央長円
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, 14, 8, 0, 0, Math.PI * 2);
-        ctx.stroke();
+        if (ref) {
+          ctx.strokeStyle = '#EF4444';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          [-ref.spacing, 0, ref.spacing].forEach((dx) => {
+            const rad = (ref.angle * Math.PI) / 180;
+            ctx.beginPath();
+            ctx.ellipse(
+              ref.center.x + dx * Math.cos(rad),
+              ref.center.y + dx * Math.sin(rad),
+              dx === 0 ? 16 : 10,
+              dx === 0 ? 10 : 10,
+              rad,
+              0,
+              Math.PI * 2
+            );
+            ctx.stroke();
+          });
+          ctx.setLineDash([]);
+        }
 
-        // 左右正円
-        ctx.beginPath();
-        ctx.arc(cx - 140, cy, 8, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(cx + 140, cy, 8, 0, Math.PI * 2);
-        ctx.stroke();
+        if (pegStabilizer.holes.length === 3) {
+          // 画像と同じ補正をかけて描く。基準の赤と重なれば合っている
+          ctx.save();
+          if (pegStabilizer.enabled) {
+            const totalX = pegStabilizer.offsetX + pegStabilizer.manualX;
+            const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
+            const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
+            ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
+            ctx.rotate(totalRot);
+            ctx.translate(-canvas.width / 2, -canvas.height / 2);
+          }
+          ctx.strokeStyle = '#10B981';
+          ctx.lineWidth = 2;
+          pegStabilizer.holes.forEach((hole) => {
+            ctx.beginPath();
+            ctx.ellipse(hole.x, hole.y, Math.max(6, hole.width / 2), Math.max(5, hole.height / 2), 0, 0, Math.PI * 2);
+            ctx.stroke();
+          });
+          ctx.restore();
+        }
       }
 
       // 5. Lasso Preview

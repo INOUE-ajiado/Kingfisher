@@ -3,7 +3,7 @@
  */
 
 import { StateCreator } from 'zustand';
-import { detectPegHolesAndCalculateTransform } from '../../engine/pegStabilizer';
+import { detectPegHoles, pegTransformTo, referenceFromDetection } from '../../engine/pegStabilizer';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
@@ -96,6 +96,9 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     manualY: 0,
     manualRotation: 0,
     showGuide: false,
+    holes: [],
+    reference: null,
+    message: '',
   },
 
   togglePegStabilizerEnabled: () =>
@@ -118,28 +121,118 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       pegStabilizer: { ...state.pegStabilizer, showGuide: !state.pegStabilizer.showGuide },
     })),
 
+  /**
+   * 表示中のコマのタップ穴を検出し、基準へ重ねる。
+   *
+   * ⚠️ 「理想の位置」へ合わせないこと。紙のサイズもタップの間隔も現場ごとに違うので、
+   * 合わせ先は「基準にしたコマ」で決める。基準が無ければ、このコマを基準にする
+   * (オートフィードのスキャンを 1 枚目に揃える、という実際の使い方に合わせる)。
+   * ⚠️ 見つからなかったときは理由を残すこと。黙って 0 を返すと、
+   * 補正が効いていないのか、ずれていないのかが区別できない。
+   */
   runPegStabilizerAutoDetect: () => {
-    const { currentImage, triggerRender } = get();
-    if (!currentImage) return;
+    const { currentImage, triggerRender, pegStabilizer } = get();
+    if (!currentImage) {
+      set((state) => ({
+        pegStabilizer: { ...state.pegStabilizer, status: 'failed', message: 'セルが開かれていません' },
+      }));
+      logDebug('view', 'タップ穴の補正: セルが開かれていません', undefined, 'warn');
+      return;
+    }
 
-    const res = detectPegHolesAndCalculateTransform(
-      currentImage.data,
-      currentImage.width,
-      currentImage.height
-    );
+    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height);
+
+    if (!detection.detected) {
+      set((state) => ({
+        pegStabilizer: {
+          ...state.pegStabilizer,
+          enabled: true,
+          status: 'failed',
+          holes: [],
+          message: detection.message,
+        },
+      }));
+      logDebug('view', `タップ穴の補正: 検出できませんでした`, detection.message, 'warn');
+      triggerRender();
+      return;
+    }
+
+    const reference = pegStabilizer.reference ?? referenceFromDetection(detection);
+    const isNewReference = !pegStabilizer.reference;
+    const transform = pegTransformTo(detection, reference, currentImage.width, currentImage.height);
 
     set((state) => ({
       pegStabilizer: {
         ...state.pegStabilizer,
         enabled: true,
-        status: res.status,
-        offsetX: res.offsetX,
-        offsetY: res.offsetY,
-        rotation: res.rotation,
+        status: 'success',
+        holes: detection.holes,
+        reference,
+        offsetX: transform.offsetX,
+        offsetY: transform.offsetY,
+        rotation: transform.rotation,
+        message: isNewReference
+          ? `このコマを基準にしました (${detection.message})`
+          : `基準へ合わせました (${detection.message})`,
       },
     }));
+
+    logDebug(
+      'view',
+      isNewReference
+        ? 'タップ穴の補正: このコマを基準にした'
+        : `タップ穴の補正: X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°`,
+      `${detection.message} / 中央の穴 (${Math.round(detection.center.x)}, ${Math.round(detection.center.y)})`
+    );
     triggerRender();
   },
+
+  setPegReferenceFromCurrent: () => {
+    const { currentImage, triggerRender } = get();
+    if (!currentImage) return;
+
+    const detection = detectPegHoles(currentImage.data, currentImage.width, currentImage.height);
+    if (!detection.detected) {
+      set((state) => ({
+        pegStabilizer: { ...state.pegStabilizer, status: 'failed', holes: [], message: detection.message },
+      }));
+      logDebug('view', 'タップ穴の基準にできませんでした', detection.message, 'warn');
+      return;
+    }
+
+    set((state) => ({
+      pegStabilizer: {
+        ...state.pegStabilizer,
+        enabled: true,
+        status: 'success',
+        holes: detection.holes,
+        reference: referenceFromDetection(detection),
+        offsetX: 0,
+        offsetY: 0,
+        rotation: 0,
+        message: `このコマを基準にしました (${detection.message})`,
+      },
+    }));
+    logDebug('view', 'タップ穴の基準をこのコマにした', detection.message);
+    triggerRender();
+  },
+
+  clearPegReference: () =>
+    set((state) => {
+      logDebug('view', 'タップ穴の基準を解除し、補正を戻した');
+      return {
+        pegStabilizer: {
+          ...state.pegStabilizer,
+          status: 'idle',
+          holes: [],
+          reference: null,
+          offsetX: 0,
+          offsetY: 0,
+          rotation: 0,
+          message: '',
+        },
+      };
+    }),
 
   // 2画面分割 (Split View) & 連動 (Sync Mode)
   isSplitView: false,
