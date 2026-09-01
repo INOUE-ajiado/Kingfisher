@@ -5,6 +5,7 @@ import {
   isSupportedImageFile,
   collectImageFilesRecursively,
   ensureWritePermission,
+  requestWriteAccess,
   ensureDirectory,
   moveFileToDirectory,
 } from './fileSystemPath';
@@ -297,5 +298,60 @@ describe('moveFileToDirectory', () => {
     const target = a.dirs.get('ボツ').files.get('a0001.tga');
     expect(Array.from(target.body as Uint8Array)).toEqual([1, 2, 3]);
     expect(a.files.has('a0001.tga')).toBe(false);
+  });
+});
+
+/**
+ * 書き込み許可の要求。
+ *
+ * ⚠️ ここから例外を投げると、呼び出し側の await が抜けて、画面にもログにも
+ * 何も出ないまま操作が消える (2026-09-02 に実際に起きた)。理由をつけて返すこと。
+ */
+describe('requestWriteAccess', () => {
+  it('期限切れで例外になっても投げず、理由を返す', async () => {
+    const handle = {
+      queryPermission: async () => 'prompt',
+      requestPermission: async () => {
+        const err: any = new Error('User activation is required to request permissions.');
+        err.name = 'NotAllowedError';
+        throw err;
+      },
+    };
+
+    const result = await requestWriteAccess(handle);
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('NotAllowedError');
+    // 「もう一度操作してください」まで伝える (押し直せば通るため)
+    expect(result.reason).toContain('もう一度');
+  });
+
+  it('断られたらその状態を理由に入れる', async () => {
+    const handle = {
+      queryPermission: async () => 'prompt',
+      requestPermission: async () => 'denied',
+    };
+
+    const result = await requestWriteAccess(handle);
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain('denied');
+  });
+
+  it('許可済みなら尋ねずに通す', async () => {
+    let asked = false;
+    const handle = {
+      queryPermission: async () => 'granted',
+      requestPermission: async () => { asked = true; return 'granted'; },
+    };
+
+    const result = await requestWriteAccess(handle);
+
+    expect(result).toEqual({ ok: true });
+    expect(asked).toBe(false);
+  });
+
+  it('フォルダが無ければ理由をつけて断る', async () => {
+    expect((await requestWriteAccess(null)).ok).toBe(false);
   });
 });

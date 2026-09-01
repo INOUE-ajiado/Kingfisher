@@ -10,7 +10,7 @@ import {
   referenceFromDetection,
 } from '../../engine/pegStabilizer';
 import { decodeTGA, encodeTGA } from '../../engine/tga';
-import { ensureWritePermission, resolveFileHandle } from '../../engine/fileSystemPath';
+import { requestWriteAccess, resolveFileHandle } from '../../engine/fileSystemPath';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
@@ -308,13 +308,17 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先を開けなかった)', String(err?.message || err), 'warn');
         return { ok: false, message: `書き出し先を開けませんでした: ${err?.message || err}`, applied: 0 };
       }
-      if (!(await ensureWritePermission(outputHandle))) {
-        logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先への書き込みが許可されなかった)', label, 'warn');
-        return { ok: false, message: '書き出し先への書き込みが許可されませんでした。', applied: 0 };
+      const outAccess = await requestWriteAccess(outputHandle);
+      if (!outAccess.ok) {
+        logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先への書き込みが許可されなかった)', `${label} — ${outAccess.reason}`, 'warn');
+        return { ok: false, message: `書き出し先へ書き込めません。\n${outAccess.reason}`, applied: 0 };
       }
-    } else if (!(await ensureWritePermission(folderHandle))) {
-      logDebug('file', 'タップ補正の焼き込み: 中止 (書き込みが許可されなかった)', label, 'warn');
-      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, applied: 0 };
+    } else {
+      const access = await requestWriteAccess(folderHandle);
+      if (!access.ok) {
+        logDebug('file', 'タップ補正の焼き込み: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+        return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, applied: 0 };
+      }
     }
 
     let reference = state.pegStabilizer.reference;

@@ -8,7 +8,7 @@ import {
   copyFile,
   deleteFile,
   moveFileToDirectory,
-  ensureWritePermission,
+  requestWriteAccess,
 } from '../../engine/fileSystemPath';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
@@ -858,9 +858,10 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       };
     }
 
-    if (!(await ensureWritePermission(folderHandle))) {
-      logDebug('file', '名前を変更: 中止 (書き込みが許可されなかった)', label, 'warn');
-      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '名前を変更: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
     }
 
     const rootName = state.rootFolderName;
@@ -940,9 +941,10 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       logDebug('file', '複製: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
     }
-    if (!(await ensureWritePermission(folderHandle))) {
-      logDebug('file', '複製: 中止 (書き込みが許可されなかった)', label, 'warn');
-      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '複製: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
     }
 
     const plan = buildDuplicatePlan(paths, fileList);
@@ -993,9 +995,10 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       logDebug('file', '削除: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
     }
-    if (!(await ensureWritePermission(folderHandle))) {
-      logDebug('file', '削除: 中止 (書き込みが許可されなかった)', label, 'warn');
-      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '削除: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
     }
 
     const removed: string[] = [];
@@ -1029,6 +1032,34 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
   },
 
   /**
+   * 書き込み許可を先に取る。
+   *
+   * ⚠️ 名前を尋ねる prompt や確認の confirm を挟む操作は、押された時点でここを通すこと。
+   * requestPermission() が通るのはボタンを押した直後の数秒だけで、入力しているあいだに
+   * 期限が切れる。切れた状態で呼ぶと例外になり、画面にもログにも何も出ないまま操作が消える
+   * (2026-09-02 の報告: 「まとめる: 要求 42 件」の次が 1 行も無い)。
+   */
+  ensureWriteAccess: async (view) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    if (!folderHandle) {
+      logDebug('file', '書き込み許可: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。` };
+    }
+
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '書き込み許可: 下りなかった', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}` };
+    }
+
+    logDebug('file', `書き込み許可: あり${access.asked ? ' (この操作で許可された)' : ''}`, label);
+    return { ok: true, message: '' };
+  },
+
+  /**
    * 選択したファイルを、新しく作ったフォルダへまとめて移す。
    *
    * ⚠️ 動かす前に計画を立て、上書きになる組み合わせがあれば 1 件も触らずに中止する
@@ -1050,9 +1081,10 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       logDebug('file', '新しいフォルダにまとめる: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
     }
-    if (!(await ensureWritePermission(folderHandle))) {
-      logDebug('file', '新しいフォルダにまとめる: 中止 (書き込みが許可されなかった)', label, 'warn');
-      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '新しいフォルダにまとめる: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
     }
 
     const plan = buildMoveToFolderPlan(paths, folderName, fileList);
