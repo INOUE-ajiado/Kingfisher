@@ -34,4 +34,15 @@ export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createLayoutSlice(...a),
 }));
 
+/**
+ * 開発ビルドだけ、検証用にストアを公開する。
+ *
+ * ⚠️ 本番ビルドには含めないこと (import.meta.env.DEV で落ちる)。
+ * 実フォルダへの書き込みはヘッドレスで開く手段が無く、これが無いと
+ * 「まとめる」「削除」のような実書き込みを自動で確かめられない。
+ */
+if (import.meta.env.DEV) {
+  (window as any).__kfStore = usePaintStore;
+}
+
 export * from './types';

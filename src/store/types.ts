@@ -696,6 +696,13 @@ export interface FileSlice {
   deleteFiles: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
 
   /**
+   * 書き込み許可を先に取る。
+   * ⚠️ prompt や confirm を挟む操作は、押された時点でこれを呼ぶこと。
+   * 許可を求められるのはボタンを押した直後の数秒だけで、入力中に期限が切れる。
+   */
+  ensureWriteAccess: (view: 0 | 1) => Promise<{ ok: boolean; message: string }>;
+
+  /**
    * 選択したファイルを、新しく作ったフォルダへまとめて移す。
    * フォルダは選んだファイルの置き場所に作る (ばらけているときはルート直下)。
    * 衝突・不正な名前があれば 1 件も動かさずに中止する。

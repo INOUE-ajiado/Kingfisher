@@ -97,15 +97,63 @@ export async function collectImageFilesRecursively(
  *
  * ⚠️ requestPermission() はユーザー操作の直後にしか通らない。
  * 保存ボタンや Ctrl+S から連なる呼び出しの中で使うこと。
+ * ⚠️ 期限は数秒しかない。名前を尋ねる prompt や確認の confirm を挟むと、
+ * 読み終えて入力するあいだに切れる。ダイアログを出す操作は、
+ * 押された時点で先に許可を取ってから尋ねること (2026-09-02 の報告)。
  */
-export async function ensureWritePermission(handle: any): Promise<boolean> {
+export interface WriteAccessResult {
+  ok: boolean;
+  /** 断られた・失敗した理由 (ログと画面に出す) */
+  reason?: string;
+  /** 許可を求めるダイアログを実際に出したか */
+  asked?: boolean;
+}
+
+/**
+ * 書き込み許可の確認と要求。理由つきで返す。
+ *
+ * ⚠️ ここから例外を投げないこと。requestPermission() は期限切れの操作から呼ぶと
+ * 例外になる (Chrome: User activation is required to request permissions)。
+ * 投げたままにすると呼び出し側の await が抜け、画面にもログにも何も出ないまま
+ * 操作が消える。実際に「まとめる: 要求 42 件」の次が 1 行も無い、という形で起きた。
+ */
+export async function requestWriteAccess(handle: any): Promise<WriteAccessResult> {
   // 対応していない環境では判定できないので、そのまま書き込みを試させる
-  if (!handle || typeof handle.queryPermission !== 'function') return true;
+  if (!handle) return { ok: false, reason: 'フォルダが開かれていません' };
+  if (typeof handle.queryPermission !== 'function') return { ok: true };
 
   const options = { mode: 'readwrite' as const };
-  if ((await handle.queryPermission(options)) === 'granted') return true;
-  if (typeof handle.requestPermission !== 'function') return false;
-  return (await handle.requestPermission(options)) === 'granted';
+
+  try {
+    if ((await handle.queryPermission(options)) === 'granted') return { ok: true };
+  } catch (err: any) {
+    return { ok: false, reason: `許可の状態を確認できませんでした: ${err?.message || err}` };
+  }
+
+  if (typeof handle.requestPermission !== 'function') {
+    return { ok: false, reason: 'この環境では書き込み許可を求められません' };
+  }
+
+  try {
+    const state = await handle.requestPermission(options);
+    return state === 'granted'
+      ? { ok: true, asked: true }
+      : { ok: false, asked: true, reason: `書き込みが許可されませんでした (${state})` };
+  } catch (err: any) {
+    const name = err?.name ? `${err.name}: ` : '';
+    return {
+      ok: false,
+      asked: true,
+      reason:
+        `${name}${err?.message || err}` +
+        ' — 許可を求められるのはボタンを押した直後の数秒だけです。もう一度操作してください',
+    };
+  }
+}
+
+/** 真偽だけ欲しい場面向け。⚠️ 例外は投げない */
+export async function ensureWritePermission(handle: any): Promise<boolean> {
+  return (await requestWriteAccess(handle)).ok;
 }
 
 /**

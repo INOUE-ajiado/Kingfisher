@@ -275,6 +275,7 @@ export const FileBrowser: React.FC = () => {
     duplicateFiles,
     deleteFiles,
     moveFilesToNewFolder,
+    ensureWriteAccess,
     pegStabilizer,
     applyPegCorrectionToFiles,
   } = usePaintStore();
@@ -519,6 +520,20 @@ export const FileBrowser: React.FC = () => {
   };
 
   /**
+   * 書き込みの許可を、押された時点で取っておく。
+   *
+   * ⚠️ 名前や確認を尋ねる前に呼ぶこと。requestPermission() が通るのは
+   * ボタンを押した直後の数秒だけで、入力しているあいだに期限が切れる。
+   * 切れてから呼ぶと例外になり、画面にもログにも何も出ないまま操作が消える
+   * (2026-09-02: 名前は入力できたのに、フォルダが作られなかった)。
+   */
+  const takeWriteAccess = async (): Promise<boolean> => {
+    const access = await ensureWriteAccess(markedView);
+    if (!access.ok) alert(access.message);
+    return access.ok;
+  };
+
+  /**
    * 選んだファイルにタップ補正を焼き込む。
    *
    * ⚠️ 上書きするので必ず確認を取る。基準が無ければ並びの先頭が基準になり、
@@ -548,6 +563,7 @@ export const FileBrowser: React.FC = () => {
     }
 
     // ⚠️ 上書きは元に戻せない。控えを残すかどうかまで確かめる
+    if (!(await takeWriteAccess())) return;
     const ok = window.confirm(
       `${target.length} 件を上書きします。元に戻せません。\n${base}\n\n${names}${more}`
     );
@@ -567,6 +583,9 @@ export const FileBrowser: React.FC = () => {
   const handleApplyPegToFolder = () => applyPegTo(markedView === 1 ? fileListB : fileListA, 'copy');
 
   const handleDelete = async () => {
+    if (markedInOrder.length === 0) return;
+    if (!(await takeWriteAccess())) return;
+
     const names = markedInOrder.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
     const more = markedInOrder.length > 5 ? `\n…ほか ${markedInOrder.length - 5} 件` : '';
     // ⚠️ 元に戻せないので必ず確認を取る
@@ -591,6 +610,9 @@ export const FileBrowser: React.FC = () => {
    */
   const handleMoveToNewFolder = async () => {
     if (markedInOrder.length === 0) return;
+
+    // ⚠️ 先に許可を取る。名前を入力しているあいだに期限が切れる
+    if (!(await takeWriteAccess())) return;
 
     // eslint-disable-next-line no-alert
     const name = window.prompt(
@@ -648,8 +670,10 @@ export const FileBrowser: React.FC = () => {
       id: 'rename',
       label: markedInOrder.length > 1 ? `${markedInOrder.length} 項目の名前を変更...` : '名前を変更...',
       icon: <Type className="w-3.5 h-3.5" />,
-      onSelect: () => {
+      onSelect: async () => {
         logFileAction(`名前を変更: ダイアログを開いた (${markedInOrder.length} 件)`);
+        // ⚠️ 名前を入力しているあいだに許可の期限が切れる。先に取っておく
+        if (!(await takeWriteAccess())) return;
         setIsRenameOpen(true);
       },
     },
