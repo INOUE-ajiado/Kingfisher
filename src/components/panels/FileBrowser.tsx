@@ -234,6 +234,8 @@ export const FileBrowser: React.FC = () => {
   const [markAnchor, setMarkAnchor] = useState<string | null>(null);
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  /** メニューの項目を選んだかどうか (閉じただけなのかを見分ける) */
+  const menuUsedRef = useRef(false);
 
   const {
     rootFolderName,
@@ -458,13 +460,34 @@ export const FileBrowser: React.FC = () => {
   /**
    * 右クリック。Finder と同じで、選択に入っていないファイルを右クリックしたら
    * そのファイルだけを選び直してからメニューを開く。
+   *
+   * ⚠️ 選び直しは必ず記録すること。まとめて選んだあと選択外の行を右クリックすると
+   * 1 件に潰れる。画面では気づきにくく、「42 件選んだのに 1 件しか処理されない」の
+   * 報告になる (2026-09-02 のログで、右クリック以降が 1 行も残っていなかった)。
    */
   const openContextMenu = (view: 0 | 1) => (path: string, position: { x: number; y: number }) => {
-    if (view !== markedView || !markedPaths.includes(path)) {
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+    const replaced = view !== markedView || !markedPaths.includes(path);
+
+    if (replaced) {
+      if (markedPaths.length > 1) {
+        logDebug(
+          'file',
+          `右クリック: 選択に入っていない行なので 1 件に選び直した (${markedPaths.length} 件 → 1 件)`,
+          `${label} — ${path}`,
+          'warn'
+        );
+      }
       setMarkedView(view);
       setMarkedPaths([path]);
       setMarkAnchor(path);
     }
+
+    logDebug(
+      'file',
+      `右クリック: メニューを開いた (${replaced ? 1 : markedPaths.length} 件)`,
+      `${label} — ${path}`
+    );
     setMenuPos(position);
   };
 
@@ -1438,8 +1461,22 @@ export const FileBrowser: React.FC = () => {
         <ContextMenu
           x={menuPos.x}
           y={menuPos.y}
-          items={contextMenuItems}
-          onClose={() => setMenuPos(null)}
+          items={contextMenuItems.map((item) =>
+            'type' in item
+              ? item
+              : {
+                  ...item,
+                  onSelect: () => {
+                    menuUsedRef.current = true;
+                    item.onSelect();
+                  },
+                }
+          )}
+          onClose={() => {
+            if (!menuUsedRef.current) logDebug('file', '右クリック: メニューを閉じた (項目を選ばなかった)');
+            menuUsedRef.current = false;
+            setMenuPos(null);
+          }}
         />
       )}
 
