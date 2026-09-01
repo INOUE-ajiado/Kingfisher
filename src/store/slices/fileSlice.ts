@@ -182,6 +182,23 @@ function logFolderOpened(
 }
 
 /**
+ * ログに載せるファイルの並び。
+ *
+ * ⚠️ 全部は載せないこと。1 行が長くなると DEBUG ログが読めなくなる。
+ * 先頭 5 件と残りの件数が分かれば、報告と突き合わせるには足りる。
+ */
+function describePaths(paths: string[]): string {
+  const head = paths.slice(0, 5).map((p) => p.split(/[/\\]/).pop()).join(', ');
+  return paths.length > 5 ? `${head} ほか ${paths.length - 5} 件` : head || '(なし)';
+}
+
+/** 「a0001.tga → b0001.tga」の並び */
+function describePlan(plan: { path: string; to: string }[]): string {
+  const head = plan.slice(0, 5).map((i) => `${i.path.split(/[/\\]/).pop()} → ${i.to}`).join(', ');
+  return plan.length > 5 ? `${head} ほか ${plan.length - 5} 件` : head || '(なし)';
+}
+
+/**
  * 移したファイルを、読み込み済みの実体の一覧から外す。
  *
  * ⚠️ 新しいパスへ付け替えないこと。File は開いた時点の場所を指しているので、
@@ -784,11 +801,17 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
 
     const plan = omitUnchanged(rawPlan);
+
+    // ⚠️ ファイルを触る操作は、断った場合も含めて必ず記録すること。
+    // 「操作したのに何も起きない」の報告を、権限・名前・衝突のどれか切り分けられるように
+    logDebug('file', `名前を変更: 要求 ${plan.length} 件`, `${label} — ${describePlan(plan)}`);
+
     if (plan.length === 0) {
       return { ok: true, message: '名前が変わるファイルはありませんでした。', renamed: 0 };
     }
 
     if (!folderHandle) {
+      logDebug('file', '名前を変更: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return {
         ok: false,
         message:
@@ -800,6 +823,12 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
     const invalid = findInvalidNames(plan);
     if (invalid.length > 0) {
+      logDebug(
+        'file',
+        `名前を変更: 中止 (使えない名前 ${invalid.length} 件)`,
+        invalid.slice(0, 5).map((i) => `${i.from} → ${i.to}`).join(' / '),
+        'warn'
+      );
       return {
         ok: false,
         message:
@@ -813,6 +842,12 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     if (conflicts.length > 0) {
       const dup = conflicts.filter((c) => c.reason === 'duplicate').map((c) => c.to);
       const exists = conflicts.filter((c) => c.reason === 'exists').map((c) => c.to);
+      logDebug(
+        'file',
+        `名前を変更: 中止 (名前の衝突 ${conflicts.length} 件)`,
+        `${dup.length ? `重複 ${dup.slice(0, 5).join(', ')} ` : ''}${exists.length ? `既存と同名 ${exists.slice(0, 5).join(', ')}` : ''}`,
+        'warn'
+      );
       return {
         ok: false,
         message:
@@ -824,11 +859,17 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     }
 
     if (!(await ensureWritePermission(folderHandle))) {
+      logDebug('file', '名前を変更: 中止 (書き込みが許可されなかった)', label, 'warn');
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
     }
 
     const rootName = state.rootFolderName;
     const twoPhase = needsTwoPhaseRename(plan);
+    logDebug(
+      'file',
+      `名前を変更: 実行 ${plan.length} 件`,
+      twoPhase ? '名前が入れ替わるので一時名を経由' : '一括で変更'
+    );
     const stamp = Date.now().toString(36);
 
     try {
@@ -848,6 +889,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       }
     } catch (err: any) {
       console.error('Failed to rename:', err);
+      logDebug('file', '名前を変更: 途中で失敗', String(err?.message || err), 'warn');
       return {
         ok: false,
         message:
@@ -872,6 +914,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
     else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
 
+    logDebug('file', `名前を変更: 完了 ${plan.length} 件`, describePlan(plan));
     return {
       ok: true,
       message: `${plan.length} 件のファイル名を変更しました。`,
@@ -890,11 +933,15 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
     const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
 
+    logDebug('file', `複製: 要求 ${paths.length} 件`, `${label} — ${describePaths(paths)}`);
+
     if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
     if (!folderHandle) {
+      logDebug('file', '複製: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
     }
     if (!(await ensureWritePermission(folderHandle))) {
+      logDebug('file', '複製: 中止 (書き込みが許可されなかった)', label, 'warn');
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
     }
 
@@ -908,6 +955,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       }
     } catch (err: any) {
       console.error('Failed to duplicate:', err);
+      logDebug('file', '複製: 途中で失敗', `${created.length} 件は作成済み / ${err?.message || err}`, 'warn');
       return {
         ok: false,
         message: `複製の途中で失敗しました: ${err?.message || err}` + '\n' + `${created.length} 件は作成済みです。`,
@@ -922,6 +970,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
     else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
 
+    logDebug('file', `複製: 完了 ${created.length} 件`, describePaths(created));
     return { ok: true, message: `${created.length} 件を複製しました。`, renamed: created.length };
   },
 
@@ -936,11 +985,16 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
     const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
 
+    // ⚠️ 削除は元に戻せない。何を消したのかを必ず残すこと
+    logDebug('file', `削除: 要求 ${paths.length} 件`, `${label} — ${describePaths(paths)}`, 'warn');
+
     if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
     if (!folderHandle) {
+      logDebug('file', '削除: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
     }
     if (!(await ensureWritePermission(folderHandle))) {
+      logDebug('file', '削除: 中止 (書き込みが許可されなかった)', label, 'warn');
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
     }
 
@@ -952,6 +1006,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       }
     } catch (err: any) {
       console.error('Failed to delete:', err);
+      logDebug('file', '削除: 途中で失敗', `${removed.length} 件は削除済み / ${err?.message || err}`, 'warn');
       return {
         ok: false,
         message: `削除の途中で失敗しました: ${err?.message || err}` + '\n' + `${removed.length} 件は削除済みです。`,
@@ -969,6 +1024,7 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
     else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
 
+    logDebug('file', `削除: 完了 ${removed.length} 件`, describePaths(removed), 'warn');
     return { ok: true, message: `${removed.length} 件を削除しました。`, renamed: removed.length };
   },
 

@@ -275,8 +275,16 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     const mode = options?.mode ?? 'copy';
     const backup = options?.backup ?? false;
 
+    // ⚠️ ファイルを書き換える操作は、断った場合も含めて必ず記録すること
+    logDebug(
+      'file',
+      `タップ補正の焼き込み: 要求 ${paths.length} 件 (${mode === 'copy' ? '別フォルダへ書き出す' : backup ? '上書き / 控えを残す' : '上書き'})`,
+      label
+    );
+
     if (paths.length === 0) return { ok: true, message: '対象がありません。', applied: 0 };
     if (!folderHandle) {
+      logDebug('file', 'タップ補正の焼き込み: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
       return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, applied: 0 };
     }
 
@@ -287,18 +295,25 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     let outputHandle: any = null;
     if (mode === 'copy') {
       if (!('showDirectoryPicker' in window)) {
+        logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先を選べない環境)', label, 'warn');
         return { ok: false, message: 'この環境では書き出し先フォルダを選べません。', applied: 0 };
       }
       try {
         outputHandle = await (window as any).showDirectoryPicker({ mode: 'readwrite' });
       } catch (err: any) {
-        if (err?.name === 'AbortError') return { ok: true, message: '書き出しをやめました。', applied: 0 };
+        if (err?.name === 'AbortError') {
+          logDebug('file', 'タップ補正の焼き込み: 取り消し (書き出し先を選ばなかった)', label);
+          return { ok: true, message: '書き出しをやめました。', applied: 0 };
+        }
+        logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先を開けなかった)', String(err?.message || err), 'warn');
         return { ok: false, message: `書き出し先を開けませんでした: ${err?.message || err}`, applied: 0 };
       }
       if (!(await ensureWritePermission(outputHandle))) {
+        logDebug('file', 'タップ補正の焼き込み: 中止 (書き出し先への書き込みが許可されなかった)', label, 'warn');
         return { ok: false, message: '書き出し先への書き込みが許可されませんでした。', applied: 0 };
       }
     } else if (!(await ensureWritePermission(folderHandle))) {
+      logDebug('file', 'タップ補正の焼き込み: 中止 (書き込みが許可されなかった)', label, 'warn');
       return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, applied: 0 };
     }
 
@@ -306,7 +321,11 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     let applied = 0;
     const skipped: string[] = [];
 
-    logDebug('view', `タップ補正の焼き込みを開始: ${paths.length} 件 — ${label}`, paths.slice(0, 3).join(' / '));
+    logDebug(
+      'file',
+      `タップ補正の焼き込み: 実行 ${paths.length} 件 — ${label}`,
+      mode === 'copy' ? `書き出し先「${outputHandle?.name ?? ''}」` : backup ? '上書き / 控えを残す' : '上書き'
+    );
 
     try {
       for (const path of paths) {
@@ -374,7 +393,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       }
     } catch (err: any) {
       console.error('Failed to apply peg correction:', err);
-      logDebug('view', 'タップ補正の焼き込みが途中で失敗しました', String(err?.message || err), 'warn');
+      logDebug('file', 'タップ補正の焼き込み: 途中で失敗', String(err?.message || err), 'warn');
       return {
         ok: false,
         message: `途中で失敗しました: ${err?.message || err}\n${applied} 件は書き換え済みです。`,
@@ -394,7 +413,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         : backup
         ? '元のファイルへ (元は _orig 付きで残しました)'
         : '元のファイルへ';
-    logDebug('view', `タップ補正の焼き込みが完了: ${applied} 件 / 見送り ${skipped.length} 件`, where);
+    logDebug('file', `タップ補正の焼き込み: 完了 ${applied} 件 / 見送り ${skipped.length} 件`, where);
     return {
       ok: true,
       message: `${applied} 件にタップ補正を焼き込みました (${where})。${detail}`,
