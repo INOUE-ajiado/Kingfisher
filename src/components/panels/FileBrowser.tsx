@@ -6,7 +6,7 @@ import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor, FolderPlus, RotateCw, RotateCcw } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor, FolderPlus, RotateCw, RotateCcw, Undo2 } from 'lucide-react';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
 import { buildMoveToFolderPlan, invalidFolderName } from '../../engine/folderPlan';
@@ -276,6 +276,7 @@ export const FileBrowser: React.FC = () => {
     deleteFiles,
     moveFilesToNewFolder,
     rotateFiles,
+    restoreFromBackup,
     ensureWriteAccess,
     pegStabilizer,
     applyPegCorrectionToFiles,
@@ -604,6 +605,27 @@ export const FileBrowser: React.FC = () => {
   };
 
   /**
+   * 控え (_orig) から戻す。
+   * ⚠️ 焼き込みで壊れたコマの唯一の救済手段。控えがある間だけ使える。
+   */
+  const handleRestore = async () => {
+    if (markedInOrder.length === 0) return;
+    if (!(await takeWriteAccess())) return;
+
+    const ok = window.confirm(
+      `${markedInOrder.length} 件を控え (_orig) から戻します。\n` +
+        `今のファイルは上書きされます。控えはそのまま残します。`
+    );
+    if (!ok) {
+      logFileAction(`控えから戻す: 取り消した (${markedInOrder.length} 件)`);
+      return;
+    }
+
+    const result = await restoreFromBackup(markedView, markedInOrder);
+    alert(result.message);
+  };
+
+  /**
    * 選んだファイルを 90 度回して上書きする。
    *
    * ⚠️ 元のファイルを書き換えるので必ず確認を取る。
@@ -775,6 +797,15 @@ export const FileBrowser: React.FC = () => {
       icon: <Anchor className="w-3.5 h-3.5" />,
       danger: true,
       onSelect: handleApplyPegOverwrite,
+    },
+    {
+      id: 'restore',
+      label:
+        markedInOrder.length > 1
+          ? `控え (_orig) から戻す (${markedInOrder.length} 項目)`
+          : '控え (_orig) から戻す',
+      icon: <Undo2 className="w-3.5 h-3.5" />,
+      onSelect: handleRestore,
     },
     { type: 'divider' },
     {

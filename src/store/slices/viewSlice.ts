@@ -10,22 +10,28 @@ import {
   referenceFromDetection,
   PegDetectOptions,
   PegReference,
+  PegTransform,
 } from '../../engine/pegStabilizer';
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
+import { PegCandidate, rejectPegOutliers } from '../../engine/pegBatch';
 import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
 import { backupPathFor, createFileIn, requestWriteAccess, resolveFileHandle } from '../../engine/fileSystemPath';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
 
-/** 担当 1 人に 1 枚頼んで、終わるまで待つ */
-function askPeg(worker: Worker, id: number, path: string): Promise<{ ok: boolean; reason?: string; detail?: string }> {
+/** 担当 1 人に 1 枚頼んで、終わるまで待つ (測る / 焼く のどちらも) */
+function askPeg(
+  worker: Worker,
+  id: number,
+  message: any
+): Promise<{ ok: boolean; reason?: string; detail?: string; transform?: PegTransform }> {
   return new Promise((resolve, reject) => {
     const onMessage = (e: MessageEvent<PegWorkerDone>) => {
       if (e.data.id !== id) return;
       cleanup();
-      resolve({ ok: e.data.ok, reason: e.data.reason, detail: e.data.detail });
+      resolve({ ok: e.data.ok, reason: e.data.reason, detail: e.data.detail, transform: e.data.transform });
     };
     const onError = (e: ErrorEvent) => {
       cleanup();
@@ -37,12 +43,32 @@ function askPeg(worker: Worker, id: number, path: string): Promise<{ ok: boolean
     };
     worker.addEventListener('message', onMessage);
     worker.addEventListener('error', onError);
-    worker.postMessage({ type: 'job', id, path });
+    worker.postMessage({ ...message, id });
   });
 }
 
 /**
- * 1 枚に焼き込む (担当を立てられない環境向けの控え)。
+ * 補正量を測るだけ (担当を立てられない環境向けの控え)。
+ * ⚠️ ここでは書き込まない。他の枚と食い違うかどうかは全部測るまで分からない。
+ */
+async function measurePegForFile(
+  dir: any,
+  rootName: string | null,
+  path: string,
+  reference: PegReference,
+  options: PegDetectOptions
+): Promise<{ ok: boolean; reason?: string; transform?: PegTransform }> {
+  const fileHandle = await resolveFileHandle(dir, path, rootName);
+  const image = await readPixels(await fileHandle.getFile(), path);
+
+  const detection = detectPegHoles(image.data, image.width, image.height, options);
+  if (!detection.detected) return { ok: false, reason: detection.message };
+
+  return { ok: true, transform: pegTransformTo(detection, reference, image.width, image.height) };
+}
+
+/**
+ * 決まった補正量で 1 枚に焼き込む (担当を立てられない環境向けの控え)。
  * ⚠️ ワーカー側 (peg.worker.ts) と同じ手順にしておくこと。片方だけ直すと結果が変わる。
  */
 async function bakePegIntoFile(
@@ -50,16 +76,13 @@ async function bakePegIntoFile(
   outputDir: any,
   rootName: string | null,
   path: string,
-  setup: { reference: PegReference; options: PegDetectOptions; mode: 'copy' | 'overwrite'; backup: boolean }
+  transform: PegTransform,
+  setup: { mode: 'copy' | 'overwrite'; backup: boolean }
 ): Promise<{ ok: boolean; reason?: string; detail?: string }> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  const detection = detectPegHoles(image.data, image.width, image.height, setup.options);
-  if (!detection.detected) return { ok: false, reason: detection.message };
-
-  const transform = pegTransformTo(detection, setup.reference, image.width, image.height);
   if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
     return { ok: true, detail: 'すでに合っている' };
   }
@@ -460,42 +483,94 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       : [];
 
     let jobId = 0;
-    let outcomes;
 
     try {
-      outcomes = await runInLanes(rest, lanes, async (path, _index, lane) => {
+      /**
+       * 一段目: 全部の補正量を測るだけ。
+       * ⚠️ ここで書き込まないこと。他の枚と食い違う値かどうかは、
+       * 全部を測り終えるまで分からない。
+       */
+      const measured = await runInLanes(rest, lanes, async (path, _index, lane) => {
         if (useWorkers) {
           jobId += 1;
-          return await askPeg(workers[lane], jobId, path);
+          return await askPeg(workers[lane], jobId, { type: 'measure', path });
         }
-        // 担当を立てられない環境向けの控え (主スレッドで焼き込む)
-        return await bakePegIntoFile(folderHandle, outputHandle, state.rootFolderName, path, {
-          reference: reference as PegReference,
-          options: pegOptions,
-          mode,
-          backup,
-        });
+        return await measurePegForFile(folderHandle, state.rootFolderName, path, reference as PegReference, pegOptions);
+      });
+
+      const candidates: PegCandidate[] = [];
+      measured.forEach((outcome, i) => {
+        const path = rest[i];
+        if (outcome.error) {
+          skipped.push(`${path} (${outcome.error})`);
+          return;
+        }
+        const result = outcome.value!;
+        if (!result.ok || !result.transform) {
+          skipped.push(`${path} (${result.reason})`);
+          return;
+        }
+        candidates.push({ path, transform: result.transform });
+      });
+
+      /**
+       * ⚠️ 揃っていない 1 枚は焼き込まないこと。同じ機械で取り込んだスキャンは
+       * 補正量がほぼ揃うのが正しい姿で、そこから外れた値はタップ穴以外を
+       * 穴と見なした結果である。焼くと元に戻せない上に、
+       * 「数枚だけ絵がずれている」という一番気づきにくい壊れ方になる。
+       */
+      const checked = rejectPegOutliers(candidates);
+      checked.rejected.forEach((r) => skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`));
+
+      if (checked.median) {
+        logDebug(
+          'view',
+          `タップ補正の目安 (中央値): X ${checked.median.offsetX.toFixed(1)}px / Y ${checked.median.offsetY.toFixed(1)}px`,
+          `回転 ${checked.median.rotation.toFixed(3)}° / 倍率 ${(checked.median.scale * 100).toFixed(2)}% — ` +
+            `${checked.accepted.length} 件を焼き込み / ${checked.rejected.length} 件は食い違いで見送り`,
+          checked.rejected.length > 0 ? 'warn' : 'info'
+        );
+      }
+
+      // 二段目: 揃っている分だけ焼き込む
+      const baked = await runInLanes(checked.accepted, lanes, async (candidate, _index, lane) => {
+        if (useWorkers) {
+          jobId += 1;
+          return await askPeg(workers[lane], jobId, {
+            type: 'bake',
+            path: candidate.path,
+            transform: candidate.transform,
+          });
+        }
+        return await bakePegIntoFile(
+          folderHandle,
+          outputHandle,
+          state.rootFolderName,
+          candidate.path,
+          candidate.transform,
+          { mode, backup }
+        );
+      });
+
+      baked.forEach((outcome, i) => {
+        const path = checked.accepted[i].path;
+        if (outcome.error) {
+          skipped.push(`${path} (${outcome.error})`);
+          return;
+        }
+        const result = outcome.value!;
+        if (!result.ok) {
+          skipped.push(`${path} (${result.reason})`);
+          return;
+        }
+        applied += 1;
+        get().invalidateCachedImage(get().getImageCacheKey(view, path));
+        if (result.detail) logDebug('view', `タップ補正を焼き込み: ${path}`, result.detail);
       });
     } finally {
       // ⚠️ 必ず片づけること。残すと 1 回焼くたびに担当が増えていく
       workers.forEach((w) => w.terminate());
     }
-
-    outcomes.forEach((outcome, i) => {
-      const path = rest[i];
-      if (outcome.error) {
-        skipped.push(`${path} (${outcome.error})`);
-        return;
-      }
-      const result = outcome.value!;
-      if (!result.ok) {
-        skipped.push(`${path} (${result.reason})`);
-        return;
-      }
-      applied += 1;
-      get().invalidateCachedImage(get().getImageCacheKey(view, path));
-      if (result.detail) logDebug('view', `タップ補正を焼き込み: ${path}`, result.detail);
-    });
 
     if (reference) set((s2) => ({ pegStabilizer: { ...s2.pegStabilizer, reference } }));
 
