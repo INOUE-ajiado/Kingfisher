@@ -336,3 +336,25 @@ export async function moveFileToDirectory(
   // ⚠️ 書き切ってから消す。逆にすると失敗したときに元が残らない
   await dir.removeEntry(name);
 }
+
+/**
+ * 相対パスの途中のフォルダを作りながら、書き込み先のファイルを用意する。
+ *
+ * ⚠️ ルート名で始まるパスは 1 段落とすこと。ハンドルはそのルートを指しているので、
+ * 落とさないと「Cut の中の Cut」を作ってしまう (resolveFileHandle と同じ約束)。
+ */
+export async function createFileIn(dirHandle: any, path: string, rootName?: string | null): Promise<any> {
+  const parts = path.split(/[/\\]/).filter(Boolean);
+  if (rootName && parts.length > 1 && parts[0] === rootName) parts.shift();
+
+  let dir = dirHandle;
+  for (let i = 0; i < parts.length - 1; i++) {
+    dir = await dir.getDirectoryHandle(parts[i], { create: true });
+  }
+  return dir.getFileHandle(parts[parts.length - 1], { create: true });
+}
+
+/** 上書きの前に残す控えの名前 (a0001.tga → a0001_orig.tga) */
+export function backupPathFor(path: string): string {
+  return path.replace(/(\.[^.]+)$/, '_orig$1');
+}
