@@ -694,6 +694,13 @@ export interface FileSlice {
 
   /** 選択したファイルを削除する。呼ぶ前に確認を取ること */
   deleteFiles: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
+
+  /**
+   * 選択したファイルを、新しく作ったフォルダへまとめて移す。
+   * フォルダは選んだファイルの置き場所に作る (ばらけているときはルート直下)。
+   * 衝突・不正な名前があれば 1 件も動かさずに中止する。
+   */
+  moveFilesToNewFolder: (view: 0 | 1, paths: string[], folderName: string) => Promise<RenameResult>;
 }
 
 /** 編集中の画像・キャッシュ・未保存管理・操作履歴・再生 */

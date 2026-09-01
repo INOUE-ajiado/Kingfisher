@@ -238,3 +238,53 @@ export async function resolveDropHandles(
   );
   return (await Promise.all(guarded)).filter(Boolean);
 }
+
+/**
+ * 相対パスのフォルダを、途中を作りながら辿る。
+ * 「新しいフォルダにまとめる」のように、まだ無いフォルダへ書く場面で使う。
+ */
+export async function ensureDirectory(
+  rootHandle: any,
+  dirPath: string,
+  rootFolderName?: string | null
+): Promise<any> {
+  const parts = splitFilePath(dirPath, rootFolderName, rootHandle?.name);
+
+  let dir = rootHandle;
+  for (const part of parts) {
+    dir = await dir.getDirectoryHandle(part, { create: true });
+  }
+  return dir;
+}
+
+/**
+ * ファイルを別のフォルダへ移す。
+ *
+ * move(dir, name) があればそれを使う (Chromium 111+)。中身を読み書きしないので速く、
+ * 大きなスキャンでも一瞬で終わる。無い環境は「コピー → 元を削除」で代替する。
+ * ⚠️ move() は移動先の同名ファイルを黙って上書きする。呼び出し側は
+ * 衝突を事前に潰しておくこと (buildMoveToFolderPlan)。
+ */
+export async function moveFileToDirectory(
+  rootHandle: any,
+  path: string,
+  targetDirPath: string,
+  rootFolderName?: string | null
+): Promise<void> {
+  const { dir, name } = await resolveParentDirectory(rootHandle, path, rootFolderName);
+  const fileHandle = await dir.getFileHandle(name);
+  const targetDir = await ensureDirectory(rootHandle, targetDirPath, rootFolderName);
+
+  if (typeof fileHandle.move === 'function') {
+    await fileHandle.move(targetDir, name);
+    return;
+  }
+
+  const buffer = await (await fileHandle.getFile()).arrayBuffer();
+  const target = await targetDir.getFileHandle(name, { create: true });
+  const writable = await target.createWritable();
+  await writable.write(buffer);
+  await writable.close();
+  // ⚠️ 書き切ってから消す。逆にすると失敗したときに元が残らない
+  await dir.removeEntry(name);
+}

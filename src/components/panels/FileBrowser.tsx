@@ -6,9 +6,10 @@ import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor, FolderPlus } from 'lucide-react';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
+import { buildMoveToFolderPlan, invalidFolderName } from '../../engine/folderPlan';
 
 /**
  * 選択中ファイルの色。Win A は青 / Win B は緑、ロールはウィンドウの枠と同じ
@@ -271,6 +272,7 @@ export const FileBrowser: React.FC = () => {
     indexOfFileForView,
     duplicateFiles,
     deleteFiles,
+    moveFilesToNewFolder,
     pegStabilizer,
     applyPegCorrectionToFiles,
   } = usePaintStore();
@@ -546,6 +548,48 @@ export const FileBrowser: React.FC = () => {
     if (result.ok) clearMarks();
   };
 
+  /**
+   * 選んだファイルを、新しいフォルダへまとめて移す。
+   *
+   * ⚠️ 元の場所から動くので必ず確認を取る。どこに作られるかは
+   * 選んだファイルの置き場所で決まる — それを確認の文面に出すこと。
+   */
+  const handleMoveToNewFolder = async () => {
+    if (markedInOrder.length === 0) return;
+
+    // eslint-disable-next-line no-alert
+    const name = window.prompt(
+      `${markedInOrder.length} 件をまとめる新しいフォルダの名前を入力してください。`,
+      '新規フォルダ'
+    );
+    if (name === null) return;
+
+    const invalid = invalidFolderName(name);
+    if (invalid) {
+      alert(invalid);
+      return;
+    }
+
+    const list = markedView === 1 ? fileListB : fileListA;
+    const plan = buildMoveToFolderPlan(markedInOrder, name, list);
+    if (plan.problems.length > 0) {
+      alert(`まとめられません:\n${plan.problems.join('\n')}`);
+      return;
+    }
+
+    const names = markedInOrder.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
+    const more = markedInOrder.length > 5 ? `\n…ほか ${markedInOrder.length - 5} 件` : '';
+    const ok = window.confirm(
+      `「${plan.folderPath}」を作って、${plan.items.length} 件をそこへ移します。\n` +
+        `元の場所からは無くなります。\n\n${names}${more}`
+    );
+    if (!ok) return;
+
+    const result = await moveFilesToNewFolder(markedView, markedInOrder, name);
+    alert(result.message);
+    if (result.ok) clearMarks();
+  };
+
   const contextMenuItems: (ContextMenuItem | { type: 'divider' })[] = [
     {
       id: 'rename',
@@ -564,6 +608,15 @@ export const FileBrowser: React.FC = () => {
       label: markedInOrder.length > 1 ? `パスをコピー (${markedInOrder.length} 項目)` : 'パスをコピー',
       icon: <ClipboardCopy className="w-3.5 h-3.5" />,
       onSelect: copyPathsToClipboard,
+    },
+    {
+      id: 'move-to-folder',
+      label:
+        markedInOrder.length > 1
+          ? `新しいフォルダにまとめる (${markedInOrder.length} 項目)...`
+          : '新しいフォルダにまとめる...',
+      icon: <FolderPlus className="w-3.5 h-3.5" />,
+      onSelect: handleMoveToNewFolder,
     },
     { type: 'divider' },
     {
