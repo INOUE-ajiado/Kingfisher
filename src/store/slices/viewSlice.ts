@@ -8,33 +8,89 @@ import {
   detectPegHoles,
   pegTransformTo,
   referenceFromDetection,
+  PegDetectOptions,
+  PegReference,
 } from '../../engine/pegStabilizer';
-import { decodeTGA, encodeTGA } from '../../engine/tga';
-import { requestWriteAccess, resolveFileHandle } from '../../engine/fileSystemPath';
+import { readPixels, writePixels } from '../../engine/imagePixels';
+import { laneCount, runInLanes } from '../../engine/jobPool';
+import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
+import { backupPathFor, createFileIn, requestWriteAccess, resolveFileHandle } from '../../engine/fileSystemPath';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
 
-/**
- * 相対パスの途中のフォルダを作りながら、書き込み先のファイルを用意する。
- *
- * ⚠️ ルート名で始まるパスは 1 段落とすこと。ハンドルはそのルートを指しているので、
- * 落とさないと「Cut の中の Cut」を作ってしまう (resolveFileHandle と同じ約束)。
- */
-async function createFileIn(dirHandle: any, path: string, rootName?: string | null): Promise<any> {
-  const parts = path.split(/[/\\]/).filter(Boolean);
-  if (rootName && parts.length > 1 && parts[0] === rootName) parts.shift();
-
-  let dir = dirHandle;
-  for (let i = 0; i < parts.length - 1; i++) {
-    dir = await dir.getDirectoryHandle(parts[i], { create: true });
-  }
-  return dir.getFileHandle(parts[parts.length - 1], { create: true });
+/** 担当 1 人に 1 枚頼んで、終わるまで待つ */
+function askPeg(worker: Worker, id: number, path: string): Promise<{ ok: boolean; reason?: string; detail?: string }> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (e: MessageEvent<PegWorkerDone>) => {
+      if (e.data.id !== id) return;
+      cleanup();
+      resolve({ ok: e.data.ok, reason: e.data.reason, detail: e.data.detail });
+    };
+    const onError = (e: ErrorEvent) => {
+      cleanup();
+      reject(new Error(e.message || '焼き込みの担当が落ちました'));
+    };
+    const cleanup = () => {
+      worker.removeEventListener('message', onMessage);
+      worker.removeEventListener('error', onError);
+    };
+    worker.addEventListener('message', onMessage);
+    worker.addEventListener('error', onError);
+    worker.postMessage({ type: 'job', id, path });
+  });
 }
 
-/** 上書きの前に残す控えの名前 (a0001.tga → a0001_orig.tga) */
-function backupPathFor(path: string): string {
-  return path.replace(/(\.[^.]+)$/, '_orig$1');
+/**
+ * 1 枚に焼き込む (担当を立てられない環境向けの控え)。
+ * ⚠️ ワーカー側 (peg.worker.ts) と同じ手順にしておくこと。片方だけ直すと結果が変わる。
+ */
+async function bakePegIntoFile(
+  dir: any,
+  outputDir: any,
+  rootName: string | null,
+  path: string,
+  setup: { reference: PegReference; options: PegDetectOptions; mode: 'copy' | 'overwrite'; backup: boolean }
+): Promise<{ ok: boolean; reason?: string; detail?: string }> {
+  const fileHandle = await resolveFileHandle(dir, path, rootName);
+  const file: File = await fileHandle.getFile();
+  const image = await readPixels(file, path);
+
+  const detection = detectPegHoles(image.data, image.width, image.height, setup.options);
+  if (!detection.detected) return { ok: false, reason: detection.message };
+
+  const transform = pegTransformTo(detection, setup.reference, image.width, image.height);
+  if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
+    return { ok: true, detail: 'すでに合っている' };
+  }
+
+  const moved = bakePegTransform(image.data, image.width, image.height, transform);
+  const body = await writePixels(moved, image.width, image.height, path, image.tga);
+
+  if (setup.mode === 'copy') {
+    const target = await createFileIn(outputDir, path);
+    const writable = await target.createWritable();
+    await writable.write(body);
+    await writable.close();
+  } else {
+    if (setup.backup) {
+      const original = await file.arrayBuffer();
+      const backupHandle = await createFileIn(dir, backupPathFor(path), rootName);
+      const backupWritable = await backupHandle.createWritable();
+      await backupWritable.write(original);
+      await backupWritable.close();
+    }
+    const writable = await fileHandle.createWritable();
+    await writable.write(body);
+    await writable.close();
+  }
+
+  return {
+    ok: true,
+    detail:
+      `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°` +
+      ` / 倍率 ${(transform.scale * 100).toFixed(2)}%`,
+  };
 }
 
 export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set, get) => ({
@@ -321,89 +377,125 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       }
     }
 
+    const pegOptions = {
+      threshold: state.pegStabilizer.options.threshold,
+      autoThreshold: state.pegStabilizer.options.autoThreshold,
+      searchRatio: state.pegStabilizer.options.searchPercent / 100,
+    };
+
     let reference = state.pegStabilizer.reference;
     let applied = 0;
     const skipped: string[] = [];
+    const startedAt = Date.now();
+
+    /**
+     * 基準がまだ無ければ、先頭から順に見て最初に穴が見つかった 1 枚を基準にする。
+     *
+     * ⚠️ ここは順番に決めること。並行に流すと、どの担当が先に終わったかで
+     * 基準が変わり、同じ操作でも結果が変わってしまう。
+     * ⚠️ 基準にした 1 枚は動かさない (それが基準なので、焼き込む対象から外す)。
+     */
+    let rest = paths;
+    if (!reference) {
+      for (let i = 0; i < paths.length; i++) {
+        const path = paths[i];
+        try {
+          const handle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+          const image = await readPixels(await handle.getFile(), path);
+          const detection = detectPegHoles(image.data, image.width, image.height, pegOptions);
+          if (!detection.detected) {
+            skipped.push(`${path} (${detection.message})`);
+            continue;
+          }
+          reference = referenceFromDetection(detection);
+          logDebug('view', `タップ補正の基準: ${path}`, detection.message);
+          rest = paths.slice(i + 1);
+          break;
+        } catch (err: any) {
+          skipped.push(`${path} (${err?.message || err})`);
+        }
+      }
+    }
+
+    if (!reference) {
+      logDebug('file', 'タップ補正の焼き込み: 中止 (基準にできる 1 枚が無い)', label, 'warn');
+      return {
+        ok: false,
+        message: `タップ穴を見つけられませんでした。\n\n${skipped.slice(0, 5).join('\n')}`,
+        applied: 0,
+      };
+    }
+
+    /**
+     * ⚠️ 1 枚ずつ順番に焼き込まないこと。検出も焼き込みも重く、実測で
+     * 2325x3303 のスキャン 1 枚あたり 175ms かかる。42 枚なら 7 秒、
+     * その間ずっと画面が止まったままになる。
+     */
+    const useWorkers = typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined';
+    const lanes = laneCount(rest.length, navigator.hardwareConcurrency);
 
     logDebug(
       'file',
-      `タップ補正の焼き込み: 実行 ${paths.length} 件 — ${label}`,
-      mode === 'copy' ? `書き出し先「${outputHandle?.name ?? ''}」` : backup ? '上書き / 控えを残す' : '上書き'
+      `タップ補正の焼き込み: 実行 ${rest.length} 件 — ${label}`,
+      `${mode === 'copy' ? `書き出し先「${outputHandle?.name ?? ''}」` : backup ? '上書き / 控えを残す' : '上書き'} / ` +
+        `${useWorkers ? `${lanes} 本で並行` : '主スレッドで順に (担当を立てられない環境)'}`
     );
 
+    const workers: Worker[] = useWorkers
+      ? Array.from({ length: lanes }, () => {
+          const worker = new Worker(new URL('../../workers/peg.worker.ts', import.meta.url), { type: 'module' });
+          const init: PegWorkerInit = {
+            type: 'init',
+            dir: folderHandle,
+            outputDir: outputHandle,
+            rootName: state.rootFolderName,
+            reference: reference as PegReference,
+            options: pegOptions,
+            mode,
+            backup,
+          };
+          worker.postMessage(init);
+          return worker;
+        })
+      : [];
+
+    let jobId = 0;
+    let outcomes;
+
     try {
-      for (const path of paths) {
-        if (!/[.]tga$/i.test(path)) {
-          skipped.push(`${path} (TGA ではありません)`);
-          continue;
+      outcomes = await runInLanes(rest, lanes, async (path, _index, lane) => {
+        if (useWorkers) {
+          jobId += 1;
+          return await askPeg(workers[lane], jobId, path);
         }
-
-        const fileHandle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
-        const file = await fileHandle.getFile();
-        const image = decodeTGA(await file.arrayBuffer());
-
-        const detection = detectPegHoles(image.data, image.width, image.height, {
-          threshold: state.pegStabilizer.options.threshold,
-          autoThreshold: state.pegStabilizer.options.autoThreshold,
-          searchRatio: state.pegStabilizer.options.searchPercent / 100,
+        // 担当を立てられない環境向けの控え (主スレッドで焼き込む)
+        return await bakePegIntoFile(folderHandle, outputHandle, state.rootFolderName, path, {
+          reference: reference as PegReference,
+          options: pegOptions,
+          mode,
+          backup,
         });
-        if (!detection.detected) {
-          skipped.push(`${path} (${detection.message})`);
-          continue;
-        }
-
-        if (!reference) {
-          // 先頭を基準にする。基準そのものは動かさない
-          reference = referenceFromDetection(detection);
-          logDebug('view', `タップ補正の基準: ${path}`, detection.message);
-          continue;
-        }
-
-        const transform = pegTransformTo(detection, reference, image.width, image.height);
-        if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
-          applied += 1; // すでに合っている
-          continue;
-        }
-
-        const moved = bakePegTransform(image.data, image.width, image.height, transform);
-        const encoded = encodeTGA({ ...image, data: moved });
-
-        if (mode === 'copy') {
-          // 元のフォルダ構成を保ったまま、書き出し先へ同じ場所へ置く
-          const target = await createFileIn(outputHandle, path);
-          const writable = await target.createWritable();
-          await writable.write(encoded);
-          await writable.close();
-        } else {
-          if (backup) {
-            // ⚠️ 上書きの前に元を残す。焼き込みは元に戻せない
-            const original = await file.arrayBuffer();
-            const backupHandle = await createFileIn(folderHandle, backupPathFor(path), state.rootFolderName);
-            const backupWritable = await backupHandle.createWritable();
-            await backupWritable.write(original);
-            await backupWritable.close();
-          }
-          const writable = await fileHandle.createWritable();
-          await writable.write(encoded);
-          await writable.close();
-          get().invalidateCachedImage(get().getImageCacheKey(view, path));
-        }
-        applied += 1;
-        logDebug(
-          'view',
-          `タップ補正を焼き込み: ${path}`,
-          `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}° / 倍率 ${(transform.scale * 100).toFixed(2)}%`
-        );
-      }
-    } catch (err: any) {
-      console.error('Failed to apply peg correction:', err);
-      logDebug('file', 'タップ補正の焼き込み: 途中で失敗', String(err?.message || err), 'warn');
-      return {
-        ok: false,
-        message: `途中で失敗しました: ${err?.message || err}\n${applied} 件は書き換え済みです。`,
-        applied,
-      };
+      });
+    } finally {
+      // ⚠️ 必ず片づけること。残すと 1 回焼くたびに担当が増えていく
+      workers.forEach((w) => w.terminate());
     }
+
+    outcomes.forEach((outcome, i) => {
+      const path = rest[i];
+      if (outcome.error) {
+        skipped.push(`${path} (${outcome.error})`);
+        return;
+      }
+      const result = outcome.value!;
+      if (!result.ok) {
+        skipped.push(`${path} (${result.reason})`);
+        return;
+      }
+      applied += 1;
+      get().invalidateCachedImage(get().getImageCacheKey(view, path));
+      if (result.detail) logDebug('view', `タップ補正を焼き込み: ${path}`, result.detail);
+    });
 
     if (reference) set((s2) => ({ pegStabilizer: { ...s2.pegStabilizer, reference } }));
 
@@ -417,10 +509,16 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         : backup
         ? '元のファイルへ (元は _orig 付きで残しました)'
         : '元のファイルへ';
-    logDebug('file', `タップ補正の焼き込み: 完了 ${applied} 件 / 見送り ${skipped.length} 件`, where);
+    const elapsed = Date.now() - startedAt;
+    logDebug(
+      'file',
+      `タップ補正の焼き込み: 完了 ${applied} 件 / 見送り ${skipped.length} 件`,
+      `${(elapsed / 1000).toFixed(1)} 秒 (1 枚あたり ${applied > 0 ? Math.round(elapsed / applied) : 0}ms) — ${where}`,
+      skipped.length > 0 ? 'warn' : 'info'
+    );
     return {
-      ok: true,
-      message: `${applied} 件にタップ補正を焼き込みました (${where})。${detail}`,
+      ok: skipped.length === 0,
+      message: `${applied} 件にタップ補正を焼き込みました (${where} / ${(elapsed / 1000).toFixed(1)} 秒)。${detail}`,
       applied,
     };
   },
