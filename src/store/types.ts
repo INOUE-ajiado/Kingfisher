@@ -710,6 +710,12 @@ export interface FileSlice {
   refreshAfterRotate: (view: 0 | 1, paths: string[]) => void;
 
   /**
+   * 控え (_orig) から元のファイルへ戻す。
+   * ⚠️ 焼き込みは元に戻せないので、控えがある間だけの救済手段。
+   */
+  restoreFromBackup: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
+
+  /**
    * 書き込み許可を先に取る。
    * ⚠️ prompt や confirm を挟む操作は、押された時点でこれを呼ぶこと。
    * 許可を求められるのはボタンを押した直後の数秒だけで、入力中に期限が切れる。

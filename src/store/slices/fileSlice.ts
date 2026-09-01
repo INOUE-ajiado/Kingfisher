@@ -9,6 +9,8 @@ import {
   deleteFile,
   moveFileToDirectory,
   requestWriteAccess,
+  resolveFileHandle,
+  backupPathFor,
 } from '../../engine/fileSystemPath';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
@@ -24,7 +26,6 @@ import { encodeTypeFor, rotateImageData, rotateLabel, RotateDirection } from '..
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import type { RotateWorkerDone, RotateWorkerJob } from '../../workers/rotate.worker';
 import { decodeTGA, encodeTGA } from '../../engine/tga';
-import { resolveFileHandle } from '../../engine/fileSystemPath';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import {
   isSyncPairConsistent,
@@ -1224,6 +1225,72 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
     if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, fileList, nextMap);
     else get().setFolderHandleA(folderHandle, state.folderNameA, fileList, nextMap);
+  },
+
+  /**
+   * 控え (_orig) から元のファイルへ戻す。
+   *
+   * ⚠️ 焼き込みは元に戻せない。控えを残していた場合の唯一の救済手段なので、
+   * 誤検出で壊れたコマをここから戻せるようにしておく。
+   * ⚠️ 戻したあとも控えは消さないこと。もう一度戻したくなることがある。
+   */
+  restoreFromBackup: async (view, paths) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    logDebug('file', `控えから戻す: 要求 ${paths.length} 件`, `${label} — ${describePaths(paths)}`, 'warn');
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
+    if (!folderHandle) {
+      logDebug('file', '控えから戻す: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
+    }
+
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', '控えから戻す: 中止 (書き込みが許可されなかった)', `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
+    }
+
+    const restored: string[] = [];
+    const missing: string[] = [];
+
+    for (const path of paths) {
+      // ⚠️ 控えそのものを選んでいた場合は触らない (自分で自分を上書きしてしまう)
+      if (/_orig[.][^.]+$/i.test(path)) continue;
+
+      try {
+        const backup = await resolveFileHandle(folderHandle, backupPathFor(path), state.rootFolderName);
+        const body = await (await backup.getFile()).arrayBuffer();
+        const target = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+        const writable = await target.createWritable();
+        await writable.write(body);
+        await writable.close();
+        restored.push(path);
+        state.invalidateCachedImage(state.getImageCacheKey(view, path));
+      } catch {
+        missing.push(path);
+      }
+    }
+
+    if (restored.length > 0) get().refreshAfterRotate(view, restored);
+
+    const detail = missing.length > 0 ? `\n\n控えが無い ${missing.length} 件:\n${describePaths(missing)}` : '';
+    logDebug(
+      'file',
+      `控えから戻す: 完了 ${restored.length} 件 / 控えが無い ${missing.length} 件`,
+      describePaths(restored),
+      missing.length > 0 ? 'warn' : 'info'
+    );
+    return {
+      ok: restored.length > 0,
+      message:
+        restored.length > 0
+          ? `${restored.length} 件を控え (_orig) から戻しました。${detail}`
+          : `控え (_orig) が見つかりませんでした。${detail}`,
+      renamed: restored.length,
+    };
   },
 
   /**

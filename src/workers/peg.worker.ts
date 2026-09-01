@@ -15,6 +15,7 @@ import {
   detectPegHoles,
   PegDetectOptions,
   PegReference,
+  PegTransform,
   pegTransformTo,
 } from '../engine/pegStabilizer';
 
@@ -30,33 +31,60 @@ export interface PegWorkerInit {
   backup: boolean;
 }
 
-export interface PegWorkerJob {
-  type: 'job';
+/** 補正量を測るだけ (書き込まない) */
+export interface PegWorkerMeasure {
+  type: 'measure';
   id: number;
   path: string;
 }
 
+/** 決まった補正量で焼き込む */
+export interface PegWorkerBake {
+  type: 'bake';
+  id: number;
+  path: string;
+  transform: PegTransform;
+}
+
 export interface PegWorkerDone {
   id: number;
-  /** 焼き込めたか (見送りは false + reason) */
+  /** 測れた / 焼き込めたか (見送りは false + reason) */
   ok: boolean;
   reason?: string;
+  /** measure のときの補正量 */
+  transform?: PegTransform;
   /** ログに出す補正量 */
   detail?: string;
 }
 
 let setup: PegWorkerInit | null = null;
 
-async function applyOne(path: string): Promise<{ ok: boolean; reason?: string; detail?: string }> {
+/**
+ * 補正量を測るだけ。
+ * ⚠️ ここでは書き込まないこと。他の枚と食い違う値かどうかは、
+ * 全部を測り終えるまで分からない (誤検出をそのまま焼き込まないため)。
+ */
+async function measureOne(path: string): Promise<{ ok: boolean; reason?: string; transform?: PegTransform }> {
+  const s = setup!;
+  const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
+  const image = await readPixels(await fileHandle.getFile(), path);
+
+  const detection = detectPegHoles(image.data, image.width, image.height, s.options);
+  if (!detection.detected) return { ok: false, reason: detection.message };
+
+  return { ok: true, transform: pegTransformTo(detection, s.reference, image.width, image.height) };
+}
+
+/** 決まった補正量で焼き込んで書き戻す */
+async function bakeOne(
+  path: string,
+  transform: PegTransform
+): Promise<{ ok: boolean; reason?: string; detail?: string }> {
   const s = setup!;
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  const detection = detectPegHoles(image.data, image.width, image.height, s.options);
-  if (!detection.detected) return { ok: false, reason: detection.message };
-
-  const transform = pegTransformTo(detection, s.reference, image.width, image.height);
   if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
     return { ok: true, detail: 'すでに合っている' };
   }
@@ -92,7 +120,7 @@ async function applyOne(path: string): Promise<{ ok: boolean; reason?: string; d
   };
 }
 
-self.onmessage = async (e: MessageEvent<PegWorkerInit | PegWorkerJob>) => {
+self.onmessage = async (e: MessageEvent<PegWorkerInit | PegWorkerMeasure | PegWorkerBake>) => {
   const data = e.data;
 
   if (data.type === 'init') {
@@ -101,7 +129,7 @@ self.onmessage = async (e: MessageEvent<PegWorkerInit | PegWorkerJob>) => {
   }
 
   try {
-    const result = await applyOne(data.path);
+    const result = data.type === 'measure' ? await measureOne(data.path) : await bakeOne(data.path, data.transform);
     const done: PegWorkerDone = { id: data.id, ...result };
     self.postMessage(done);
   } catch (err: any) {
