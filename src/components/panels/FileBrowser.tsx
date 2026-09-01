@@ -479,14 +479,17 @@ export const FileBrowser: React.FC = () => {
     const text = markedInOrder.join('\n');
     try {
       await navigator.clipboard.writeText(text);
+      logFileAction(`パスをコピー: ${markedInOrder.length} 件`);
     } catch {
       // 権限が無い環境向けのフォールバック
       // eslint-disable-next-line no-alert
       window.prompt('パスをコピーしてください', text);
+      logDebug('file', 'パスをコピー: クリップボードが使えないので入力欄に出した', undefined, 'warn');
     }
   };
 
   const handleDuplicate = async () => {
+    logFileAction(`複製: メニューから実行 (${markedInOrder.length} 件)`);
     const result = await duplicateFiles(markedView, markedInOrder);
     alert(result.message);
     if (result.ok) clearMarks();
@@ -512,7 +515,10 @@ export const FileBrowser: React.FC = () => {
         `${target.length} 件にタップ補正を焼き込み、選んだフォルダへ書き出します。\n` +
           `元のファイルは触りません。\n${base}\n\n${names}${more}`
       );
-      if (!ok) return;
+      if (!ok) {
+        logFileAction(`タップ補正 → 別フォルダへ書き出す: 取り消した (${target.length} 件)`);
+        return;
+      }
       const result = await applyPegCorrectionToFiles(markedView, target, { mode: 'copy' });
       alert(result.message);
       return;
@@ -522,7 +528,10 @@ export const FileBrowser: React.FC = () => {
     const ok = window.confirm(
       `${target.length} 件を上書きします。元に戻せません。\n${base}\n\n${names}${more}`
     );
-    if (!ok) return;
+    if (!ok) {
+      logFileAction(`タップ補正で上書き: 取り消した (${target.length} 件)`);
+      return;
+    }
     const backup = window.confirm('上書きの前に、元のファイルを _orig 付きで残しますか？');
     const result = await applyPegCorrectionToFiles(markedView, target, { mode: 'overwrite', backup });
     alert(result.message);
@@ -541,7 +550,10 @@ export const FileBrowser: React.FC = () => {
     const ok = window.confirm(
       `${markedInOrder.length} 件のファイルを削除します。元に戻せません。\n\n${names}${more}`
     );
-    if (!ok) return;
+    if (!ok) {
+      logFileAction(`削除: 取り消した (${markedInOrder.length} 件)`);
+      return;
+    }
 
     const result = await deleteFiles(markedView, markedInOrder);
     alert(result.message);
@@ -562,10 +574,14 @@ export const FileBrowser: React.FC = () => {
       `${markedInOrder.length} 件をまとめる新しいフォルダの名前を入力してください。`,
       '新規フォルダ'
     );
-    if (name === null) return;
+    if (name === null) {
+      logFileAction(`新しいフォルダにまとめる: 取り消した (${markedInOrder.length} 件)`);
+      return;
+    }
 
     const invalid = invalidFolderName(name);
     if (invalid) {
+      logDebug('file', `新しいフォルダにまとめる: 中止 (${invalid})`, `入力された名前「${name}」`, 'warn');
       alert(invalid);
       return;
     }
@@ -573,6 +589,7 @@ export const FileBrowser: React.FC = () => {
     const list = markedView === 1 ? fileListB : fileListA;
     const plan = buildMoveToFolderPlan(markedInOrder, name, list);
     if (plan.problems.length > 0) {
+      logDebug('file', `新しいフォルダにまとめる: 中止 (${plan.problems.length} 件の問題)`, plan.problems.join(' / '), 'warn');
       alert(`まとめられません:\n${plan.problems.join('\n')}`);
       return;
     }
@@ -583,11 +600,24 @@ export const FileBrowser: React.FC = () => {
       `「${plan.folderPath}」を作って、${plan.items.length} 件をそこへ移します。\n` +
         `元の場所からは無くなります。\n\n${names}${more}`
     );
-    if (!ok) return;
+    if (!ok) {
+      logFileAction(`新しいフォルダにまとめる: 取り消した (${plan.items.length} 件 → ${plan.folderPath})`);
+      return;
+    }
 
     const result = await moveFilesToNewFolder(markedView, markedInOrder, name);
     alert(result.message);
     if (result.ok) clearMarks();
+  };
+
+  /**
+   * メニューから始めた操作を、取り消した場合も含めて残す。
+   *
+   * ⚠️ 確認で「いいえ」を押した場合はストアまで届かない。ここで残さないと
+   * 「操作したのに何も起きない」の報告を追えなくなる。
+   */
+  const logFileAction = (message: string, detail?: string) => {
+    logDebug('file', message, `${markedView === 1 ? 'Win B (右画面)' : 'Win A (左画面)'}${detail ? ` — ${detail}` : ''}`);
   };
 
   const contextMenuItems: (ContextMenuItem | { type: 'divider' })[] = [
@@ -595,7 +625,10 @@ export const FileBrowser: React.FC = () => {
       id: 'rename',
       label: markedInOrder.length > 1 ? `${markedInOrder.length} 項目の名前を変更...` : '名前を変更...',
       icon: <Type className="w-3.5 h-3.5" />,
-      onSelect: () => setIsRenameOpen(true),
+      onSelect: () => {
+        logFileAction(`名前を変更: ダイアログを開いた (${markedInOrder.length} 件)`);
+        setIsRenameOpen(true);
+      },
     },
     {
       id: 'duplicate',
