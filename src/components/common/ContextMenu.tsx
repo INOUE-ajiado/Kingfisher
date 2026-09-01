@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { isPointerInsideMenu } from './contextMenuHit';
 
 export interface ContextMenuItem {
   id: string;
@@ -44,8 +45,21 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
-    // capture で拾う。ツリー側の onClick より先に閉じたい
-    const onPointer = () => onClose();
+    /**
+     * メニューの外を押したら閉じる。
+     *
+     * ⚠️ メニューの中を押したときは閉じないこと。ここで無条件に閉じると、
+     * 項目の click が届く前にメニューが外れ、どの項目も実行できない
+     * (2026-09-02: 「まとめる」を押しても何も起きない、ログには
+     * 「メニューを開いた → 項目を選ばなかった」だけが残る、という報告で判明)。
+     * ⚠️ 判定は必ずここで行うこと。メニューは document.body へポータル描画しており、
+     * React のルート (#root) の外にある。要素側の onPointerDown は呼ばれないし、
+     * capture で拾う以上どのみちこちらが先に走る。
+     */
+    const onPointer = (e: PointerEvent) => {
+      if (isPointerInsideMenu(menuRef.current, e.target)) return;
+      onClose();
+    };
 
     window.addEventListener('keydown', onKey);
     window.addEventListener('pointerdown', onPointer, true);
@@ -61,8 +75,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, items, onClose }
     <div
       ref={menuRef}
       style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 100 }}
-      // メニュー内の pointerdown で閉じてしまわないようにする
-      onPointerDown={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
       className="min-w-[180px] py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl select-none animate-in fade-in zoom-in-95 duration-100"
     >
