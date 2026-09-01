@@ -21,6 +21,8 @@ import {
 } from '../../engine/renamePlan';
 import { applyMoveToList, buildMoveToFolderPlan } from '../../engine/folderPlan';
 import { encodeTypeFor, rotateImageData, rotateLabel, RotateDirection } from '../../engine/rotateImage';
+import { laneCount, runInLanes } from '../../engine/jobPool';
+import type { RotateWorkerDone, RotateWorkerJob } from '../../workers/rotate.worker';
 import { decodeTGA, encodeTGA } from '../../engine/tga';
 import { resolveFileHandle } from '../../engine/fileSystemPath';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
@@ -182,6 +184,51 @@ function logFolderOpened(
     `開き直したあとの位置 Win A=${indexA} / Win B=${indexB}${consistent ? '' : ` — 本来 Win B は ${expected} のはず`}`,
     consistent ? 'info' : 'warn'
   );
+}
+
+/**
+ * 回す担当を人数分だけ立ち上げる。
+ *
+ * ⚠️ 1 枚ごとに立ち上げないこと。起動のたびにモジュールを読み直すので、
+ * 枚数が増えるほどその分だけ損をする。人数分だけ作って使い回す。
+ * ⚠️ フォルダのハンドルは構造化複製で渡せる (許可の状態も引き継ぐ)。
+ * 画素を主スレッドへ運ばずに済むので、1 枚あたり数十 MB のコピーが消える。
+ */
+function makeRotateWorkers(count: number, dir: any, rootName: string | null): Worker[] {
+  return Array.from({ length: count }, () => {
+    const worker = new Worker(new URL('../../workers/rotate.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    worker.postMessage({ type: 'init', dir, rootName });
+    return worker;
+  });
+}
+
+/** 担当 1 人に 1 枚頼んで、終わるまで待つ */
+function askRotate(worker: Worker, id: number, path: string, direction: RotateDirection): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (e: MessageEvent<RotateWorkerDone>) => {
+      if (e.data.id !== id) return;
+      worker.removeEventListener('message', onMessage);
+      worker.removeEventListener('error', onError);
+      if (e.data.ok) resolve();
+      else reject(new Error(e.data.error || '回せませんでした'));
+    };
+    const onError = (e: ErrorEvent) => {
+      worker.removeEventListener('message', onMessage);
+      worker.removeEventListener('error', onError);
+      reject(new Error(e.message || '回す担当が落ちました'));
+    };
+    worker.addEventListener('message', onMessage);
+    worker.addEventListener('error', onError);
+    const job: RotateWorkerJob = { type: 'job', id, path, direction };
+    worker.postMessage(job);
+  });
+}
+
+/** 担当を立てられる環境か (立てられなければ主スレッドで回す) */
+function canUseRotateWorkers(): boolean {
+  return typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined';
 }
 
 /**
@@ -1094,53 +1141,66 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
       return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
     }
 
-    logDebug('file', `回転 (${turn}): 実行 ${paths.length} 件`, label);
+    /**
+     * ⚠️ 1 枚ずつ順番に回さないこと。読み込み・変換・書き出しの待ちがそのまま
+     * 積み上がり、42 枚のスキャンで十数秒かかる。空いた手から次を取らせる。
+     * ⚠️ 主スレッドで回さないこと。大きな画像の符号化は画面を丸ごと止める。
+     */
+    const useWorkers = canUseRotateWorkers();
+    const lanes = laneCount(paths.length, navigator.hardwareConcurrency);
+    const startedAt = Date.now();
 
-    const turned: string[] = [];
-    const skipped: string[] = [];
+    logDebug(
+      'file',
+      `回転 (${turn}): 実行 ${paths.length} 件`,
+      `${label} — ${useWorkers ? `${lanes} 本で並行` : '主スレッドで順に (担当を立てられない環境)'}`
+    );
 
+    const workers = useWorkers ? makeRotateWorkers(lanes, folderHandle, state.rootFolderName) : [];
+    let jobId = 0;
+
+    let outcomes;
     try {
-      for (const path of paths) {
-        const handle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
-        const file: File = await handle.getFile();
-
-        let blob: Blob;
-        try {
-          blob = await rotatedBytes(file, path, direction);
-        } catch (err: any) {
-          // ⚠️ 読めない 1 枚で全部を止めないこと。見送って先へ進み、最後にまとめて伝える
-          skipped.push(`${path} (${err?.message || err})`);
-          continue;
+      outcomes = await runInLanes(paths, lanes, async (path, _index, lane) => {
+        if (useWorkers) {
+          jobId += 1;
+          await askRotate(workers[lane], jobId, path, direction);
+          return path;
         }
 
+        // 担当を立てられない環境向けの控え (主スレッドで回す)
+        const handle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+        const file: File = await handle.getFile();
+        const blob = await rotatedBytes(file, path, direction);
         const writable = await handle.createWritable();
-        await writable.write(await blob.arrayBuffer());
+        await writable.write(blob);
         await writable.close();
-        turned.push(path);
-      }
-    } catch (err: any) {
-      console.error('Failed to rotate:', err);
-      logDebug('file', `回転 (${turn}): 途中で失敗`, `${turned.length} 件は回した / ${err?.message || err}`, 'warn');
-      get().refreshAfterRotate(view, turned);
-      return {
-        ok: false,
-        message: `回転の途中で失敗しました: ${err?.message || err}\n${turned.length} 件は回しました。`,
-        renamed: turned.length,
-      };
+        return path;
+      });
+    } finally {
+      // ⚠️ 必ず片づけること。残すと 1 回まわすたびに担当が増えていく
+      workers.forEach((w) => w.terminate());
     }
+
+    const turned = outcomes.filter((o) => !o.error).map((o) => paths[o.index]);
+    const skipped = outcomes.filter((o) => o.error).map((o) => `${paths[o.index]} (${o.error})`);
 
     get().refreshAfterRotate(view, turned);
 
+    const elapsed = Date.now() - startedAt;
+    const each = turned.length > 0 ? Math.round(elapsed / turned.length) : 0;
     const detail = skipped.length > 0 ? `\n\n見送り ${skipped.length} 件:\n${skipped.slice(0, 5).join('\n')}` : '';
+
     logDebug(
       'file',
       `回転 (${turn}): 完了 ${turned.length} 件 / 見送り ${skipped.length} 件`,
-      describePaths(turned),
+      `${(elapsed / 1000).toFixed(1)} 秒 (1 枚あたり ${each}ms / ${useWorkers ? `${lanes} 本` : '順に'}) — ${describePaths(turned)}`,
       skipped.length > 0 ? 'warn' : 'info'
     );
+
     return {
-      ok: true,
-      message: `${turned.length} 件を${turn}回しました。${detail}`,
+      ok: skipped.length === 0,
+      message: `${turned.length} 件を${turn}回しました (${(elapsed / 1000).toFixed(1)} 秒)。${detail}`,
       renamed: turned.length,
     };
   },
