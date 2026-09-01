@@ -15,6 +15,13 @@ import { PegTransform } from './pegStabilizer';
 export interface PegCandidate {
   path: string;
   transform: PegTransform;
+  /**
+   * 基準との並びの違い。
+   * ⚠️ 平行移動しか補正しない以上、傾きや間隔のずれは直せない。
+   * だからこそ「大きく違う = 穴を取り違えている」の判断材料として要る。
+   */
+  angleDiff?: number;
+  spacingRatio?: number;
 }
 
 export interface PegRejection {
@@ -26,7 +33,7 @@ export interface PegBatchCheck {
   accepted: PegCandidate[];
   rejected: PegRejection[];
   /** 判断のもとにした中央値 (ログに出す) */
-  median: { offsetX: number; offsetY: number; rotation: number; scale: number } | null;
+  median: { offsetX: number; offsetY: number; angleDiff: number; spacingRatio: number } | null;
 }
 
 export interface PegBatchLimits {
@@ -84,8 +91,8 @@ export function rejectPegOutliers(
     ? {
         offsetX: median(candidates.map((c) => c.transform.offsetX)),
         offsetY: median(candidates.map((c) => c.transform.offsetY)),
-        rotation: median(candidates.map((c) => c.transform.rotation)),
-        scale: median(candidates.map((c) => c.transform.scale)),
+        angleDiff: median(candidates.map((c) => c.angleDiff ?? 0)),
+        spacingRatio: median(candidates.map((c) => c.spacingRatio ?? 1)),
       }
     : null;
 
@@ -94,11 +101,13 @@ export function rejectPegOutliers(
     const reasons: string[] = [];
 
     // 枚数によらない上限。紙を置き直しても、この幅を超えることはない
-    if (Math.abs(t.rotation) > limits.absRotationDeg) {
-      reasons.push(`傾きが ${t.rotation.toFixed(2)}° と大きすぎます`);
+    const angleDiff = candidate.angleDiff ?? 0;
+    const spacingRatio = candidate.spacingRatio ?? 1;
+    if (Math.abs(angleDiff) > limits.absRotationDeg) {
+      reasons.push(`穴の並びが基準と ${angleDiff.toFixed(2)}° 違います`);
     }
-    if (Math.abs(t.scale - 1) > limits.absScale) {
-      reasons.push(`倍率が ${(t.scale * 100).toFixed(2)}% と離れすぎています`);
+    if (Math.abs(spacingRatio - 1) > limits.absScale) {
+      reasons.push(`穴の間隔が基準の ${(spacingRatio * 100).toFixed(2)}% しかありません`);
     }
 
     if (med) {
@@ -108,11 +117,8 @@ export function rejectPegOutliers(
       if (Math.abs(t.offsetY - med.offsetY) > limits.offsetPx) {
         reasons.push(`縦のずれ ${px(t.offsetY)} が他の ${px(med.offsetY)} と食い違います`);
       }
-      if (Math.abs(t.rotation - med.rotation) > limits.rotationDeg) {
-        reasons.push(`傾き ${t.rotation.toFixed(3)}° が他の ${med.rotation.toFixed(3)}° と食い違います`);
-      }
-      if (Math.abs(t.scale - med.scale) > limits.scale) {
-        reasons.push(`倍率 ${(t.scale * 100).toFixed(2)}% が他の ${(med.scale * 100).toFixed(2)}% と食い違います`);
+      if (Math.abs(angleDiff - med.angleDiff) > limits.rotationDeg) {
+        reasons.push(`穴の並び ${angleDiff.toFixed(3)}° が他の ${med.angleDiff.toFixed(3)}° と食い違います`);
       }
     }
 

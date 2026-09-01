@@ -53,6 +53,15 @@ export interface PegReference {
   spacing: number;
 }
 
+/**
+ * 補正量。
+ *
+ * ⚠️ 平行移動だけにすること。本家 (OLMPegHoleStabilizer) は回転も拡大縮小も持たない
+ * (warpAffine も QTransform も呼んでおらず、QImage::scanLine で行を動かしているだけ)。
+ * 回転を入れると、穴を取り違えたときに絵ごと大きく回してしまい、
+ * 元に戻せない壊れ方になる (2026-09-02 に -5.79° を焼き込んで実際に起きた)。
+ * rotation と scale は表示と記録のために残してあるが、常に 0 と 1 である。
+ */
 export interface PegTransform {
   offsetX: number;
   offsetY: number;
@@ -113,6 +122,44 @@ interface Blob {
  */
 type HoleLook = 'dark' | 'transparent';
 
+/**
+ * 収縮 → 膨張 (オープニング) で、細かいゴミを落とす。
+ *
+ * 本家 (OLMPegHoleStabilizer) も erode / dilate を通してから連結成分を数えている。
+ * 線画の点や紙のゴミが穴の候補に混ざるのを防ぐのが目的。
+ *
+ * ⚠️ 消えすぎたら元に戻すこと。間引いた格子では 1 マスが元の step px にあたるので、
+ * 小さめのスキャンだと穴そのものが消えてしまう。消えたら掛けない方がまし。
+ */
+function openMask(mask: Uint8Array, gw: number, gh: number): Uint8Array {
+  const eroded = new Uint8Array(mask.length);
+  for (let y = 1; y < gh - 1; y++) {
+    for (let x = 1; x < gw - 1; x++) {
+      const at = y * gw + x;
+      // 十字の 4 近傍が全部埋まっているところだけ残す
+      if (mask[at] && mask[at - 1] && mask[at + 1] && mask[at - gw] && mask[at + gw]) eroded[at] = 1;
+    }
+  }
+
+  let left = 0;
+  for (let i = 0; i < eroded.length; i++) left += eroded[i];
+  if (left === 0) return mask; // 消えすぎ。掛けないでおく
+
+  const dilated = new Uint8Array(mask.length);
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const at = y * gw + x;
+      if (!eroded[at]) continue;
+      dilated[at] = 1;
+      if (x > 0) dilated[at - 1] = 1;
+      if (x < gw - 1) dilated[at + 1] = 1;
+      if (y > 0) dilated[at - gw] = 1;
+      if (y < gh - 1) dilated[at + gw] = 1;
+    }
+  }
+  return dilated;
+}
+
 function findBlobs(
   data: Uint8ClampedArray,
   width: number,
@@ -140,12 +187,15 @@ function findBlobs(
     }
   }
 
+  // 本家と同じく、数える前にゴミを落とす
+  const cleaned = openMask(mask, gw, gh);
+
   const seen = new Uint8Array(gw * gh);
   const blobs: Blob[] = [];
   const stack: number[] = [];
 
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || seen[start]) continue;
+  for (let start = 0; start < cleaned.length; start++) {
+    if (!cleaned[start] || seen[start]) continue;
 
     stack.length = 0;
     stack.push(start);
@@ -173,10 +223,10 @@ function findBlobs(
       if (gy > maxY) maxY = gy;
 
       // 4 近傍
-      if (gx > 0 && mask[at - 1] && !seen[at - 1]) { seen[at - 1] = 1; stack.push(at - 1); }
-      if (gx < gw - 1 && mask[at + 1] && !seen[at + 1]) { seen[at + 1] = 1; stack.push(at + 1); }
-      if (gy > 0 && mask[at - gw] && !seen[at - gw]) { seen[at - gw] = 1; stack.push(at - gw); }
-      if (gy < gh - 1 && mask[at + gw] && !seen[at + gw]) { seen[at + gw] = 1; stack.push(at + gw); }
+      if (gx > 0 && cleaned[at - 1] && !seen[at - 1]) { seen[at - 1] = 1; stack.push(at - 1); }
+      if (gx < gw - 1 && cleaned[at + 1] && !seen[at + 1]) { seen[at + 1] = 1; stack.push(at + 1); }
+      if (gy > 0 && cleaned[at - gw] && !seen[at - gw]) { seen[at - gw] = 1; stack.push(at - gw); }
+      if (gy < gh - 1 && cleaned[at + gw] && !seen[at + gw]) { seen[at + gw] = 1; stack.push(at + gw); }
     }
 
     blobs.push({
@@ -192,8 +242,14 @@ function findBlobs(
   return blobs;
 }
 
-/** なぜ候補から外れたか。見つからないときの説明に使う */
-type RejectReason = 'ok' | 'edge' | 'small' | 'large' | 'thin';
+/**
+ * なぜ候補から外れたか。見つからないときの説明に使う。
+ *
+ * 本家 (OLMPegHoleStabilizer) の検証項目に合わせてある
+ * (invalid width / invalid height / invalid area / invalid aspect ratio)。
+ * ⚠️ 具体的な数値は本家から読み取れないので、こちらで決めた値である。
+ */
+type RejectReason = 'ok' | 'edge' | 'small' | 'large' | 'thin' | 'sparse';
 
 /**
  * 穴らしい大きさ・形かどうか。
@@ -210,6 +266,15 @@ function classifyBlob(blob: Blob, width: number): RejectReason {
   const aspect = blob.width / Math.max(1, blob.height);
   // 丸穴も長円 (中央) も通す。極端に細長い帯は落とす
   if (aspect < 0.2 || aspect > 6) return 'thin';
+
+  /**
+   * 面積の検証。穴は塗り潰された塊なので、囲みの中がほぼ埋まっている。
+   * ⚠️ 線画が輪になっただけの部分を落とすためにここが要る
+   * (大きさも縦横比も穴とよく似てしまう)。
+   */
+  const box = Math.max(1, blob.width * blob.height);
+  if (blob.area / box < 0.45) return 'sparse';
+
   return 'ok';
 }
 
@@ -406,7 +471,7 @@ export function detectPegHoles(
 
     for (const level of thresholds) {
       const blobs = findBlobs(data, width, band.fromY, band.toY, level, step, look);
-      const reasons = { ok: 0, edge: 0, small: 0, large: 0, thin: 0 };
+      const reasons = { ok: 0, edge: 0, small: 0, large: 0, thin: 0, sparse: 0 };
       const candidates: Blob[] = [];
       blobs.forEach((b) => {
         const why = classifyBlob(b, width);
@@ -418,7 +483,7 @@ export function detectPegHoles(
       const note =
         `${where}: 塊 ${blobs.length} 個 → 穴らしい形 ${candidates.length} 個` +
         (blobs.length > 0
-          ? ` (小さすぎ ${reasons.small} / 大きすぎ ${reasons.large} / 細長い ${reasons.thin} / 端に接触 ${reasons.edge})`
+          ? ` (小さすぎ ${reasons.small} / 大きすぎ ${reasons.large} / 細長い ${reasons.thin} / 中身が薄い ${reasons.sparse} / 端に接触 ${reasons.edge})`
           : '');
       tries.push(note);
       if (candidates.length > bestCandidates) {
@@ -473,39 +538,36 @@ export function referenceFromDetection(detection: PegDetection): PegReference {
  * 平行移動の量は、回したあとの穴の位置から求めること。先に引き算すると、
  * 傾きがあるときに合わない。
  */
-export function pegTransformTo(
-  detection: PegDetection,
-  reference: PegReference,
-  width: number,
-  height: number
-): PegTransform {
+export function pegTransformTo(detection: PegDetection, reference: PegReference): PegTransform {
   if (!detection.detected) return { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 };
 
-  const rotation = reference.angle - detection.angle;
-
   /**
-   * 倍率は穴の間隔の比。
-   * ⚠️ 大きく外れた値は捨てて 1 にすること。穴を取り違えたときに、
-   * 絵ごと拡大・縮小してしまう。スキャナの送りむらは数 % に収まる。
+   * 真ん中の穴を基準の位置へ動かすだけ。
+   * ⚠️ 回転も拡大縮小もしないこと (本家と同じ)。傾きと間隔は測ってあるが、
+   * それは「この検出を信じてよいか」を見るために使う (pegGeometryDiff)。
    */
-  const ratio = detection.spacing > 0 ? reference.spacing / detection.spacing : 1;
-  const scale = ratio > 0.9 && ratio < 1.1 ? ratio : 1;
-
-  const rad = (rotation * Math.PI) / 180;
-  const cx = width / 2;
-  const cy = height / 2;
-
-  // 画像の中心を軸に「回して・拡大縮小して」から平行移動する順に合わせる
-  const dx = detection.center.x - cx;
-  const dy = detection.center.y - cy;
-  const movedX = cx + (dx * Math.cos(rad) - dy * Math.sin(rad)) * scale;
-  const movedY = cy + (dx * Math.sin(rad) + dy * Math.cos(rad)) * scale;
-
   return {
-    offsetX: Math.round((reference.center.x - movedX) * 100) / 100,
-    offsetY: Math.round((reference.center.y - movedY) * 100) / 100,
-    rotation: Math.round(rotation * 10000) / 10000,
-    scale: Math.round(scale * 100000) / 100000,
+    offsetX: Math.round((reference.center.x - detection.center.x) * 100) / 100,
+    offsetY: Math.round((reference.center.y - detection.center.y) * 100) / 100,
+    rotation: 0,
+    scale: 1,
+  };
+}
+
+/**
+ * 検出した穴の並びが、基準とどれだけ食い違っているか。
+ *
+ * ⚠️ 平行移動しかしない以上、傾きや間隔のずれは補正できない。だからこそ
+ * 「大きく食い違う = 穴を取り違えている」の判断材料として使うこと。
+ */
+export function pegGeometryDiff(
+  detection: PegDetection,
+  reference: PegReference
+): { angleDiff: number; spacingRatio: number } {
+  return {
+    angleDiff: Math.round((detection.angle - reference.angle) * 10000) / 10000,
+    spacingRatio:
+      detection.spacing > 0 ? Math.round((detection.spacing / reference.spacing) * 100000) / 100000 : 1,
   };
 }
 
@@ -530,20 +592,18 @@ export function bakePegTransform(
   out.fill(255);
   for (let i = 3; i < out.length; i += 4) out[i] = 0;
 
-  const rad = (transform.rotation * Math.PI) / 180;
-  const cos = Math.cos(-rad);
-  const sin = Math.sin(-rad);
-  const invScale = 1 / (transform.scale || 1);
-  const cx = width / 2;
-  const cy = height / 2;
+  /**
+   * ⚠️ 行をそのままずらすだけにすること (本家と同じ)。
+   * 回転や拡大縮小を入れると画素を作り直すことになり、
+   * 線が甘くなるうえ、純白 = 透明の縁が中間色になる。
+   */
+  const dx = Math.round(transform.offsetX);
+  const dy = Math.round(transform.offsetY);
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      // 出力の画素が、元のどこから来たのかを逆にたどる (平行移動 → 倍率 → 回転の順で戻す)
-      const tx = (x - transform.offsetX - cx) * invScale;
-      const ty = (y - transform.offsetY - cy) * invScale;
-      const sx = Math.round(cx + tx * cos - ty * sin);
-      const sy = Math.round(cy + tx * sin + ty * cos);
+      const sx = x - dx;
+      const sy = y - dy;
       if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
 
       const from = (sy * width + sx) * 4;

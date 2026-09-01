@@ -9,8 +9,9 @@ import { PegCandidate, rejectPegOutliers } from './pegBatch';
  * X -322px や Y -1174px / 回転 -5.8° が混ざっていた。
  */
 
-function candidate(path: string, offsetX: number, offsetY = -1, rotation = 0.03, scale = 0.999): PegCandidate {
-  return { path, transform: { offsetX, offsetY, rotation, scale } };
+function candidate(path: string, offsetX: number, offsetY = -1, angleDiff = 0.03, spacingRatio = 0.999): PegCandidate {
+  // ⚠️ 補正量は平行移動だけ (本家と同じ)。傾きと間隔は「信用してよいか」の判断材料
+  return { path, transform: { offsetX, offsetY, rotation: 0, scale: 1 }, angleDiff, spacingRatio };
 }
 
 /** 揃っている 10 枚 */
@@ -25,11 +26,12 @@ describe('揃っていない 1 枚を外す', () => {
     expect(out.rejected[0].reason).toContain('横のずれ');
   });
 
-  it('縦に飛んだうえ大きく傾いた 1 枚を外す (実データの _0036)', () => {
+  it('縦に飛んだうえ穴の並びが違う 1 枚を外す (実データの _0036)', () => {
     const out = rejectPegOutliers([...cluster, candidate('bad.jpg', -270.97, -1174.73, -5.7868, 1)]);
 
     expect(out.rejected).toHaveLength(1);
-    expect(out.rejected[0].reason).toContain('傾き');
+    expect(out.rejected[0].reason).toContain('穴の並び');
+    expect(out.rejected[0].reason).toContain('縦のずれ');
   });
 
   it('揃っている分はそのまま通す', () => {
@@ -59,14 +61,14 @@ describe('揃っていない 1 枚を外す', () => {
     const out = rejectPegOutliers([candidate('a.jpg', 18), candidate('b.jpg', 20, -1, -5.79, 1)]);
 
     expect(out.rejected.map((r) => r.path)).toEqual(['b.jpg']);
-    expect(out.rejected[0].reason).toContain('大きすぎます');
+    expect(out.rejected[0].reason).toContain('穴の並びが基準と');
   });
 
-  it('倍率が離れすぎている 1 枚も弾く', () => {
-    const out = rejectPegOutliers([...cluster, candidate('bad.jpg', 19, -1, 0.03, 1.02)]);
+  it('穴の間隔が基準と違いすぎる 1 枚も弾く', () => {
+    const out = rejectPegOutliers([...cluster, candidate('bad.jpg', 19, -1, 0.03, 1.05)]);
 
     expect(out.rejected.map((r) => r.path)).toEqual(['bad.jpg']);
-    expect(out.rejected[0].reason).toContain('倍率');
+    expect(out.rejected[0].reason).toContain('穴の間隔');
   });
 
   it('空なら何も返さない', () => {

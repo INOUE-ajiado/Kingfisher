@@ -16,6 +16,7 @@ import {
   PegDetectOptions,
   PegReference,
   PegTransform,
+  pegGeometryDiff,
   pegTransformTo,
 } from '../engine/pegStabilizer';
 
@@ -53,6 +54,9 @@ export interface PegWorkerDone {
   reason?: string;
   /** measure のときの補正量 */
   transform?: PegTransform;
+  /** measure のときの、基準との並びの違い */
+  angleDiff?: number;
+  spacingRatio?: number;
   /** ログに出す補正量 */
   detail?: string;
 }
@@ -64,7 +68,9 @@ let setup: PegWorkerInit | null = null;
  * ⚠️ ここでは書き込まないこと。他の枚と食い違う値かどうかは、
  * 全部を測り終えるまで分からない (誤検出をそのまま焼き込まないため)。
  */
-async function measureOne(path: string): Promise<{ ok: boolean; reason?: string; transform?: PegTransform }> {
+async function measureOne(
+  path: string
+): Promise<{ ok: boolean; reason?: string; transform?: PegTransform; angleDiff?: number; spacingRatio?: number }> {
   const s = setup!;
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
@@ -72,7 +78,8 @@ async function measureOne(path: string): Promise<{ ok: boolean; reason?: string;
   const detection = detectPegHoles(image.data, image.width, image.height, s.options);
   if (!detection.detected) return { ok: false, reason: detection.message };
 
-  return { ok: true, transform: pegTransformTo(detection, s.reference, image.width, image.height) };
+  const diff = pegGeometryDiff(detection, s.reference);
+  return { ok: true, transform: pegTransformTo(detection, s.reference), ...diff };
 }
 
 /** 決まった補正量で焼き込んで書き戻す */
@@ -90,7 +97,7 @@ async function bakeOne(
   }
 
   const moved = bakePegTransform(image.data, image.width, image.height, transform);
-  const body = await writePixels(moved, image.width, image.height, path, image.tga);
+  const body = await writePixels(moved, image.width, image.height, path, image.tga, image.density);
 
   if (s.mode === 'copy') {
     // 元のフォルダ構成を保ったまま、書き出し先の同じ場所へ置く

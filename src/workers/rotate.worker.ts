@@ -9,6 +9,7 @@
 
 import { resolveFileHandle } from '../engine/fileSystemPath';
 import { encodeTypeFor, rotateImageData, RotateDirection } from '../engine/rotateImage';
+import { applyJpegDensity, readJpegDensity } from '../engine/jpegDensity';
 import { decodeTGA, encodeTGA } from '../engine/tga';
 
 export interface RotateWorkerInit {
@@ -48,6 +49,9 @@ async function rotateOne(path: string, direction: RotateDirection): Promise<void
     const turned = rotateImageData(image.data, image.width, image.height, direction);
     body = new Blob([encodeTGA({ ...image, ...turned })]);
   } else {
+    // ⚠️ 回しても解像度は引き継ぐこと (書き出し直すと 72dpi 相当へ落ちる)
+    const density = /[.]jpe?g$/i.test(path) ? readJpegDensity(await file.arrayBuffer()) : null;
+
     // ⚠️ 色変換を挟ませないこと。回すだけなのに色が動く上に、その分だけ遅い
     const bitmap = await createImageBitmap(file, {
       colorSpaceConversion: 'none',
@@ -69,6 +73,9 @@ async function rotateOne(path: string, direction: RotateDirection): Promise<void
 
     const type = encodeTypeFor(path);
     body = await canvas.convertToBlob({ type: type.mime, quality: type.quality });
+    if (type.mime === 'image/jpeg' && density) {
+      body = new Blob([applyJpegDensity(await body.arrayBuffer(), density)], { type: type.mime });
+    }
   }
 
   // ⚠️ Blob のまま渡すこと。arrayBuffer() を挟むと丸ごと 1 回コピーされる
