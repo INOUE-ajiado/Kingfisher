@@ -20,6 +20,9 @@ import {
   replaceBaseName,
 } from '../../engine/renamePlan';
 import { applyMoveToList, buildMoveToFolderPlan } from '../../engine/folderPlan';
+import { encodeTypeFor, rotateImageData, rotateLabel, RotateDirection } from '../../engine/rotateImage';
+import { decodeTGA, encodeTGA } from '../../engine/tga';
+import { resolveFileHandle } from '../../engine/fileSystemPath';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import {
   isSyncPairConsistent,
@@ -179,6 +182,39 @@ function logFolderOpened(
     `開き直したあとの位置 Win A=${indexA} / Win B=${indexB}${consistent ? '' : ` — 本来 Win B は ${expected} のはず`}`,
     consistent ? 'info' : 'warn'
   );
+}
+
+/**
+ * 1 枚を回した中身を作る。
+ *
+ * ⚠️ TGA は自前の符号化を通すこと。キャンバスに載せると純白と透明の扱いが崩れる
+ * (純白 RGB(255,255,255) = 透明という決まりがある)。
+ * ⚠️ TGA 以外はキャンバスで回す。JPEG は保存し直しになるので、
+ * 呼び出し側が確認の文面で必ず断ること。
+ */
+async function rotatedBytes(file: File, path: string, direction: RotateDirection): Promise<Blob> {
+  if (/[.]tga$/i.test(path)) {
+    const image = decodeTGA(await file.arrayBuffer());
+    const turned = rotateImageData(image.data, image.width, image.height, direction);
+    return new Blob([encodeTGA({ ...image, ...turned })]);
+  }
+
+  const bitmap = await createImageBitmap(file);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.height;
+  canvas.height = bitmap.width;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('キャンバスを用意できませんでした');
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(direction === 'right' ? Math.PI / 2 : -Math.PI / 2);
+  ctx.drawImage(bitmap, -bitmap.width / 2, -bitmap.height / 2);
+  bitmap.close();
+
+  const type = encodeTypeFor(path);
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type.mime, type.quality));
+  if (!blob) throw new Error(`${type.mime} で書き出せませんでした`);
+  return blob;
 }
 
 /**
@@ -1029,6 +1065,105 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
 
     logDebug('file', `削除: 完了 ${removed.length} 件`, describePaths(removed), 'warn');
     return { ok: true, message: `${removed.length} 件を削除しました。`, renamed: removed.length };
+  },
+
+  /**
+   * 選択したファイルを 90 度回して上書きする。
+   *
+   * ⚠️ 元のファイルを書き換える。呼び出し側で必ず確認を取ること。
+   * ⚠️ 途中で失敗しても、そこまでに回した分は一覧と実体を揃えること。
+   * 画面と中身が食い違ったまま作業を続けられる方が危ない。
+   */
+  rotateFiles: async (view, paths, direction) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+    const turn = rotateLabel(direction);
+
+    logDebug('file', `回転 (${turn}): 要求 ${paths.length} 件`, `${label} — ${describePaths(paths)}`);
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
+    if (!folderHandle) {
+      logDebug('file', `回転 (${turn}): 中止 (書き込めるフォルダとして開かれていない)`, label, 'warn');
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
+    }
+
+    const access = await requestWriteAccess(folderHandle);
+    if (!access.ok) {
+      logDebug('file', `回転 (${turn}): 中止 (書き込みが許可されなかった)`, `${label} — ${access.reason}`, 'warn');
+      return { ok: false, message: `${label} のフォルダへ書き込めません。\n${access.reason}`, renamed: 0 };
+    }
+
+    logDebug('file', `回転 (${turn}): 実行 ${paths.length} 件`, label);
+
+    const turned: string[] = [];
+    const skipped: string[] = [];
+
+    try {
+      for (const path of paths) {
+        const handle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+        const file: File = await handle.getFile();
+
+        let blob: Blob;
+        try {
+          blob = await rotatedBytes(file, path, direction);
+        } catch (err: any) {
+          // ⚠️ 読めない 1 枚で全部を止めないこと。見送って先へ進み、最後にまとめて伝える
+          skipped.push(`${path} (${err?.message || err})`);
+          continue;
+        }
+
+        const writable = await handle.createWritable();
+        await writable.write(await blob.arrayBuffer());
+        await writable.close();
+        turned.push(path);
+      }
+    } catch (err: any) {
+      console.error('Failed to rotate:', err);
+      logDebug('file', `回転 (${turn}): 途中で失敗`, `${turned.length} 件は回した / ${err?.message || err}`, 'warn');
+      get().refreshAfterRotate(view, turned);
+      return {
+        ok: false,
+        message: `回転の途中で失敗しました: ${err?.message || err}\n${turned.length} 件は回しました。`,
+        renamed: turned.length,
+      };
+    }
+
+    get().refreshAfterRotate(view, turned);
+
+    const detail = skipped.length > 0 ? `\n\n見送り ${skipped.length} 件:\n${skipped.slice(0, 5).join('\n')}` : '';
+    logDebug(
+      'file',
+      `回転 (${turn}): 完了 ${turned.length} 件 / 見送り ${skipped.length} 件`,
+      describePaths(turned),
+      skipped.length > 0 ? 'warn' : 'info'
+    );
+    return {
+      ok: true,
+      message: `${turned.length} 件を${turn}回しました。${detail}`,
+      renamed: turned.length,
+    };
+  },
+
+  /**
+   * 回したあとの読み直し。
+   *
+   * ⚠️ 名前は変わらないので一覧はそのまま。ただし読み込み済みの実体と
+   * 画像のキャッシュは古いままなので、必ず捨てること。捨てないと
+   * 回した結果が画面に出ず「効いていない」ように見える。
+   */
+  refreshAfterRotate: (view, paths) => {
+    if (paths.length === 0) return;
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const fileList = view === 1 ? state.fileListB : state.fileListA;
+    const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
+
+    paths.forEach((p) => state.invalidateCachedImage(state.getImageCacheKey(view, p)));
+    const nextMap = dropMoved(fileMap, paths.map((from) => ({ from })));
+
+    if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, fileList, nextMap);
+    else get().setFolderHandleA(folderHandle, state.folderNameA, fileList, nextMap);
   },
 
   /**
