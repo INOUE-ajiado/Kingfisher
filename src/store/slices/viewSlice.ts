@@ -11,6 +11,7 @@ import {
   PegDetectOptions,
   PegReference,
   PegTransform,
+  pegGeometryDiff,
 } from '../../engine/pegStabilizer';
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
@@ -26,12 +27,26 @@ function askPeg(
   worker: Worker,
   id: number,
   message: any
-): Promise<{ ok: boolean; reason?: string; detail?: string; transform?: PegTransform }> {
+): Promise<{
+  ok: boolean;
+  reason?: string;
+  detail?: string;
+  transform?: PegTransform;
+  angleDiff?: number;
+  spacingRatio?: number;
+}> {
   return new Promise((resolve, reject) => {
     const onMessage = (e: MessageEvent<PegWorkerDone>) => {
       if (e.data.id !== id) return;
       cleanup();
-      resolve({ ok: e.data.ok, reason: e.data.reason, detail: e.data.detail, transform: e.data.transform });
+      resolve({
+        ok: e.data.ok,
+        reason: e.data.reason,
+        detail: e.data.detail,
+        transform: e.data.transform,
+        angleDiff: e.data.angleDiff,
+        spacingRatio: e.data.spacingRatio,
+      });
     };
     const onError = (e: ErrorEvent) => {
       cleanup();
@@ -57,14 +72,18 @@ async function measurePegForFile(
   path: string,
   reference: PegReference,
   options: PegDetectOptions
-): Promise<{ ok: boolean; reason?: string; transform?: PegTransform }> {
+): Promise<{ ok: boolean; reason?: string; transform?: PegTransform; angleDiff?: number; spacingRatio?: number }> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
 
   const detection = detectPegHoles(image.data, image.width, image.height, options);
   if (!detection.detected) return { ok: false, reason: detection.message };
 
-  return { ok: true, transform: pegTransformTo(detection, reference, image.width, image.height) };
+  return {
+    ok: true,
+    transform: pegTransformTo(detection, reference),
+    ...pegGeometryDiff(detection, reference),
+  };
 }
 
 /**
@@ -88,7 +107,7 @@ async function bakePegIntoFile(
   }
 
   const moved = bakePegTransform(image.data, image.width, image.height, transform);
-  const body = await writePixels(moved, image.width, image.height, path, image.tga);
+  const body = await writePixels(moved, image.width, image.height, path, image.tga, image.density);
 
   if (setup.mode === 'copy') {
     const target = await createFileIn(outputDir, path);
@@ -273,7 +292,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
     const reference = pegStabilizer.reference ?? referenceFromDetection(detection);
     const isNewReference = !pegStabilizer.reference;
-    const transform = pegTransformTo(detection, reference, currentImage.width, currentImage.height);
+    const transform = pegTransformTo(detection, reference);
 
     set((state) => ({
       pegStabilizer: {
@@ -510,7 +529,12 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           skipped.push(`${path} (${result.reason})`);
           return;
         }
-        candidates.push({ path, transform: result.transform });
+        candidates.push({
+          path,
+          transform: result.transform,
+          angleDiff: result.angleDiff,
+          spacingRatio: result.spacingRatio,
+        });
       });
 
       /**
@@ -526,9 +550,35 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         logDebug(
           'view',
           `タップ補正の目安 (中央値): X ${checked.median.offsetX.toFixed(1)}px / Y ${checked.median.offsetY.toFixed(1)}px`,
-          `回転 ${checked.median.rotation.toFixed(3)}° / 倍率 ${(checked.median.scale * 100).toFixed(2)}% — ` +
+          `穴の並びの差 ${checked.median.angleDiff.toFixed(3)}° / 間隔の比 ${(checked.median.spacingRatio * 100).toFixed(2)}% — ` +
             `${checked.accepted.length} 件を焼き込み / ${checked.rejected.length} 件は食い違いで見送り`,
           checked.rejected.length > 0 ? 'warn' : 'info'
+        );
+      }
+
+      /**
+       * ⚠️ 見つからなかった分・食い違った分は not_founds へ分けること (本家と同じ)。
+       * 書き出し先に「補正できた分」だけが並ぶと、抜けているコマに気づけない。
+       * 元のファイルには触らないので、上書きのときは何もしない。
+       */
+      if (mode === 'copy' && skipped.length > 0) {
+        const notFound = skipped.map((line) => line.replace(/ \(.*$/, ''));
+        const carried = await runInLanes(notFound, lanes, async (path) => {
+          const handle = await resolveFileHandle(folderHandle, path, state.rootFolderName);
+          const body = await handle.getFile();
+          const name = path.split(/[/\\]/).pop() || path;
+          const target = await createFileIn(outputHandle, `not_founds/${name}`);
+          const writable = await target.createWritable();
+          await writable.write(body);
+          await writable.close();
+          return path;
+        });
+        const moved = carried.filter((o) => !o.error).length;
+        logDebug(
+          'file',
+          `タップ補正: 補正できなかった ${moved} 件を not_founds へ写した`,
+          `書き出し先「${outputHandle?.name ?? ''}」/ not_founds`,
+          'warn'
         );
       }
 

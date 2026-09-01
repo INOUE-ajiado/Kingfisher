@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { bakePegTransform, detectPegHoles, pegTransformTo, referenceFromDetection } from './pegStabilizer';
+import {
+  bakePegTransform,
+  detectPegHoles,
+  pegGeometryDiff,
+  pegTransformTo,
+  referenceFromDetection,
+} from './pegStabilizer';
 
 /**
  * タップ穴の自動検出。
@@ -258,27 +264,33 @@ describe('タップ穴の検出', () => {
 });
 
 describe('基準へ合わせる補正量', () => {
-  it('ずれた紙を基準へ重ねる', () => {
+  it('ずれた紙を基準へ重ねる (平行移動だけで)', () => {
     const base = detectPegHoles(paperWithPegs(), W, H);
     const reference = referenceFromDetection(base);
 
     // 右へ 12px・下へ 7px ずれて、1.5 度傾いた紙
     const shifted = detectPegHoles(paperWithPegs(12, 7, 1.5), W, H);
-    const t = pegTransformTo(shifted, reference, W, H);
+    const t = pegTransformTo(shifted, reference);
 
-    // 傾きは打ち消す向きに出る
-    expect(t.rotation).toBeLessThan(-1);
-    expect(t.rotation).toBeGreaterThan(-2);
+    // ⚠️ 本家に合わせて回転も拡大縮小もしない
+    expect(t.rotation).toBe(0);
+    expect(t.scale).toBe(1);
 
-    // 補正をかけた後の中央穴が、基準の位置に重なること
-    const rad = (t.rotation * Math.PI) / 180;
-    const dx = shifted.center.x - W / 2;
-    const dy = shifted.center.y - H / 2;
-    const movedX = W / 2 + dx * Math.cos(rad) - dy * Math.sin(rad) + t.offsetX;
-    const movedY = H / 2 + dx * Math.sin(rad) + dy * Math.cos(rad) + t.offsetY;
+    // 動かしたあとの中央穴が、基準の位置に重なること
+    expect(shifted.center.x + t.offsetX).toBeCloseTo(reference.center.x, 1);
+    expect(shifted.center.y + t.offsetY).toBeCloseTo(reference.center.y, 1);
+  });
 
-    expect(movedX).toBeCloseTo(reference.center.x, 0);
-    expect(movedY).toBeCloseTo(reference.center.y, 0);
+  it('傾きと間隔の食い違いは、補正せずに測って返す (信用してよいかの判断に使う)', () => {
+    const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
+    const tilted = detectPegHoles(paperWithPegs(0, 0, 1.5), W, H);
+
+    const diff = pegGeometryDiff(tilted, reference);
+
+    expect(diff.angleDiff).toBeGreaterThan(1);
+    expect(diff.angleDiff).toBeLessThan(2);
+    expect(diff.spacingRatio).toBeGreaterThan(0.98);
+    expect(diff.spacingRatio).toBeLessThan(1.02);
   });
 
   it('検出できていなければ動かさない', () => {
@@ -293,9 +305,9 @@ describe('補正の焼き込み', () => {
   it('ずれた紙を焼き込むと、穴が基準の位置へ来る', () => {
     const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
 
-    const shiftedData = paperWithPegs(14, 9, 1.5);
+    const shiftedData = paperWithPegs(14, 9);
     const shifted = detectPegHoles(shiftedData, W, H);
-    const transform = pegTransformTo(shifted, reference, W, H);
+    const transform = pegTransformTo(shifted, reference);
 
     const baked = bakePegTransform(shiftedData, W, H, transform);
     const after = detectPegHoles(baked, W, H);
@@ -303,10 +315,23 @@ describe('補正の焼き込み', () => {
     expect(after.detected).toBe(true);
     expect(after.center.x).toBeCloseTo(reference.center.x, -0.5);
     expect(after.center.y).toBeCloseTo(reference.center.y, -0.5);
-    expect(Math.abs(after.angle - reference.angle)).toBeLessThan(0.4);
   });
 
-  it('穴の間隔が縮んだ紙は、倍率でも合わせる', () => {
+  it('傾いた紙でも、穴の位置は合う (傾きは残る = 本家と同じ)', () => {
+    const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
+
+    const tiltedData = paperWithPegs(14, 9, 1.5);
+    const tilted = detectPegHoles(tiltedData, W, H);
+    const baked = bakePegTransform(tiltedData, W, H, pegTransformTo(tilted, reference));
+    const after = detectPegHoles(baked, W, H);
+
+    expect(after.center.x).toBeCloseTo(reference.center.x, -0.5);
+    expect(after.center.y).toBeCloseTo(reference.center.y, -0.5);
+    // ⚠️ 傾きはそのまま残る。直すには回転が要り、本家はそれをしない
+    expect(Math.abs(after.angle - reference.angle)).toBeGreaterThan(1);
+  });
+
+  it('穴の間隔が縮んだ紙でも、拡大縮小はしない (本家と同じ)', () => {
     // ⚠️ スキャナの送りむらで数 % 伸び縮みする。平行移動と回転だけでは重ならない
     const base = detectPegHoles(paperWithPegs(), W, H);
     const reference = referenceFromDetection(base);
@@ -319,15 +344,19 @@ describe('補正の焼き込み', () => {
     punchAt(213, 11, 11);
 
     const shrunk = detectPegHoles(data, W, H);
-    const t = pegTransformTo(shrunk, reference, W, H);
+    const t = pegTransformTo(shrunk, reference);
 
-    expect(t.scale).toBeGreaterThan(1.02);
-    expect(t.scale).toBeLessThan(1.05);
+    // ⚠️ 伸び縮みは補正しない。代わりに「どれだけ違うか」を測って返す
+    expect(t.scale).toBe(1);
+    expect(pegGeometryDiff(shrunk, reference).spacingRatio).toBeLessThan(0.98);
 
     const baked = bakePegTransform(data, W, H, t);
     const after = detectPegHoles(baked, W, H);
     expect(after.detected).toBe(true);
-    expect(Math.abs(after.spacing - reference.spacing)).toBeLessThan(4);
+    // 真ん中の穴は基準に合う
+    expect(after.center.x).toBeCloseTo(reference.center.x, -0.5);
+    // ⚠️ 間隔は縮んだまま残る。直すには拡大縮小が要り、本家はそれをしない
+    expect(Math.abs(after.spacing - reference.spacing)).toBeGreaterThan(4);
   });
 
   it('穴を取り違えたような極端な比は倍率にしない', () => {

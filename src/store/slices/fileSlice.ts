@@ -26,6 +26,7 @@ import { encodeTypeFor, rotateImageData, rotateLabel, RotateDirection } from '..
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import type { RotateWorkerDone, RotateWorkerJob } from '../../workers/rotate.worker';
 import { decodeTGA, encodeTGA } from '../../engine/tga';
+import { applyJpegDensity, readJpegDensity } from '../../engine/jpegDensity';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import {
   isSyncPairConsistent,
@@ -247,6 +248,9 @@ async function rotatedBytes(file: File, path: string, direction: RotateDirection
     return new Blob([encodeTGA({ ...image, ...turned })]);
   }
 
+  // ⚠️ 回しても解像度は引き継ぐこと (書き出し直すと 72dpi 相当へ落ちる)
+  const density = /[.]jpe?g$/i.test(path) ? readJpegDensity(await file.arrayBuffer()) : null;
+
   const bitmap = await createImageBitmap(file);
   const canvas = document.createElement('canvas');
   canvas.width = bitmap.height;
@@ -262,7 +266,8 @@ async function rotatedBytes(file: File, path: string, direction: RotateDirection
   const type = encodeTypeFor(path);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type.mime, type.quality));
   if (!blob) throw new Error(`${type.mime} で書き出せませんでした`);
-  return blob;
+  if (type.mime !== 'image/jpeg' || !density) return blob;
+  return new Blob([applyJpegDensity(await blob.arrayBuffer(), density)], { type: type.mime });
 }
 
 /**
