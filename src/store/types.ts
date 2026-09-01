@@ -9,6 +9,7 @@
 import { TGAImage } from '../engine/tga';
 import { PegHole, PegReference } from '../engine/pegStabilizer';
 import { RenamePlanItem } from '../engine/renamePlan';
+import { RotateDirection } from '../engine/rotateImage';
 import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo, DroppedVideo } from '../engine/videoSource';
 import { PaneLayout, PaneId } from '../engine/paneLayout';
@@ -694,6 +695,19 @@ export interface FileSlice {
 
   /** 選択したファイルを削除する。呼ぶ前に確認を取ること */
   deleteFiles: (view: 0 | 1, paths: string[]) => Promise<RenameResult>;
+
+  /**
+   * 選択したファイルを 90 度回して上書きする。
+   * ⚠️ 元のファイルを書き換える。呼ぶ前に確認を取ること。
+   * ⚠️ JPEG は保存し直すたびに少し画質が落ちる — それも伝えること。
+   */
+  rotateFiles: (view: 0 | 1, paths: string[], direction: RotateDirection) => Promise<RenameResult>;
+
+  /**
+   * 回したあとの読み直し (実体と画像キャッシュを捨てる)。
+   * ⚠️ 名前は変わらないので一覧はそのまま。捨てないと画面が古いままになる。
+   */
+  refreshAfterRotate: (view: 0 | 1, paths: string[]) => void;
 
   /**
    * 書き込み許可を先に取る。

@@ -6,7 +6,7 @@ import { sortNatural } from '../../engine/naturalOrder';
 import { FileTreeNode, buildTreeFromPaths } from '../../engine/fileTree';
 import { RenameModal } from '../modals/RenameModal';
 import { ContextMenu, ContextMenuItem } from '../common/ContextMenu';
-import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor, FolderPlus } from 'lucide-react';
+import { FolderOpen, Link, Link2Off, AlertTriangle, ChevronRight, ChevronDown, Folder, FileImage, Film, List, Network, Type, Copy, ClipboardCopy, Trash2, Anchor, FolderPlus, RotateCw, RotateCcw } from 'lucide-react';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
 import { buildMoveToFolderPlan, invalidFolderName } from '../../engine/folderPlan';
@@ -275,6 +275,7 @@ export const FileBrowser: React.FC = () => {
     duplicateFiles,
     deleteFiles,
     moveFilesToNewFolder,
+    rotateFiles,
     ensureWriteAccess,
     pegStabilizer,
     applyPegCorrectionToFiles,
@@ -603,6 +604,39 @@ export const FileBrowser: React.FC = () => {
   };
 
   /**
+   * 選んだファイルを 90 度回して上書きする。
+   *
+   * ⚠️ 元のファイルを書き換えるので必ず確認を取る。
+   * ⚠️ JPEG は保存し直しになる (少し画質が落ちる) ことも伝える。戻すのは逆回転。
+   */
+  const rotateSelected = async (direction: 'right' | 'left') => {
+    const target = markedInOrder;
+    if (target.length === 0) return;
+
+    // ⚠️ 確認を出す前に許可を取る。読んでいるあいだに期限が切れる
+    if (!(await takeWriteAccess())) return;
+
+    const turn = direction === 'right' ? '右へ 90°' : '左へ 90°';
+    const names = target.map((p) => p.split('/').pop()).slice(0, 5).join('\n');
+    const more = target.length > 5 ? `\n…ほか ${target.length - 5} 件` : '';
+    const jpeg = target.some((p) => /[.]jpe?g$/i.test(p))
+      ? '\nJPEG は保存し直すため、わずかに画質が落ちます。'
+      : '';
+
+    const ok = window.confirm(
+      `${target.length} 件を${turn}回して上書きします。\n` +
+        `戻すときは逆向きに回してください。${jpeg}\n\n${names}${more}`
+    );
+    if (!ok) {
+      logFileAction(`回転 (${turn}): 取り消した (${target.length} 件)`);
+      return;
+    }
+
+    const result = await rotateFiles(markedView, target, direction);
+    alert(result.message);
+  };
+
+  /**
    * 選んだファイルを、新しいフォルダへまとめて移す。
    *
    * ⚠️ 元の場所から動くので必ず確認を取る。どこに作られるかは
@@ -688,6 +722,24 @@ export const FileBrowser: React.FC = () => {
       label: markedInOrder.length > 1 ? `パスをコピー (${markedInOrder.length} 項目)` : 'パスをコピー',
       icon: <ClipboardCopy className="w-3.5 h-3.5" />,
       onSelect: copyPathsToClipboard,
+    },
+    {
+      id: 'rotate-right',
+      label:
+        markedInOrder.length > 1
+          ? `右へ 90° 回転 (${markedInOrder.length} 項目)`
+          : '右へ 90° 回転',
+      icon: <RotateCw className="w-3.5 h-3.5" />,
+      onSelect: () => rotateSelected('right'),
+    },
+    {
+      id: 'rotate-left',
+      label:
+        markedInOrder.length > 1
+          ? `左へ 90° 回転 (${markedInOrder.length} 項目)`
+          : '左へ 90° 回転',
+      icon: <RotateCcw className="w-3.5 h-3.5" />,
+      onSelect: () => rotateSelected('left'),
     },
     {
       id: 'move-to-folder',
