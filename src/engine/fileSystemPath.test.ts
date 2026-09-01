@@ -5,6 +5,8 @@ import {
   isSupportedImageFile,
   collectImageFilesRecursively,
   ensureWritePermission,
+  ensureDirectory,
+  moveFileToDirectory,
 } from './fileSystemPath';
 
 /**
@@ -202,5 +204,98 @@ describe('ensureWritePermission', () => {
 
   it('API 非対応の環境では書き込みを試させる', async () => {
     await expect(ensureWritePermission({ name: 'x' })).resolves.toBe(true);
+  });
+});
+
+/**
+ * 「新しいフォルダにまとめる」ための移動。
+ *
+ * 制作データを動かすので、移動先のフォルダを作れること・
+ * move() が無い環境でも中身が失われないことを押さえておく。
+ */
+describe('moveFileToDirectory', () => {
+  /** 書き込みもできるダミーのフォルダ */
+  function makeWritableDir(name: string): any {
+    const dirs = new Map<string, any>();
+    const files = new Map<string, any>();
+
+    const dir: any = {
+      name,
+      dirs,
+      files,
+      getDirectoryHandle: async (n: string, options?: { create?: boolean }) => {
+        let child = dirs.get(n);
+        if (!child) {
+          if (!options?.create) throw new Error(`no dir: ${n}`);
+          child = makeWritableDir(n);
+          dirs.set(n, child);
+        }
+        return child;
+      },
+      getFileHandle: async (n: string, options?: { create?: boolean }) => {
+        let file = files.get(n);
+        if (!file) {
+          if (!options?.create) throw new Error(`no file: ${n}`);
+          file = makeFile(n, new Uint8Array());
+          files.set(n, file);
+        }
+        return file;
+      },
+      removeEntry: async (n: string) => {
+        files.delete(n);
+        dirs.delete(n);
+      },
+    };
+    return dir;
+  }
+
+  /** move() を持たない (= 古い Chromium 相当の) ファイル */
+  function makeFile(name: string, body: Uint8Array): any {
+    const file: any = {
+      name,
+      body,
+      getFile: async () => ({ arrayBuffer: async () => file.body.buffer.slice(0) }),
+      createWritable: async () => ({
+        write: async (data: ArrayBuffer) => {
+          file.body = new Uint8Array(data);
+        },
+        close: async () => {},
+      }),
+    };
+    return file;
+  }
+
+  it('途中のフォルダを作りながら辿る', async () => {
+    const root = makeWritableDir('Cut');
+    const dir = await ensureDirectory(root, 'Cut/a/ボツ', 'Cut');
+
+    expect(dir.name).toBe('ボツ');
+    expect(root.dirs.get('a').dirs.has('ボツ')).toBe(true);
+  });
+
+  it('move() があればそれを使う (中身を読み書きしない)', async () => {
+    const root = makeWritableDir('Cut');
+    const a = await root.getDirectoryHandle('a', { create: true });
+    const moved: any[] = [];
+    a.files.set('a0001.tga', {
+      name: 'a0001.tga',
+      move: async (targetDir: any, name: string) => moved.push([targetDir.name, name]),
+    });
+
+    await moveFileToDirectory(root, 'Cut/a/a0001.tga', 'Cut/a/ボツ', 'Cut');
+
+    expect(moved).toEqual([['ボツ', 'a0001.tga']]);
+  });
+
+  it('move() が無い環境では、書き切ってから元を消す', async () => {
+    const root = makeWritableDir('Cut');
+    const a = await root.getDirectoryHandle('a', { create: true });
+    a.files.set('a0001.tga', makeFile('a0001.tga', new Uint8Array([1, 2, 3])));
+
+    await moveFileToDirectory(root, 'Cut/a/a0001.tga', 'Cut/a/ボツ', 'Cut');
+
+    const target = a.dirs.get('ボツ').files.get('a0001.tga');
+    expect(Array.from(target.body as Uint8Array)).toEqual([1, 2, 3]);
+    expect(a.files.has('a0001.tga')).toBe(false);
   });
 });

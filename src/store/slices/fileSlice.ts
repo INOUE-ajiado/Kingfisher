@@ -3,7 +3,13 @@
  */
 
 import { StateCreator } from 'zustand';
-import { renameFile, copyFile, deleteFile, ensureWritePermission } from '../../engine/fileSystemPath';
+import {
+  renameFile,
+  copyFile,
+  deleteFile,
+  moveFileToDirectory,
+  ensureWritePermission,
+} from '../../engine/fileSystemPath';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
   buildDuplicatePlan,
@@ -13,6 +19,7 @@ import {
   omitUnchanged,
   replaceBaseName,
 } from '../../engine/renamePlan';
+import { applyMoveToList, buildMoveToFolderPlan } from '../../engine/folderPlan';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import {
   isSyncPairConsistent,
@@ -172,6 +179,22 @@ function logFolderOpened(
     `開き直したあとの位置 Win A=${indexA} / Win B=${indexB}${consistent ? '' : ` — 本来 Win B は ${expected} のはず`}`,
     consistent ? 'info' : 'warn'
   );
+}
+
+/**
+ * 移したファイルを、読み込み済みの実体の一覧から外す。
+ *
+ * ⚠️ 新しいパスへ付け替えないこと。File は開いた時点の場所を指しているので、
+ * 移動後に読むと失敗しうる。外しておけばフォルダハンドル経由で読み直される
+ * (複製したファイルを一覧に入れないのと同じ考え方)。
+ */
+function dropMoved(fileMap: Map<string, File>, moved: { from: string }[]): Map<string, File> {
+  const gone = new Set(moved.map((m) => m.from));
+  const next = new Map<string, File>();
+  fileMap.forEach((file, path) => {
+    if (!gone.has(path)) next.set(path, file);
+  });
+  return next;
 }
 
 export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set, get) => ({
@@ -947,5 +970,77 @@ export const createFileSlice: StateCreator<PaintStore, [], [], FileSlice> = (set
     else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
 
     return { ok: true, message: `${removed.length} 件を削除しました。`, renamed: removed.length };
+  },
+
+  /**
+   * 選択したファイルを、新しく作ったフォルダへまとめて移す。
+   *
+   * ⚠️ 動かす前に計画を立て、上書きになる組み合わせがあれば 1 件も触らずに中止する
+   * (move() は移動先の同名ファイルを黙って上書きする)。
+   */
+  moveFilesToNewFolder: async (view, paths, folderName) => {
+    const state = get();
+    const folderHandle = view === 1 ? state.folderHandleB : state.folderHandleA;
+    const fileList = view === 1 ? state.fileListB : state.fileListA;
+    const fileMap = view === 1 ? state.fileMapB : state.fileMapA;
+    const label = view === 1 ? 'Win B (右画面)' : 'Win A (左画面)';
+
+    // ⚠️ 何を求められたかは、断る場合も含めて必ず残す。
+    // 「まとめられなかった」の報告を、権限・名前・衝突のどれか切り分けられるように
+    logDebug('file', `フォルダにまとめる: 要求 ${paths.length} 件 → 「${folderName}」`, label);
+
+    if (paths.length === 0) return { ok: true, message: '対象がありません。', renamed: 0 };
+    if (!folderHandle) {
+      logDebug('file', 'フォルダにまとめる: 中止 (書き込めるフォルダとして開かれていない)', label, 'warn');
+      return { ok: false, message: `${label} は書き込み可能なフォルダとして開かれていません。`, renamed: 0 };
+    }
+    if (!(await ensureWritePermission(folderHandle))) {
+      logDebug('file', 'フォルダにまとめる: 中止 (書き込みが許可されなかった)', label, 'warn');
+      return { ok: false, message: `${label} のフォルダへの書き込みが許可されませんでした。`, renamed: 0 };
+    }
+
+    const plan = buildMoveToFolderPlan(paths, folderName, fileList);
+    if (plan.problems.length > 0) {
+      logDebug('file', `フォルダにまとめる: 中止 (${plan.problems.length} 件の問題)`, plan.problems.join(' / '), 'warn');
+      return { ok: false, message: `まとめられません:\n${plan.problems.join('\n')}`, renamed: 0 };
+    }
+
+    logDebug('file', `フォルダにまとめる: 移動を開始 ${plan.items.length} 件 → ${plan.folderPath}`, label);
+
+    const moved: { from: string; to: string }[] = [];
+    try {
+      for (const item of plan.items) {
+        await moveFileToDirectory(folderHandle, item.from, plan.folderPath, state.rootFolderName);
+        moved.push(item);
+      }
+    } catch (err: any) {
+      console.error('Failed to move into folder:', err);
+      logDebug('file', 'フォルダにまとめる: 途中で失敗', `${moved.length} 件は移動済み / ${err?.message || err}`, 'warn');
+      // ⚠️ 途中で止まっても、移動済みの分は一覧に反映する。実体と表示がずれたままにしない
+      if (moved.length > 0) {
+        const partial = sortNatural(applyMoveToList(fileList, moved));
+        const partialMap = dropMoved(fileMap, moved);
+        moved.forEach((m) => state.invalidateCachedImage(state.getImageCacheKey(view, m.from)));
+        if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, partial, partialMap);
+        else get().setFolderHandleA(folderHandle, state.folderNameA, partial, partialMap);
+      }
+      return {
+        ok: false,
+        message: `移動の途中で失敗しました: ${err?.message || err}\n${moved.length} 件は移動済みです。`,
+        renamed: moved.length,
+      };
+    }
+
+    const nextList = sortNatural(applyMoveToList(fileList, moved));
+    const nextMap = dropMoved(fileMap, moved);
+
+    // 画像キャッシュはパスで引いているので、移した分は捨てる
+    moved.forEach((m) => state.invalidateCachedImage(state.getImageCacheKey(view, m.from)));
+
+    if (view === 1) get().setFolderHandleB(folderHandle, state.folderNameB, nextList, nextMap);
+    else get().setFolderHandleA(folderHandle, state.folderNameA, nextList, nextMap);
+
+    logDebug('file', `フォルダにまとめる: 完了 ${moved.length} 件`, plan.folderPath);
+    return { ok: true, message: `${moved.length} 件を「${plan.folderPath}」にまとめました。`, renamed: moved.length };
   },
 });
