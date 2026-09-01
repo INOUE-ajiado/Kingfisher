@@ -41,7 +41,8 @@ export const usePaintStore = create<PaintStore>()((...a) => ({
  * 実フォルダへの書き込みはヘッドレスで開く手段が無く、これが無いと
  * 「まとめる」「削除」のような実書き込みを自動で確かめられない。
  */
-if (import.meta.env.DEV) {
+// ⚠️ テストは node 環境で動く。window の有無を必ず見ること
+if (import.meta.env.DEV && typeof window !== 'undefined') {
   (window as any).__kfStore = usePaintStore;
 }
 
