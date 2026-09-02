@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSyncPairConsistent } from '../../store/types';
+import { describeBuild, describeEnvironment, readBuildEnv } from '../../engine/buildInfo';
 import {
   DebugLogCategory,
   clearDebugLog,
@@ -62,6 +63,25 @@ export const DebugLogPanel: React.FC = () => {
   const unifiedCount = usePaintStore((s) => s.unifiedFileList.length);
   const resolveFileNameForView = usePaintStore((s) => s.resolveFileNameForView);
   const roll = usePaintStore((s) => s.roll);
+  const folderNameA = usePaintStore((s) => s.folderNameA);
+  const folderNameB = usePaintStore((s) => s.folderNameB);
+  const fileListA = usePaintStore((s) => s.fileListA);
+  const fileListB = usePaintStore((s) => s.fileListB);
+  const rootFolderName = usePaintStore((s) => s.rootFolderName);
+  const canvasTransform = usePaintStore((s) => s.canvasTransform);
+  const pegOptions = usePaintStore((s) => s.pegStabilizer.options);
+  const pegReference = usePaintStore((s) => s.pegStabilizer.reference);
+  const currentImageSize = usePaintStore((s) =>
+    s.currentImage ? `${s.currentImage.width}x${s.currentImage.height}` : ''
+  );
+
+  /**
+   * 版と環境。
+   * ⚠️ 描くたびに読み直さないこと。変わらない値なので 1 回で足りる。
+   */
+  const buildEnvRef = useRef<ReturnType<typeof readBuildEnv> | null>(null);
+  if (!buildEnvRef.current) buildEnvRef.current = readBuildEnv();
+  const buildEnv = buildEnvRef.current;
   const rightSidebarWidth = usePaintStore((s) => s.rightSidebarWidth);
   const setRightSidebarWidth = usePaintStore((s) => s.setRightSidebarWidth);
 
@@ -114,8 +134,24 @@ export const DebugLogPanel: React.FC = () => {
     ` / 再生連動=${roll.sync ? `ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : 'OFF'}` +
     ` / A=${rollPosition('rollA')} / B=${rollPosition('rollB')}`;
 
-  /** コピーにも添える「今の状態」。行だけ貼られても前提が分からないため */
+  /**
+   * コピーにも添える「今の状態」。行だけ貼られても前提が分からないため。
+   *
+   * ⚠️ 版と環境を必ず先頭に置くこと。「直した版で試したのか」「担当を立てられる環境か」が
+   * 分からないと、ログを読んでも原因にたどり着けない (2026-09-03 のユーザー指定)。
+   */
   const statusLines = [
+    describeBuild(buildEnv),
+    describeEnvironment(buildEnv),
+    `開いているもの: Win A=${folderNameA || '(なし)'} ${fileListA.length} 枚` +
+      ` / Win B=${folderNameB || '(なし)'} ${fileListB.length} 枚` +
+      `${rootFolderName ? ` / ルート ${rootFolderName}` : ''}`,
+    `表示倍率: Win A ${Math.round(canvasTransform.scale * 100)}%` +
+      `${currentImageSize ? ` / 画像 ${currentImageSize}` : ''}`,
+    `タップ補正の設定: しきい値 ${pegOptions.autoThreshold ? '自動' : pegOptions.threshold}` +
+      ` / 探索範囲 端から ${pegOptions.searchPercent}%` +
+      ` / 詳しい解析ログ ${pegOptions.detailLog ? 'ON' : 'OFF'}` +
+      `${pegReference ? ` / 基準あり (間隔 ${Math.round(pegReference.spacing)}px)` : ' / 基準なし'}`,
     `表示: ${syncOnly ? '2 画面の連動のみ (セル・ロール・連動・表示倍率)' : 'すべて'}`,
     `状態: 2 画面=${isSplitView ? 'ON' : 'OFF'} / 左右連動=${syncMode ? `ON (コマ差 ${offsetText})` : 'OFF'}` +
       ` / Win A=${currentFileIndex} (${nameA}) / Win B=${splitFileIndex} (${nameB}) / 全 ${unifiedCount} コマ`,
