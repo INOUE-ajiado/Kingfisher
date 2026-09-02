@@ -97,3 +97,43 @@ export function summarizePegBatch(samples: PegSample[]): string[] {
 
   return lines;
 }
+
+export interface PegSize {
+  path: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * 基準の画寸へ揃えたときに、どれだけ切り取られるかを見積もる。
+ *
+ * ⚠️ 切り取りは元に戻せない。焼く前に「何枚が、どれだけ切られるか」を
+ * 必ず知らせること。基準に選んだ 1 枚が束の中で小さいと、
+ * 全部が黙って切られる (2026-09-02 の実データで、基準の高さ 1622 が最小だったため
+ * 37 枚すべてが下を 15〜35px、5 枚が右を最大 902px 切られていた)。
+ */
+export function describeCanvasFit(sizes: PegSize[], target: { width: number; height: number }): string[] {
+  if (sizes.length === 0) return [];
+
+  const widths = sizes.map((s) => s.width);
+  const heights = sizes.map((s) => s.height);
+  const lines = [
+    `束の画寸: 幅 ${Math.min(...widths)}〜${Math.max(...widths)} / 高さ ${Math.min(...heights)}〜${Math.max(...heights)}` +
+      ` (揃える先 ${target.width}x${target.height})`,
+  ];
+
+  const cutX = sizes.filter((s) => s.width > target.width).map((s) => s.width - target.width);
+  const cutY = sizes.filter((s) => s.height > target.height).map((s) => s.height - target.height);
+
+  if (cutX.length > 0 || cutY.length > 0) {
+    const parts: string[] = [];
+    if (cutX.length > 0) parts.push(`右を最大 ${Math.max(...cutX)}px (${cutX.length} 枚)`);
+    if (cutY.length > 0) parts.push(`下を最大 ${Math.max(...cutY)}px (${cutY.length} 枚)`);
+    lines.push(
+      `⚠️ 切り取りが起きます: ${parts.join(' / ')}。` +
+        `もっと大きいコマを基準にすれば切らずに済みます (足りない縁は白で埋まります)`
+    );
+  }
+
+  return lines;
+}

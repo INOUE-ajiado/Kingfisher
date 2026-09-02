@@ -18,7 +18,7 @@ import {
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import { PegCandidate, rejectPegOutliers } from '../../engine/pegBatch';
-import { PegSample, summarizePegBatch } from '../../engine/pegReport';
+import { describeCanvasFit, PegSample, PegSize, summarizePegBatch } from '../../engine/pegReport';
 import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
 import {
   backupPathFor,
@@ -44,6 +44,8 @@ function askPeg(
   angleDiff?: number;
   spacingRatio?: number;
   diagnostic?: string;
+  width?: number;
+  height?: number;
 }> {
   return new Promise((resolve, reject) => {
     const onMessage = (e: MessageEvent<PegWorkerDone>) => {
@@ -57,6 +59,8 @@ function askPeg(
         angleDiff: e.data.angleDiff,
         spacingRatio: e.data.spacingRatio,
         diagnostic: e.data.diagnostic,
+        width: e.data.width,
+        height: e.data.height,
       });
     };
     const onError = (e: ErrorEvent) => {
@@ -90,6 +94,8 @@ async function measurePegForFile(
   angleDiff?: number;
   spacingRatio?: number;
   diagnostic?: string;
+  width?: number;
+  height?: number;
 }> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
@@ -102,6 +108,8 @@ async function measurePegForFile(
     transform: pegTransformTo(detection, reference),
     ...pegGeometryDiff(detection, reference),
     diagnostic: describePegDetection(detection),
+    width: image.width,
+    height: image.height,
   };
 }
 
@@ -552,6 +560,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       });
 
       const candidates: PegCandidate[] = [];
+      const sizes: PegSize[] = [];
       measured.forEach((outcome, i) => {
         const path = rest[i];
         if (outcome.error) {
@@ -569,6 +578,9 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           angleDiff: result.angleDiff,
           spacingRatio: result.spacingRatio,
         });
+        if (result.width && result.height) {
+          sizes.push({ path, width: result.width, height: result.height });
+        }
 
         /**
          * ⚠️ 1 枚ごとの検出の中身を残すこと。中心だけでは
@@ -600,6 +612,20 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         angleDiff: c.angleDiff ?? 0,
         spacingRatio: c.spacingRatio ?? 1,
       }));
+      /**
+       * ⚠️ 切り取りは元に戻せない。焼く前に「何枚がどれだけ切られるか」を知らせること。
+       * 基準に選んだ 1 枚が束の中で小さいと、全部が黙って切られる。
+       */
+      const target =
+        reference.width && reference.height
+          ? { width: reference.width, height: reference.height }
+          : null;
+      if (target) {
+        const fit = describeCanvasFit(sizes, target);
+        if (fit[0]) logDebug('view', '画寸を揃える先', fit[0]);
+        if (fit[1]) logDebug('view', '切り取りの見込み', fit[1], 'warn');
+      }
+
       const summary = summarizePegBatch(samples);
       // ⚠️ 空のメッセージで行を増やさないこと。読むときに何の行か分からなくなる
       logDebug('view', `補正量のばらつき (${samples.length} 枚)`, summary.slice(0, 4).join(' / '));

@@ -61,6 +61,9 @@ export interface PegWorkerDone {
   spacingRatio?: number;
   /** 検出の中身 (精度を詰めるための解析ログ) */
   diagnostic?: string;
+  /** そのコマの画寸 (揃えたときの切り取りを見積もるのに使う) */
+  width?: number;
+  height?: number;
   /** ログに出す補正量 */
   detail?: string;
 }
@@ -81,6 +84,8 @@ async function measureOne(
   angleDiff?: number;
   spacingRatio?: number;
   diagnostic?: string;
+  width?: number;
+  height?: number;
 }> {
   const s = setup!;
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
@@ -95,6 +100,8 @@ async function measureOne(
     transform: pegTransformTo(detection, s.reference),
     ...diff,
     diagnostic: describePegDetection(detection),
+    width: image.width,
+    height: image.height,
   };
 }
 
