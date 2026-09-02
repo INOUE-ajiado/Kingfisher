@@ -1,11 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  clearDebugLog,
-  formatDebugLog,
-  getDebugLog,
-  logDebug,
-  subscribeDebugLog,
-} from './debugLog';
+import { clearDebugLog, formatDebugLog, getDebugLog, logDebug, subscribeDebugLog, collapseRepeats, tallyByCategory, DebugLogEntry, DebugLogCategory } from './debugLog';
 
 /**
  * 操作ログ。ここで守りたいのは 3 つ。
@@ -66,5 +60,91 @@ describe('操作ログ', () => {
 
   it('空でも「ログはありません」を返す (黙って空文字を渡さない)', () => {
     expect(formatDebugLog()).toContain('ログはありません');
+  });
+});
+
+/**
+ * 解析用のコピーに何を載せるか。
+ *
+ * ⚠️ ログだけ貼られても、どの版・どんな環境で起きたのかが分からないと追えない。
+ * ⚠️ 同じ行の繰り返しで上限が埋まると、肝心の操作が流れる。
+ */
+describe('繰り返しをまとめる', () => {
+  const at = 1_000_000;
+  const entry = (seq: number, message: string, offset = 0): DebugLogEntry => ({
+    seq,
+    at: at + offset,
+    category: 'cell',
+    level: 'info',
+    message,
+  });
+
+  it('続けて同じ行が出たらまとめる', () => {
+    const out = collapseRepeats([
+      entry(1, '端なので動かさない'),
+      entry(2, '端なので動かさない', 100),
+      entry(3, '端なので動かさない', 250),
+      entry(4, '次へ'),
+    ]);
+
+    expect(out).toHaveLength(2);
+    expect(out[0].count).toBe(3);
+    expect(out[0].lastAt).toBe(at + 250);
+    expect(out[1].count).toBe(1);
+  });
+
+  it('間に別の行が挟まればまとめない (順番は崩さない)', () => {
+    const out = collapseRepeats([entry(1, 'A'), entry(2, 'B'), entry(3, 'A')]);
+
+    expect(out.map((o) => o.entry.message)).toEqual(['A', 'B', 'A']);
+  });
+
+  it('中身が違えばまとめない', () => {
+    const a = { ...entry(1, '送り'), detail: 'Win A 1 → 2' };
+    const b = { ...entry(2, '送り'), detail: 'Win A 2 → 3' };
+
+    expect(collapseRepeats([a, b])).toHaveLength(2);
+  });
+
+  it('空でも落ちない', () => {
+    expect(collapseRepeats([])).toEqual([]);
+  });
+});
+
+describe('カテゴリ別の件数', () => {
+  it('多い順に並べ、注意の数も添える', () => {
+    const mk = (category: DebugLogCategory, level: 'info' | 'warn' = 'info'): DebugLogEntry => ({
+      seq: 1,
+      at: 0,
+      category,
+      level,
+      message: 'x',
+    });
+
+    const text = tallyByCategory([mk('cell'), mk('cell'), mk('file', 'warn'), mk('view')]);
+
+    expect(text).toContain('cell 2');
+    expect(text).toContain('うち注意 1');
+  });
+});
+
+describe('上限を超えたとき', () => {
+  it('捨てた件数を見出しに書く (途中が欠けていると伝えるため)', () => {
+    clearDebugLog();
+    for (let i = 0; i < 520; i++) logDebug('cell', `行 ${i}`);
+
+    const text = formatDebugLog();
+
+    expect(text).toContain('上限で捨てました');
+    expect(text).toContain('20 件');
+    clearDebugLog();
+  });
+
+  it('捨てていなければ、その断りは書かない', () => {
+    clearDebugLog();
+    logDebug('cell', 'ひとつ');
+
+    expect(formatDebugLog()).not.toContain('上限で捨てました');
+    clearDebugLog();
   });
 });
