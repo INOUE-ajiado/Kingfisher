@@ -104,6 +104,8 @@ async function measurePegForFile(
   const detection = detectPegHoles(image.data, image.width, image.height, {
     ...options,
     expectedSpacing: reference.spacing,
+    expectedEdge: reference.edge,
+    expectedCenter: reference.center,
   });
   // ⚠️ 見つからなくても画寸は返す (ワーカー側と同じ)
   if (!detection.detected) {
