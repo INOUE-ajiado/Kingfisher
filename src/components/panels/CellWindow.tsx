@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
 import { collectDroppedVideoFiles, commonRootName } from '../../engine/videoSource';
@@ -23,6 +23,7 @@ import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
 import { RollId } from '../../store/types';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
+import { getRenderSignal, subscribeRenderSignal } from '../../engine/renderSignal';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -55,7 +56,6 @@ export const CellWindow: React.FC = () => {
     splitCanvasTransform,
     setSplitCanvasTransform,
     lightTable,
-    renderTrigger,
     triggerRender,
     folderNameA,
     folderNameB,
@@ -555,6 +555,13 @@ export const CellWindow: React.FC = () => {
   useCellPrefetch(loadFrameForView);
   const onionFramesMap = useOnionSkinFrames(loadFrameForView);
 
+  /**
+   * 「描き直せ」の合図。
+   * ⚠️ ストアではなくここから受け取ること。ストアに置くと、
+   * ブラシを引くたびに全パネルが描き直される (2026-09-03 の監査)。
+   */
+  const renderTrigger = useSyncExternalStore(subscribeRenderSignal, getRenderSignal, getRenderSignal);
+
   // 自動フィットが最後に設定した値 (ユーザー操作との区別に使う)
   const lastFitTransformRef = useRef<{ scale: number; offsetX: number; offsetY: number } | null>(null);
 
@@ -1002,6 +1009,7 @@ export const CellWindow: React.FC = () => {
       renderCanvasInstance(rightCanvasRef.current, splitImage, false);
     }
   }, [renderCanvasInstance, currentImage, splitImage, isSplitView, renderTrigger]);
+
 
   const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) => {
     const rect = canvas.getBoundingClientRect();

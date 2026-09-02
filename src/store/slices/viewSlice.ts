@@ -416,7 +416,33 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     const mode = options?.mode ?? 'copy';
     const backup = options?.backup ?? false;
 
+    /**
+     * ツールオプションで手で足したずらし。
+     *
+     * ⚠️ 画面にだけ効かせて焼き込みに入れ忘れないこと。手で合わせたのに
+     * 保存されないと、合わせたつもりで先へ進んでしまう (2026-09-03 の監査)。
+     * ⚠️ 回転は焼けない。本家に合わせて平行移動しか行わないため、
+     * 値が入っていたらその旨を伝えて捨てる。
+     */
+    const manual = {
+      x: state.pegStabilizer.manualX ?? 0,
+      y: state.pegStabilizer.manualY ?? 0,
+      rotation: state.pegStabilizer.manualRotation ?? 0,
+    };
+
     // ⚠️ ファイルを書き換える操作は、断った場合も含めて必ず記録すること
+    if (manual.x !== 0 || manual.y !== 0) {
+      logDebug('view', `手で足したずらしも焼き込みます: X ${manual.x}px / Y ${manual.y}px`);
+    }
+    if (manual.rotation !== 0) {
+      logDebug(
+        'view',
+        `手で入れた回転 ${manual.rotation}° は焼き込めません`,
+        '平行移動しか行わないため (本家と同じ)。画面の見え方だけが変わります',
+        'warn'
+      );
+    }
+
     logDebug(
       'file',
       `タップ補正の焼き込み: 要求 ${paths.length} 件 (${mode === 'copy' ? '別フォルダへ書き出す' : backup ? '上書き / 控えを残す' : '上書き'})`,
@@ -737,6 +763,20 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           `書き出し先「${outputHandle?.name ?? ''}」/ not_founds`,
           'warn'
         );
+      }
+
+      /**
+       * ⚠️ 外れ値を判断したあとで手動分を足すこと。先に足すと、
+       * 手で大きくずらしただけで全件が「食い違い」に見える。
+       */
+      if (manual.x !== 0 || manual.y !== 0) {
+        checked.accepted.forEach((c) => {
+          c.transform = {
+            ...c.transform,
+            offsetX: Math.round((c.transform.offsetX + manual.x) * 100) / 100,
+            offsetY: Math.round((c.transform.offsetY + manual.y) * 100) / 100,
+          };
+        });
       }
 
       /**

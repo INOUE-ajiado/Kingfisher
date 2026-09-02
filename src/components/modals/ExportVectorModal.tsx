@@ -4,6 +4,10 @@ import { useVectorTraceWorker } from '../../hooks/useVectorTraceWorker';
 import { X, Download, Sliders, FileCode, Check, Loader2, Terminal, Cpu } from 'lucide-react';
 
 export const ExportVectorModal: React.FC = () => {
+  // ⚠️ 閉じたあとに触らないよう、タイマーは必ず片づける
+  const copiedTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (copiedTimer.current) window.clearTimeout(copiedTimer.current); }, []);
+
   const { activeModal, setActiveModal, currentImage, unifiedFileList, currentFileIndex } = usePaintStore();
   const [tolerance, setTolerance] = useState<number>(1.0);
   const [colorMerging, setColorMerging] = useState<number>(25); // 減色マージ閾値 (0〜100)
@@ -58,7 +62,7 @@ export const ExportVectorModal: React.FC = () => {
     if (!svgString) return;
     navigator.clipboard.writeText(svgString);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copiedTimer.current = window.setTimeout(() => setCopied(false), 2000);
   };
 
   return (

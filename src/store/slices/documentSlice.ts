@@ -364,7 +364,23 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
 
   fps: 4,
 
-  setIsPlaying: (playing) => set({ isPlaying: playing }),
+  /**
+   * 再生の開始・停止。
+   *
+   * ⚠️ 始める前に未保存を確認すること。再生中は confirmDiscardIfDirty が
+   * 素通りする (毎コマ確認を出さないため) ので、ここで止めないと
+   * 最初のコマ送りで塗りが黙って消える (2026-09-03 の監査で再現)。
+   */
+  setIsPlaying: (playing) => {
+    if (playing) {
+      const { isSplitView, confirmDiscardIfDirty } = get();
+      const views: (0 | 1)[] = isSplitView ? [0, 1] : [0];
+      for (const view of views) {
+        if (!confirmDiscardIfDirty(view)) return;
+      }
+    }
+    set({ isPlaying: playing });
+  },
 
   setFps: (fps) => set({ fps }),
 });

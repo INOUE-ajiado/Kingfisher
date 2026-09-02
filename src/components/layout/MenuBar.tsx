@@ -146,8 +146,12 @@ export const MenuBar: React.FC = () => {
       } else {
         openReferenceImage(null, 'Hero_ColorSpec.tga');
       }
-    } catch (e) {
-      openReferenceImage(null, 'Hero_ColorSpec.tga');
+    } catch (e: any) {
+      // ⚠️ 閉じただけのときは何も開かないこと。
+      // 選んでいないのに見本が開くと、選んだつもりで作業を進めてしまう
+      if (e?.name === 'AbortError') return;
+      console.error('参照画像を開けませんでした:', e);
+      alert(`参照画像を開けませんでした: ${e?.message || e}`);
     }
   };
 

@@ -79,9 +79,19 @@ export const ToolPalette: React.FC = () => {
     startX.current = e.clientX;
     startWidth.current = width;
 
+    // ⚠️ 掴み損ねたときの逃げ道。残すと触れただけで幅が動き出す
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) {
+      console.warn('つまみを掴めませんでした。window 側で離すのを待ちます:', err);
+      const release = () => {
+        isResizing.current = false;
+        window.removeEventListener('pointerup', release);
+        window.removeEventListener('pointercancel', release);
+      };
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
+    }
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
@@ -103,7 +113,10 @@ export const ToolPalette: React.FC = () => {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
-    } catch (err) {}
+    } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
 
     if (width >= 56) {
       setWidth(74);

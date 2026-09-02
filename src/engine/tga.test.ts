@@ -80,3 +80,39 @@ describe('encodeTGA — 透明画素の書き戻し', () => {
     expect(Array.from(restored.data.slice(8, 12))).toEqual([40, 50, 60, 255]);
   });
 });
+
+/**
+ * 右→左に詰められた TGA。
+ * ⚠️ 見落とすと左右が反転した画で開く。書き出す機械によっては立つビット。
+ */
+describe('右→左格納 (descriptor bit 4)', () => {
+  /** 2x1 の非圧縮 TGA を作る (左が赤・右が青) */
+  function twoPixelTga(descriptor: number): ArrayBuffer {
+    const buf = new ArrayBuffer(18 + 2 * 4);
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+    view.setUint8(2, 2); // 非圧縮 True-Color
+    view.setUint16(12, 2, true);
+    view.setUint16(14, 1, true);
+    view.setUint8(16, 32);
+    view.setUint8(17, descriptor);
+    // 格納順は BGRA
+    bytes.set([0, 0, 255, 255], 18); // 赤
+    bytes.set([255, 0, 0, 255], 22); // 青
+    return buf;
+  }
+
+  it('ビットが無ければ、そのままの並び', () => {
+    const img = decodeTGA(twoPixelTga(0x20)); // top-down のみ
+
+    expect([img.data[0], img.data[1], img.data[2]]).toEqual([255, 0, 0]); // 左が赤
+    expect([img.data[4], img.data[5], img.data[6]]).toEqual([0, 0, 255]); // 右が青
+  });
+
+  it('ビットが立っていれば左右を入れ替える', () => {
+    const img = decodeTGA(twoPixelTga(0x20 | 0x10));
+
+    expect([img.data[0], img.data[1], img.data[2]]).toEqual([0, 0, 255]); // 左が青
+    expect([img.data[4], img.data[5], img.data[6]]).toEqual([255, 0, 0]); // 右が赤
+  });
+});

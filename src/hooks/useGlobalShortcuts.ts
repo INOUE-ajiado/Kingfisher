@@ -50,9 +50,16 @@ export const useGlobalShortcuts = () => {
           // ストアの保存処理を直接呼ぶ (DOM 上のボタン有無に依存しない)
           const store = usePaintStore.getState();
           const saving = e.shiftKey ? store.saveActiveCellAs() : store.saveActiveCell();
-          saving.then((result) => {
-            if (!result.ok && !result.cancelled) alert(result.message);
-          });
+          // ⚠️ catch を付けること。落ちたときに画面へ何も出ないと、
+          // 保存できていないことに気づけない
+          saving
+            .then((result) => {
+              if (!result.ok && !result.cancelled) alert(result.message);
+            })
+            .catch((err) => {
+              console.error('保存に失敗しました:', err);
+              alert(`保存に失敗しました: ${err?.message || err}`);
+            });
           return;
         }
 

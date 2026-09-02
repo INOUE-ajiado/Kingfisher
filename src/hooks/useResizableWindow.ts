@@ -67,7 +67,10 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
       const captureTarget = e.currentTarget as HTMLElement;
       try {
         captureTarget.setPointerCapture(e.pointerId);
-      } catch (err) {}
+      } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
 
       const handlePointerMove = (moveEvt: PointerEvent) => {
         if (!isResizing.current || !targetRef.current) return;
@@ -124,7 +127,10 @@ export function useResizableWindow<T extends HTMLElement = HTMLDivElement>(
           if (captureTarget.hasPointerCapture(upEvt.pointerId)) {
             captureTarget.releasePointerCapture(upEvt.pointerId);
           }
-        } catch (err) {}
+        } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
 
         if (targetRef.current) {
           const finalRect = targetRef.current.getBoundingClientRect();
