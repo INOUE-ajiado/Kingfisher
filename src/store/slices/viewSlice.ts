@@ -103,19 +103,25 @@ async function bakePegIntoFile(
   rootName: string | null,
   path: string,
   transform: PegTransform,
-  setup: { mode: 'copy' | 'overwrite'; backup: boolean }
+  setup: { mode: 'copy' | 'overwrite'; backup: boolean; reference: PegReference }
 ): Promise<{ ok: boolean; reason?: string; detail?: string }> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  // ⚠️ 動かないなら書き直さない (JPEG を作り直すだけ画質が落ちる)
-  if (!pegTransformMoves(transform)) {
+  // ⚠️ 画寸も基準へ揃える (ワーカー側と同じ手順にすること)
+  const outSize =
+    setup.reference.width && setup.reference.height
+      ? { width: setup.reference.width, height: setup.reference.height }
+      : { width: image.width, height: image.height };
+  const sameSize = outSize.width === image.width && outSize.height === image.height;
+
+  if (!pegTransformMoves(transform) && sameSize) {
     return { ok: true, detail: 'すでに合っている (1px 未満なので書き直さない)' };
   }
 
-  const moved = bakePegTransform(image.data, image.width, image.height, transform);
-  const body = await writePixels(moved, image.width, image.height, path, image.tga, image.density);
+  const moved = bakePegTransform(image.data, image.width, image.height, transform, outSize);
+  const body = await writePixels(moved, outSize.width, outSize.height, path, image.tga, image.density);
 
   if (setup.mode === 'copy') {
     const target = await createFileIn(outputDir, path);
@@ -139,8 +145,8 @@ async function bakePegIntoFile(
   return {
     ok: true,
     detail:
-      `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°` +
-      ` / 倍率 ${(transform.scale * 100).toFixed(2)}%`,
+      `X ${transform.offsetX}px / Y ${transform.offsetY}px` +
+      (sameSize ? '' : ` / 画寸 ${image.width}x${image.height} → ${outSize.width}x${outSize.height}`),
   };
 }
 
@@ -299,7 +305,9 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       return;
     }
 
-    const reference = pegStabilizer.reference ?? referenceFromDetection(detection);
+    const reference =
+      pegStabilizer.reference ??
+      referenceFromDetection(detection, { width: currentImage.width, height: currentImage.height });
     const isNewReference = !pegStabilizer.reference;
     const transform = pegTransformTo(detection, reference);
 
@@ -458,8 +466,12 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
             skipped.push(`${path} (${detection.message})`);
             continue;
           }
-          reference = referenceFromDetection(detection);
-          logDebug('view', `タップ補正の基準: ${path}`, detection.message);
+          reference = referenceFromDetection(detection, { width: image.width, height: image.height });
+          logDebug(
+            'view',
+            `タップ補正の基準: ${path}`,
+            `${detection.message} / この画寸 ${image.width}x${image.height} へ全部を揃えます`
+          );
           rest = paths.slice(i + 1);
           break;
         } catch (err: any) {
@@ -622,7 +634,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           state.rootFolderName,
           candidate.path,
           candidate.transform,
-          { mode, backup }
+          { mode, backup, reference: reference as PegReference }
         );
       });
 

@@ -424,3 +424,53 @@ describe('動かない補正は書き直さない', () => {
     expect(Array.from(baked)).toEqual(Array.from(data));
   });
 });
+
+/**
+ * 画寸を基準へ揃える。
+ *
+ * ⚠️ 1 カットの全コマは同じ大きさである必要がある (重ねる・撮影する前提)。
+ * スキャナの自動切り抜きで幅が 1 枚ごとに変わると、穴が絶対座標で揃っていても
+ * 表示や合成で飛んで見える (2026-09-02 の実データで幅 2326〜2880px)。
+ */
+describe('画寸を揃える', () => {
+  const noMove = { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 };
+
+  /** 左上に赤、それ以外は白の画像 */
+  function redCorner(width: number, height: number): Uint8ClampedArray {
+    const data = new Uint8ClampedArray(width * height * 4);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 255; data[i + 1] = 255; data[i + 2] = 255; data[i + 3] = 255;
+    }
+    data[0] = 255; data[1] = 0; data[2] = 0;
+    return data;
+  }
+
+  it('広い画を狭い基準へ入れると、はみ出しは切られる', () => {
+    const out = bakePegTransform(redCorner(6, 3), 6, 3, noMove, { width: 4, height: 3 });
+
+    expect(out.length).toBe(4 * 3 * 4);
+    // 左上の赤はそのまま残る (絶対座標は変わらない)
+    expect([out[0], out[1], out[2]]).toEqual([255, 0, 0]);
+  });
+
+  it('狭い画を広い基準へ入れると、足りない縁は白 (透明) で埋まる', () => {
+    const out = bakePegTransform(redCorner(3, 3), 3, 3, noMove, { width: 6, height: 3 });
+
+    expect(out.length).toBe(6 * 3 * 4);
+    // 右端は元の画に無いので、純白かつ透明
+    const right = (0 * 6 + 5) * 4;
+    expect([out[right], out[right + 1], out[right + 2], out[right + 3]]).toEqual([255, 255, 255, 0]);
+  });
+
+  it('ずらしながら画寸も揃えられる', () => {
+    const out = bakePegTransform(redCorner(3, 3), 3, 3, { ...noMove, offsetX: 2 }, { width: 6, height: 3 });
+
+    // 赤が 2px 右へ動いた位置に来る
+    const at = (0 * 6 + 2) * 4;
+    expect([out[at], out[at + 1], out[at + 2]]).toEqual([255, 0, 0]);
+  });
+
+  it('省略すれば元の画寸のまま', () => {
+    expect(bakePegTransform(redCorner(3, 2), 3, 2, noMove).length).toBe(3 * 2 * 4);
+  });
+});

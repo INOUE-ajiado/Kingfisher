@@ -51,6 +51,16 @@ export interface PegReference {
   center: { x: number; y: number };
   angle: number;
   spacing: number;
+  /**
+   * 基準にしたコマの画寸。まとめて焼くときは、ここへ全部を揃える。
+   *
+   * ⚠️ 1 カットの全コマは同じ画寸である必要がある (重ねる・撮影する前提)。
+   * スキャナの自動切り抜きで 1 枚ごとに幅が変わることがあり、
+   * 穴が絶対座標で揃っていても、画寸が違うと表示や合成で飛んで見える
+   * (2026-09-02 の実データで幅 2326〜2880px、画面上で約 190px ずれた)。
+   */
+  width?: number;
+  height?: number;
 }
 
 /**
@@ -527,8 +537,17 @@ export function detectPegHoles(
 }
 
 /** 検出結果を、そのまま合わせ先として使う */
-export function referenceFromDetection(detection: PegDetection): PegReference {
-  return { center: { ...detection.center }, angle: detection.angle, spacing: detection.spacing };
+export function referenceFromDetection(
+  detection: PegDetection,
+  size?: { width: number; height: number }
+): PegReference {
+  return {
+    center: { ...detection.center },
+    angle: detection.angle,
+    spacing: detection.spacing,
+    width: size?.width,
+    height: size?.height,
+  };
 }
 
 /**
@@ -596,9 +615,18 @@ export function bakePegTransform(
   data: Uint8ClampedArray,
   width: number,
   height: number,
-  transform: PegTransform
+  transform: PegTransform,
+  /**
+   * 出したい画寸。省略すると元と同じ。
+   * ⚠️ ここを揃えると、コマ送りしても絵が飛ばなくなる。
+   * はみ出した分は切り、足りない縁は白 (透明) で埋める。
+   */
+  outSize?: { width: number; height: number }
 ): Uint8ClampedArray {
-  const out = new Uint8ClampedArray(width * height * 4);
+  const outWidth = outSize?.width ?? width;
+  const outHeight = outSize?.height ?? height;
+
+  const out = new Uint8ClampedArray(outWidth * outHeight * 4);
   // 透明 = 純白。RGB も 255 にしておく
   out.fill(255);
   for (let i = 3; i < out.length; i += 4) out[i] = 0;
@@ -611,14 +639,14 @@ export function bakePegTransform(
   const dx = Math.round(transform.offsetX);
   const dy = Math.round(transform.offsetY);
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
+  for (let y = 0; y < outHeight; y++) {
+    for (let x = 0; x < outWidth; x++) {
       const sx = x - dx;
       const sy = y - dy;
       if (sx < 0 || sy < 0 || sx >= width || sy >= height) continue;
 
       const from = (sy * width + sx) * 4;
-      const to = (y * width + x) * 4;
+      const to = (y * outWidth + x) * 4;
       out[to] = data[from];
       out[to + 1] = data[from + 1];
       out[to + 2] = data[from + 2];
