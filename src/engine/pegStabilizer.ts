@@ -356,7 +356,15 @@ function adaptiveThreshold(
   width: number,
   fromY: number,
   toY: number,
-  step: number
+  step: number,
+  /**
+   * 暗い方から何割を穴の候補とみなすか。
+   *
+   * ⚠️ 1 つの割合だけで決めないこと。タップ穴の周りが黒く塗られていると、
+   * 3% では塗りまで含んでしまい、穴と塗りが 1 つの塊になって形で弾かれる
+   * (2026-09-03 に合成データで再現)。もっと狭い割合なら穴だけが残る。
+   */
+  ratio = 0.03
 ): number {
   const histogram = new Uint32Array(256);
   let total = 0;
@@ -371,12 +379,12 @@ function adaptiveThreshold(
   }
   if (total === 0) return DEFAULTS.threshold;
 
-  // 暗い方から 3% ぶんを含む明るさ + 余裕
-  const want = Math.max(1, Math.floor(total * 0.03));
+  // 暗い方から ratio ぶんを含む明るさ + 余裕
+  const want = Math.max(1, Math.floor(total * ratio));
   let seen = 0;
   for (let v = 0; v < 256; v++) {
     seen += histogram[v];
-    if (seen >= want) return Math.max(30, Math.min(200, v + 12));
+    if (seen >= want) return Math.max(16, Math.min(200, v + 12));
   }
   return DEFAULTS.threshold;
 }
@@ -539,7 +547,15 @@ export function detectPegHoles(
       look === 'transparent'
         ? [threshold]
         : autoThreshold
-        ? Array.from(new Set([adaptiveThreshold(data, width, band.fromY, band.toY, step), threshold, 130]))
+        ? Array.from(
+            new Set([
+              // ⚠️ 塗りごと拾う広めの見当と、穴だけを拾う狭い見当の両方を試すこと
+              adaptiveThreshold(data, width, band.fromY, band.toY, step),
+              adaptiveThreshold(data, width, band.fromY, band.toY, step, 0.002),
+              threshold,
+              130,
+            ])
+          )
         : [threshold];
 
     for (const level of thresholds) {

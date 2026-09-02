@@ -103,7 +103,14 @@ async function measureOne(
     ...s.options,
     expectedSpacing: s.reference.spacing,
   });
-  if (!detection.detected) return { ok: false, reason: detection.message };
+  /**
+   * ⚠️ 穴が見つからなくても画寸は返すこと。呼び出し側はこれを見て
+   * 「補正はできないが画寸だけ揃える」を判断する。返さないと、そのコマだけ
+   * 元の大きさで残り、コマ送りのたびに画面が飛ぶ (2026-09-03 に実際に起きた)。
+   */
+  if (!detection.detected) {
+    return { ok: false, reason: detection.message, width: image.width, height: image.height };
+  }
 
   const diff = pegGeometryDiff(detection, s.reference);
   return {

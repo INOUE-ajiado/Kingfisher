@@ -531,3 +531,56 @@ describe('穴の周りが黒く塗られた紙', () => {
     expect(out.message).toContain('通りから選択');
   });
 });
+
+/**
+ * タップ穴の周りが「べったり黒く塗られた」紙。
+ *
+ * ⚠️ 2026-09-03 に、実データで見送られたコマと同じ形を合成で再現したもの。
+ * 塗り (58) の中に、それより暗い穴 (13) がある。広いしきい値では塗りごと 1 つの塊になり、
+ * 大きすぎるとして弾かれる。穴だけを拾える狭いしきい値も試す必要がある。
+ * ⚠️ 本家 (OLMPegHoleStabilizer) は単一のしきい値しか持たないので、この形は救えない。
+ */
+describe('穴の周りがべったり黒く塗られた紙', () => {
+  function paperWithPaintedBand(): Uint8ClampedArray {
+    const data = blankPaper();
+    // 帯状の塗り (穴より明るい黒)
+    for (let y = 40; y <= 84; y++) {
+      for (let x = W / 2 - 300; x <= W / 2 + 300; x++) {
+        const i = (y * W + x) * 4;
+        data[i] = 58; data[i + 1] = 58; data[i + 2] = 58; data[i + 3] = 255;
+      }
+    }
+    // その中に本当の穴 (もっと暗い)
+    const punchDark = (cx: number, rx: number, ry: number) => {
+      for (let y = Math.floor(62 - ry); y <= 62 + ry; y++) {
+        for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+          const nx = (x - cx) / rx;
+          const ny = (y - 62) / ry;
+          if (nx * nx + ny * ny > 1) continue;
+          const i = (y * W + x) * 4;
+          data[i] = 13; data[i + 1] = 13; data[i + 2] = 13; data[i + 3] = 255;
+        }
+      }
+    };
+    punchDark(W / 2 - 220, 11, 11);
+    punchDark(W / 2, 18, 10);
+    punchDark(W / 2 + 220, 11, 11);
+    return data;
+  }
+
+  it('塗りの中の穴を見つけられる', () => {
+    const out = detectPegHoles(paperWithPaintedBand(), W, H);
+
+    expect(out.detected).toBe(true);
+    expect(out.center.x).toBeCloseTo(W / 2, -1);
+    expect(out.spacing).toBeGreaterThan(200);
+    expect(out.spacing).toBeLessThan(240);
+  });
+
+  it('塗りごと拾ったのではなく、穴の大きさで拾えている', () => {
+    const out = detectPegHoles(paperWithPaintedBand(), W, H);
+
+    // ⚠️ 塗り (600x45) を拾っていたら、この幅では収まらない
+    out.holes.forEach((h) => expect(h.width).toBeLessThan(60));
+  });
+});

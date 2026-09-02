@@ -105,7 +105,10 @@ async function measurePegForFile(
     ...options,
     expectedSpacing: reference.spacing,
   });
-  if (!detection.detected) return { ok: false, reason: detection.message };
+  // ⚠️ 見つからなくても画寸は返す (ワーカー側と同じ)
+  if (!detection.detected) {
+    return { ok: false, reason: detection.message, width: image.width, height: image.height };
+  }
 
   return {
     ok: true,
@@ -481,6 +484,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
      * ⚠️ 基準にした 1 枚は動かさない (それが基準なので、焼き込む対象から外す)。
      */
     let rest = paths;
+    /** 測ったコマの画寸。補正できなかった分も含めて控える (画寸を揃えるため) */
+    const sizes: PegSize[] = [];
     /** 基準にしたコマ。画寸を揃えるときは、この 1 枚も一緒に書き直す */
     let referenceFrame: { path: string; width: number; height: number } | null = null;
 
@@ -494,6 +499,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           if (!detection.detected) {
             skipped.push(`${path} (${detection.message})`);
             skippedPaths.push(path);
+            // ⚠️ ここで落ちたコマも画寸だけは揃える。控えておかないと取り逃す
+            sizes.push({ path, width: image.width, height: image.height });
             continue;
           }
           reference = referenceFromDetection(detection, { width: image.width, height: image.height });
@@ -571,7 +578,6 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       });
 
       const candidates: PegCandidate[] = [];
-      const sizes: PegSize[] = [];
       measured.forEach((outcome, i) => {
         const path = rest[i];
         if (outcome.error) {
@@ -580,6 +586,13 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           return;
         }
         const result = outcome.value!;
+        /**
+         * ⚠️ 画寸は成否によらず控えること。補正できなかったコマも
+         * 画寸だけは揃えるので、ここで取り逃すとそのコマだけ元の大きさで残る。
+         */
+        if (result.width && result.height) {
+          sizes.push({ path, width: result.width, height: result.height });
+        }
         if (!result.ok || !result.transform) {
           skipped.push(`${path} (${result.reason})`);
           skippedPaths.push(path);
@@ -591,9 +604,6 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           angleDiff: result.angleDiff,
           spacingRatio: result.spacingRatio,
         });
-        if (result.width && result.height) {
-          sizes.push({ path, width: result.width, height: result.height });
-        }
 
         /**
          * ⚠️ 1 枚ごとの検出の中身を残すこと。中心だけでは
