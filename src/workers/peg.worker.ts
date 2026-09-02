@@ -93,7 +93,16 @@ async function measureOne(
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
 
-  const detection = detectPegHoles(image.data, image.width, image.height, s.options);
+  /**
+   * ⚠️ 基準が決まっているなら、期待する穴の間隔を渡すこと。
+   * タップ穴の周りが黒く塗られていると、しきい値しだいで塗りと穴がくっつき、
+   * 別の 3 つを穴と取り違える。同じカットの間隔はほぼ変わらないので、
+   * それを手がかりに選び分けられる。
+   */
+  const detection = detectPegHoles(image.data, image.width, image.height, {
+    ...s.options,
+    expectedSpacing: s.reference.spacing,
+  });
   if (!detection.detected) return { ok: false, reason: detection.message };
 
   const diff = pegGeometryDiff(detection, s.reference);

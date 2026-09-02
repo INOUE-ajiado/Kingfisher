@@ -474,3 +474,60 @@ describe('画寸を揃える', () => {
     expect(bakePegTransform(redCorner(3, 2), 3, 2, noMove).length).toBe(3 * 2 * 4);
   });
 });
+
+/**
+ * タップ穴の周りが黒っぽく塗られている紙。
+ *
+ * ⚠️ 2026-09-02 の実データで見送られたコマに共通していた形。
+ * しきい値が緩いと塗りと穴がくっついて 1 つの塊になり、別の 3 つを穴と取り違える。
+ * ⚠️ 本家 (OLMPegHoleStabilizer) は単一のしきい値で二値化して大きさで弾くだけなので、
+ * この形は "not found tap hole" になり not_founds へ回される。
+ */
+describe('穴の周りが黒く塗られた紙', () => {
+  /** 穴 (真っ黒) の周りに、少し明るい黒 (塗り) を敷く */
+  function paperWithSmudgedPegs(): Uint8ClampedArray {
+    const data = blankPaper();
+    const smudge = (cx: number, rx: number, ry: number) => {
+      for (let y = Math.floor(60 - ry); y <= 60 + ry; y++) {
+        for (let x = Math.floor(cx - rx); x <= cx + rx; x++) {
+          if (x < 0 || y < 0 || x >= W || y >= H) continue;
+          const i = (y * W + x) * 4;
+          data[i] = 90; data[i + 1] = 90; data[i + 2] = 90; data[i + 3] = 255;
+        }
+      }
+    };
+    // 塗り (少し明るい黒) → その上に本当の穴 (真っ黒)
+    smudge(W / 2 - 220, 28, 26);
+    smudge(W / 2, 34, 24);
+    smudge(W / 2 + 220, 28, 26);
+    punch(data, W, W / 2 - 220, 60, 11, 11);
+    punch(data, W, W / 2, 60, 18, 10);
+    punch(data, W, W / 2 + 220, 60, 11, 11);
+
+    // 紛らわしい 3 つ (塗りと同じ濃さの点) を別の間隔で置く
+    smudge(W / 2 - 90, 12, 12);
+    smudge(W / 2 + 90, 12, 12);
+    return data;
+  }
+
+  it('塗りに埋もれても、間隔の正しい 3 つを選ぶ', () => {
+    const data = paperWithSmudgedPegs();
+    const base = detectPegHoles(paperWithPegs(), W, H);
+
+    const out = detectPegHoles(data, W, H, { expectedSpacing: base.spacing });
+
+    expect(out.detected).toBe(true);
+    // ⚠️ 220px 間隔の本物を選ぶこと (90px 間隔の紛らわしい方ではなく)
+    // ⚠️ この形では期待間隔が無くても選べる。期待間隔が要るのは、
+    //    紛らわしい方も同じくらい対称なときで、実データでの効き目は未確認
+    expect(out.spacing).toBeGreaterThan(200);
+    expect(out.spacing).toBeLessThan(240);
+    expect(out.center.x).toBeCloseTo(W / 2, -1);
+  });
+
+  it('何通り試して選んだかを残す', () => {
+    const out = detectPegHoles(paperWithSmudgedPegs(), W, H, { expectedSpacing: 220 });
+
+    expect(out.message).toContain('通りから選択');
+  });
+});

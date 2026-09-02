@@ -100,7 +100,11 @@ async function measurePegForFile(
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
 
-  const detection = detectPegHoles(image.data, image.width, image.height, options);
+  // ⚠️ ワーカー側と同じく、期待する間隔を渡すこと (取り違えを防ぐ)
+  const detection = detectPegHoles(image.data, image.width, image.height, {
+    ...options,
+    expectedSpacing: reference.spacing,
+  });
   if (!detection.detected) return { ok: false, reason: detection.message };
 
   return {
