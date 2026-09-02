@@ -581,6 +581,17 @@ export function pegGeometryDiff(
  * ⚠️ 表示と同じ順で動かすこと (画像の中心を軸に回してから平行移動)。
  * ここがずれると、画面で合わせたものが焼き込むとずれる。
  */
+/**
+ * その補正で実際に画が動くか。
+ *
+ * ⚠️ 1px 未満のずれで書き直さないこと。焼き込みは丸めて行を動かすので
+ * 0px 移動になり、JPEG を作り直しただけで終わる (画質が落ちて控えも増える)。
+ * 2026-09-02 の実データでは 37 枚すべてが 0.0〜0.9px で、全部が無駄な書き直しだった。
+ */
+export function pegTransformMoves(transform: PegTransform): boolean {
+  return Math.round(transform.offsetX) !== 0 || Math.round(transform.offsetY) !== 0;
+}
+
 export function bakePegTransform(
   data: Uint8ClampedArray,
   width: number,

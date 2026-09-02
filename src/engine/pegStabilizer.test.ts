@@ -3,6 +3,7 @@ import {
   bakePegTransform,
   detectPegHoles,
   pegGeometryDiff,
+  pegTransformMoves,
   pegTransformTo,
   referenceFromDetection,
 } from './pegStabilizer';
@@ -391,5 +392,35 @@ describe('補正の焼き込み', () => {
     // 左端 (元画像の外から来た列) は透明
     expect(baked[(10 * W + 5) * 4 + 3]).toBe(0);
     expect(baked[(10 * W + 5) * 4]).toBe(255);
+  });
+});
+
+/**
+ * 1px 未満のずれで書き直さないこと。
+ *
+ * ⚠️ 焼き込みは丸めて行を動かすので、0.4px は 0px 移動になる。
+ * それでも書き直すと JPEG を作り直しただけで画質が落ち、控えも増える
+ * (2026-09-02 の実データでは 37 枚すべてが 0.0〜0.9px だった)。
+ */
+describe('動かない補正は書き直さない', () => {
+  const t = (offsetX: number, offsetY: number) => ({ offsetX, offsetY, rotation: 0, scale: 1 });
+
+  it('1px 未満なら動かないと答える', () => {
+    expect(pegTransformMoves(t(0.34, 0.2))).toBe(false);
+    expect(pegTransformMoves(t(0.49, -0.49))).toBe(false);
+    expect(pegTransformMoves(t(0, 0))).toBe(false);
+  });
+
+  it('1px 以上なら動くと答える', () => {
+    expect(pegTransformMoves(t(0.5, 0))).toBe(true);
+    expect(pegTransformMoves(t(0, -18.3))).toBe(true);
+    expect(pegTransformMoves(t(-322.5, 0))).toBe(true);
+  });
+
+  it('動かないと答えた補正は、実際に画を変えない', () => {
+    const data = new Uint8ClampedArray([1, 2, 3, 255, 4, 5, 6, 255]);
+    const baked = bakePegTransform(data, 2, 1, t(0.4, 0.4));
+
+    expect(Array.from(baked)).toEqual(Array.from(data));
   });
 });

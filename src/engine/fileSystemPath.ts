@@ -358,3 +358,14 @@ export async function createFileIn(dirHandle: any, path: string, rootName?: stri
 export function backupPathFor(path: string): string {
   return path.replace(/(\.[^.]+)$/, '_orig$1');
 }
+
+/**
+ * そのファイル自身が控えか。
+ *
+ * ⚠️ 控えの控え (_orig_orig) を作らないこと。控えはもともと手つかずの 1 枚なので、
+ * それを上書きする前にもう 1 枚作っても意味がなく、フォルダが二重に膨らむだけ
+ * (2026-09-02 に実データで発生)。
+ */
+export function isBackupPath(path: string): boolean {
+  return /_orig(\.[^.]+)?$/i.test(path);
+}

@@ -12,12 +12,19 @@ import {
   PegReference,
   PegTransform,
   pegGeometryDiff,
+  pegTransformMoves,
 } from '../../engine/pegStabilizer';
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import { PegCandidate, rejectPegOutliers } from '../../engine/pegBatch';
 import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
-import { backupPathFor, createFileIn, requestWriteAccess, resolveFileHandle } from '../../engine/fileSystemPath';
+import {
+  backupPathFor,
+  createFileIn,
+  isBackupPath,
+  requestWriteAccess,
+  resolveFileHandle,
+} from '../../engine/fileSystemPath';
 import { PaintStore, ViewSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
 import { isSyncPairConsistent } from '../types';
@@ -102,8 +109,9 @@ async function bakePegIntoFile(
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
-    return { ok: true, detail: 'すでに合っている' };
+  // ⚠️ 動かないなら書き直さない (JPEG を作り直すだけ画質が落ちる)
+  if (!pegTransformMoves(transform)) {
+    return { ok: true, detail: 'すでに合っている (1px 未満なので書き直さない)' };
   }
 
   const moved = bakePegTransform(image.data, image.width, image.height, transform);
@@ -115,7 +123,8 @@ async function bakePegIntoFile(
     await writable.write(body);
     await writable.close();
   } else {
-    if (setup.backup) {
+    // ⚠️ 控えの控えは作らない
+    if (setup.backup && !isBackupPath(path)) {
       const original = await file.arrayBuffer();
       const backupHandle = await createFileIn(dir, backupPathFor(path), rootName);
       const backupWritable = await backupHandle.createWritable();
@@ -545,6 +554,21 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
        */
       const checked = rejectPegOutliers(candidates);
       checked.rejected.forEach((r) => skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`));
+
+      /**
+       * ⚠️ 基準にした 1 枚が他とずれていると、全部がその誤りへ引きずられる。
+       * 「ほぼ全員が同じ方向へ大きく動く」ときは、動かすべきは基準の方である。
+       * (2026-09-02: 基準を変えたら全件 1px 未満になり、前の基準が外れ値だったと分かった)
+       */
+      if (checked.median && Math.hypot(checked.median.offsetX, checked.median.offsetY) > 10) {
+        logDebug(
+          'view',
+          '基準にした 1 枚が他とずれている可能性',
+          `ほぼ全件が X ${checked.median.offsetX.toFixed(1)}px / Y ${checked.median.offsetY.toFixed(1)}px 動きます。` +
+            `別のコマを基準にすると、動かす量がもっと小さくなるかもしれません`,
+          'warn'
+        );
+      }
 
       if (checked.median) {
         logDebug(

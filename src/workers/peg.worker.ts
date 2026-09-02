@@ -8,7 +8,7 @@
  * どの担当が最初に終わったかで基準が変わってしまう。
  */
 
-import { backupPathFor, createFileIn, resolveFileHandle } from '../engine/fileSystemPath';
+import { backupPathFor, createFileIn, isBackupPath, resolveFileHandle } from '../engine/fileSystemPath';
 import { readPixels, writePixels } from '../engine/imagePixels';
 import {
   bakePegTransform,
@@ -17,6 +17,7 @@ import {
   PegReference,
   PegTransform,
   pegGeometryDiff,
+  pegTransformMoves,
   pegTransformTo,
 } from '../engine/pegStabilizer';
 
@@ -92,8 +93,9 @@ async function bakeOne(
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  if (transform.offsetX === 0 && transform.offsetY === 0 && transform.rotation === 0 && transform.scale === 1) {
-    return { ok: true, detail: 'すでに合っている' };
+  // ⚠️ 動かないなら書き直さない (JPEG を作り直すだけ画質が落ちる)
+  if (!pegTransformMoves(transform)) {
+    return { ok: true, detail: 'すでに合っている (1px 未満なので書き直さない)' };
   }
 
   const moved = bakePegTransform(image.data, image.width, image.height, transform);
@@ -106,7 +108,8 @@ async function bakeOne(
     await writable.write(body);
     await writable.close();
   } else {
-    if (s.backup) {
+    // ⚠️ 控えの控えは作らない (元から手つかずの 1 枚なので)
+    if (s.backup && !isBackupPath(path)) {
       // ⚠️ 上書きの前に元を残す。焼き込みは元に戻せない
       const original = await file.arrayBuffer();
       const backupHandle = await createFileIn(s.dir, backupPathFor(path), s.rootName);
