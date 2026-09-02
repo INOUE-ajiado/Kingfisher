@@ -7,6 +7,7 @@ import {
   ensureWritePermission,
   requestWriteAccess,
   ensureDirectory,
+  isBackupPath,
   moveFileToDirectory,
 } from './fileSystemPath';
 
@@ -353,5 +354,18 @@ describe('requestWriteAccess', () => {
 
   it('フォルダが無ければ理由をつけて断る', async () => {
     expect((await requestWriteAccess(null)).ok).toBe(false);
+  });
+});
+
+/**
+ * 控えの控え (_orig_orig) を作らないための判定。
+ * ⚠️ 控えを選んだまま焼き込むと、フォルダが二重に膨らむ (2026-09-02 に実データで発生)。
+ */
+describe('isBackupPath', () => {
+  it('控えを見分ける', () => {
+    expect(isBackupPath('a/b/2609012112_0005_orig.jpg')).toBe(true);
+    expect(isBackupPath('a/b/2609012112_0005.jpg')).toBe(false);
+    expect(isBackupPath('a/b/x_ORIG.TGA')).toBe(true);
+    expect(isBackupPath('a/b/original.jpg')).toBe(false);
   });
 });
