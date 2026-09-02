@@ -93,13 +93,23 @@ async function bakeOne(
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  // ⚠️ 動かないなら書き直さない (JPEG を作り直すだけ画質が落ちる)
-  if (!pegTransformMoves(transform)) {
+  /**
+   * ⚠️ 画寸も基準へ揃えること。1 カットの全コマは同じ大きさである必要がある。
+   * 穴が絶対座標で揃っていても、画寸が違うと表示や合成で飛んで見える。
+   */
+  const outSize =
+    s.reference.width && s.reference.height
+      ? { width: s.reference.width, height: s.reference.height }
+      : { width: image.width, height: image.height };
+  const sameSize = outSize.width === image.width && outSize.height === image.height;
+
+  // ⚠️ 動かず、画寸も同じなら書き直さない (JPEG を作り直すだけ画質が落ちる)
+  if (!pegTransformMoves(transform) && sameSize) {
     return { ok: true, detail: 'すでに合っている (1px 未満なので書き直さない)' };
   }
 
-  const moved = bakePegTransform(image.data, image.width, image.height, transform);
-  const body = await writePixels(moved, image.width, image.height, path, image.tga, image.density);
+  const moved = bakePegTransform(image.data, image.width, image.height, transform, outSize);
+  const body = await writePixels(moved, outSize.width, outSize.height, path, image.tga, image.density);
 
   if (s.mode === 'copy') {
     // 元のフォルダ構成を保ったまま、書き出し先の同じ場所へ置く
@@ -125,8 +135,8 @@ async function bakeOne(
   return {
     ok: true,
     detail:
-      `X ${transform.offsetX}px / Y ${transform.offsetY}px / 回転 ${transform.rotation}°` +
-      ` / 倍率 ${(transform.scale * 100).toFixed(2)}%`,
+      `X ${transform.offsetX}px / Y ${transform.offsetY}px` +
+      (sameSize ? '' : ` / 画寸 ${image.width}x${image.height} → ${outSize.width}x${outSize.height}`),
   };
 }
 
