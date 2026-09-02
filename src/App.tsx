@@ -221,9 +221,23 @@ export const App: React.FC = () => {
     startYRef.current = e.clientY;
     startHeightRef.current = currentHeight;
 
+    /**
+     * ⚠️ 掴み損ねたときの逃げ道を必ず用意すること。
+     * setPointerCapture が失敗すると、指を離した合図がこの要素に来ない。
+     * 掴んだままの状態が残り、次にこのつまみへ触れただけで動き出す。
+     */
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) {
+      console.warn('つまみを掴めませんでした。window 側で離すのを待ちます:', err);
+      const release = () => {
+        activeResizingKeyRef.current = null;
+        window.removeEventListener('pointerup', release);
+        window.removeEventListener('pointercancel', release);
+      };
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
+    }
   };
 
   const handleRowResizeMove = (key: string, e: React.PointerEvent) => {
@@ -243,7 +257,10 @@ export const App: React.FC = () => {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
-    } catch (err) {}
+    } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
   };
 
   const handleRightResizeDown = (e: React.PointerEvent) => {
@@ -252,9 +269,19 @@ export const App: React.FC = () => {
     startXRef.current = e.clientX;
     startWidthRef.current = rightSidebarWidth;
 
+    // ⚠️ 掴み損ねたときの逃げ道 (上と同じ理由)
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
-    } catch (err) {}
+    } catch (err) {
+      console.warn('つまみを掴めませんでした。window 側で離すのを待ちます:', err);
+      const release = () => {
+        isRightResizing.current = false;
+        window.removeEventListener('pointerup', release);
+        window.removeEventListener('pointercancel', release);
+      };
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
+    }
   };
 
   const handleRightResizeMove = (e: React.PointerEvent) => {
@@ -270,7 +297,10 @@ export const App: React.FC = () => {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
-    } catch (err) {}
+    } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
   };
 
   return (

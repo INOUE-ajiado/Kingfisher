@@ -6,6 +6,13 @@ import { encodeTGA } from '../../engine/tga';
 import { X, Download, Sliders, Image as ImageIcon, Pipette, Loader2, Sparkles, Check } from 'lucide-react';
 
 export const ExportTraceModal: React.FC = () => {
+  /**
+   * 「書き出しました」の表示を消すタイマー。
+   * ⚠️ 閉じたあとに触らないよう、必ず片づけること。
+   */
+  const noticeTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (noticeTimer.current) window.clearTimeout(noticeTimer.current); }, []);
+
   const { activeModal, setActiveModal, currentImage, unifiedFileList, currentFileIndex } = usePaintStore();
   const [mode, setMode] = useState<RasterTraceMode>('unmultiply');
   const [keyColorHex, setKeyColorHex] = useState<string>('#ffffff');
@@ -90,7 +97,7 @@ export const ExportTraceModal: React.FC = () => {
       URL.revokeObjectURL(url);
 
       setDownloadSuccess('PNG');
-      setTimeout(() => setDownloadSuccess(null), 2500);
+      noticeTimer.current = window.setTimeout(() => setDownloadSuccess(null), 2500);
     }, 'image/png');
   };
 
@@ -115,7 +122,7 @@ export const ExportTraceModal: React.FC = () => {
     URL.revokeObjectURL(url);
 
     setDownloadSuccess('TGA');
-    setTimeout(() => setDownloadSuccess(null), 2500);
+    noticeTimer.current = window.setTimeout(() => setDownloadSuccess(null), 2500);
   };
 
   return (

@@ -128,7 +128,10 @@ export function useFastDraggable<T extends HTMLElement = HTMLDivElement>(
         if (e.currentTarget.hasPointerCapture(e.pointerId)) {
           e.currentTarget.releasePointerCapture(e.pointerId);
         }
-      } catch (err) {}
+      } catch (err) {
+      // ⚠️ 離すときの失敗は無視してよい (すでにポインタが無い場合に投げる)。
+      // 掴むときの失敗は別で受けている
+    }
 
       onCommitRef.current?.(currentPos.current.x, currentPos.current.y);
     },

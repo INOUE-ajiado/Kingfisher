@@ -4,6 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { PaintStore, LightTableSlice } from '../types';
+import { nextId } from '../../engine/uniqueId';
 
 /** 前後それぞれに指定できるオニオンスキンの最大枚数 */
 export const ONION_MAX_FRAMES = 30;
@@ -77,7 +78,7 @@ export const createLightTableSlice: StateCreator<PaintStore, [], [], LightTableS
         items: [
           ...state.lightTable.items,
           {
-            id: Date.now().toString(),
+            id: nextId('light'),
             name,
             file,
             image,

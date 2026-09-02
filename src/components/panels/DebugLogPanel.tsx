@@ -47,12 +47,15 @@ export const DebugLogPanel: React.FC = () => {
   const all = useSyncExternalStore(subscribeDebugLog, getDebugLog, getDebugLog);
 
   const [copied, setCopied] = useState(false);
+  /** ⚠️ 「コピーしました」の表示を消すタイマー。閉じたあとに触らないよう片づける */
+  const noticeTimer = useRef<number | null>(null);
   const [copyFailed, setCopyFailed] = useState(false);
   const [follow, setFollow] = useState(true);
   /** 2 画面の連動を追うときは、セルの移動と連動の行だけに絞る */
   const [syncOnly, setSyncOnly] = useState(false);
   /** ログの一覧そのもの。追従はこの中だけで行う */
   const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => () => { if (noticeTimer.current) window.clearTimeout(noticeTimer.current); }, []);
 
   // ⚠️ まとめて 1 つのオブジェクトで購読しないこと。毎回新しい参照になり描き直しが止まらない
   const isSplitView = usePaintStore((s) => s.isSplitView);
@@ -213,11 +216,11 @@ export const DebugLogPanel: React.FC = () => {
       console.error('操作ログをコピーできませんでした。以下を手動でコピーしてください:');
       console.log(text);
       setCopyFailed(true);
-      window.setTimeout(() => setCopyFailed(false), 4000);
+      noticeTimer.current = window.setTimeout(() => setCopyFailed(false), 4000);
       return;
     }
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    noticeTimer.current = window.setTimeout(() => setCopied(false), 1500);
   }, [entries, statusLines]);
 
   return (

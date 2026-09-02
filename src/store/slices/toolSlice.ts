@@ -4,6 +4,7 @@
 
 import { StateCreator } from 'zustand';
 import { PaintStore, ToolSlice, PaletteItem, defaultColors } from '../types';
+import { nextId } from '../../engine/uniqueId';
 
 export const createToolSlice: StateCreator<PaintStore, [], [], ToolSlice> = (set, get) => ({
   activeTool: 'fill',
@@ -125,7 +126,7 @@ export const createToolSlice: StateCreator<PaintStore, [], [], ToolSlice> = (set
       const g = parseInt(hex.slice(3, 5), 16) || 0;
       const b = parseInt(hex.slice(5, 7), 16) || 0;
       const newItem: PaletteItem = {
-        id: Date.now().toString(),
+        id: nextId('color'),
         name,
         color: { r, g, b, a: 255, hex },
       };

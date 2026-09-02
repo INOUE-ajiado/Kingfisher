@@ -5,6 +5,7 @@
 import { StateCreator } from 'zustand';
 import { PaintStore, UiSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
+import { triggerRenderSignal } from '../../engine/renderSignal';
 
 /** 表示倍率を人が読める形に (0.625 -> 63%) */
 function percent(scale: number): string {
@@ -131,9 +132,13 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
       };
     }),
 
-  renderTrigger: 0,
 
-  triggerRender: () => set((state) => ({ renderTrigger: state.renderTrigger + 1 })),
+  /**
+   * ⚠️ ここでストアを更新しないこと。ブラシを引いている間は毎フレーム呼ばれるので、
+   * ストア全体を購読しているパネルまで描き直される (2026-09-03 の監査)。
+   * 合図はストアの外 (engine/renderSignal.ts) に置き、キャンバスだけが購読する。
+   */
+  triggerRender: () => triggerRenderSignal(),
 
   /**
    * キーの効き先。最初はセル。

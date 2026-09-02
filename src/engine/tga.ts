@@ -36,6 +36,12 @@ export function decodeTGA(buffer: ArrayBuffer): TGAImage {
   }
 
   const isTopDown = (descriptor & 0x20) !== 0;
+  /**
+   * 右から左へ詰められた TGA。
+   * ⚠️ 見落とすと左右が反転した画で開く。書き出す機械によっては立つビットなので、
+   * 読めない扱いにせず素直に反転して読むこと。
+   */
+  const isRightToLeft = (descriptor & 0x10) !== 0;
   const bytesPerPixel = pixelDepth / 8;
   const offset = 18 + idLength;
 
@@ -56,7 +62,8 @@ export function decodeTGA(buffer: ArrayBuffer): TGAImage {
         const a = bytesPerPixel === 4 ? rawBytes[rawIndex + 3] : 255;
         rawIndex += bytesPerPixel;
 
-        const idx = rowOffset + x * 4;
+        const targetX = isRightToLeft ? width - 1 - x : x;
+        const idx = rowOffset + targetX * 4;
         rgbaData[idx] = r;
         rgbaData[idx + 1] = g;
         rgbaData[idx + 2] = b;
@@ -115,7 +122,20 @@ export function decodeTGA(buffer: ArrayBuffer): TGAImage {
       const targetY = isTopDown ? y : height - 1 - y;
       const srcRow = y * width * 4;
       const dstRow = targetY * width * 4;
-      rgbaData.set(tempPixelBuf.subarray(srcRow, srcRow + width * 4), dstRow);
+
+      if (!isRightToLeft) {
+        rgbaData.set(tempPixelBuf.subarray(srcRow, srcRow + width * 4), dstRow);
+        continue;
+      }
+      // ⚠️ 右→左に詰められている場合は、行の中も入れ替えること
+      for (let x = 0; x < width; x++) {
+        const from = srcRow + x * 4;
+        const to = dstRow + (width - 1 - x) * 4;
+        rgbaData[to] = tempPixelBuf[from];
+        rgbaData[to + 1] = tempPixelBuf[from + 1];
+        rgbaData[to + 2] = tempPixelBuf[from + 2];
+        rgbaData[to + 3] = tempPixelBuf[from + 3];
+      }
     }
   }
 

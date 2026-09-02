@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { Play, Pause, Palette, Clapperboard, Plus, Trash2, Eye, EyeOff, Layers, Settings2 } from 'lucide-react';
-import { decodeTGA } from '../../engine/tga';
+import { decodeAnyImageFile } from '../../engine/imageDecode';
 
 export const LightTable: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -26,15 +26,28 @@ export const LightTable: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    /**
+     * ⚠️ TGA だけを読まないこと。仕上げの下敷きにはスキャンした JPG も使う。
+     * ⚠️ 読めなかったことを黙って捨てないこと。画面に何も出ないと
+     * 「選んだのに何も起きない」になる (2026-09-03 の監査)。
+     */
+    const failed: string[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       try {
-        const buffer = await file.arrayBuffer();
-        const decoded = decodeTGA(buffer);
+        const decoded = await decodeAnyImageFile(file);
         addLightTableSubItem(file.name, file, decoded);
-      } catch (err) {
-        console.error('Failed to load sublayer TGA:', err);
+      } catch (err: any) {
+        console.error('下敷きを読み込めませんでした:', err);
+        failed.push(`${file.name} (${err?.message || err})`);
       }
+    }
+
+    // 同じファイルを選び直せるように、入力欄は空へ戻す
+    e.target.value = '';
+
+    if (failed.length > 0) {
+      alert(`${failed.length} 件を読み込めませんでした。\n\n${failed.slice(0, 5).join('\n')}`);
     }
   };
 
@@ -247,7 +260,7 @@ export const LightTable: React.FC = () => {
         ref={fileInputRef}
         onChange={handleAddSubItemFile}
         multiple
-        accept=".tga"
+        accept=".tga,.png,.jpg,.jpeg"
         className="hidden"
       />
     </div>

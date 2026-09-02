@@ -540,7 +540,6 @@ export interface UiSlice {
   zoomIn: () => void
   zoomOut: () => void
   resetCanvasTransform: () => void
-  renderTrigger: number
   triggerRender: () => void;
   /**
    * キーの効き先。最後に操作した面で決まる ('cell' = Win A / Win B、'roll' = 撮影ロール)。
