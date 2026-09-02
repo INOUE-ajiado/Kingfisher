@@ -143,6 +143,19 @@ export const ToolOptionsPanel: React.FC = () => {
                   />
                 </>
               )}
+
+              {/* ⚠️ 精度を詰めるとき用。42 枚なら 42 行増えるので既定は切ってある */}
+              <label className="flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pegStabilizer.options.detailLog}
+                  onChange={(e) => setPegOptions({ detailLog: e.target.checked })}
+                  className="rounded accent-blue-600 w-3.5 h-3.5"
+                />
+                <span title="1 枚ごとの穴の座標・大きさ・しきい値を DEBUG ログに残す">
+                  詳しい解析ログを残す
+                </span>
+              </label>
             </div>
 
             <div className="grid grid-cols-2 gap-1">
