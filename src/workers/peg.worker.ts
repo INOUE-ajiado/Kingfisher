@@ -102,6 +102,8 @@ async function measureOne(
   const detection = detectPegHoles(image.data, image.width, image.height, {
     ...s.options,
     expectedSpacing: s.reference.spacing,
+    expectedEdge: s.reference.edge,
+    expectedCenter: s.reference.center,
   });
   /**
    * ⚠️ 穴が見つからなくても画寸は返すこと。呼び出し側はこれを見て

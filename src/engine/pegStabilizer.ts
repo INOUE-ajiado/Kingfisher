@@ -98,6 +98,8 @@ export interface PegReference {
   center: { x: number; y: number };
   angle: number;
   spacing: number;
+  /** 基準を見つけた端。同じカットの紙は穴が同じ側にある */
+  edge?: 'top' | 'bottom';
   /**
    * 基準にしたコマの画寸。まとめて焼くときは、ここへ全部を揃える。
    *
@@ -147,6 +149,17 @@ export interface PegDetectOptions {
    * 同じカットの間隔はほぼ変わらないので、いちばん近いものを選べばよい。
    */
   expectedSpacing?: number;
+  /**
+   * 基準を見つけた端。同じカットの紙は、穴が同じ側にある。
+   * ⚠️ 反対の端で見つかった 3 つは、まず取り違えである。
+   */
+  expectedEdge?: 'top' | 'bottom';
+  /**
+   * 基準の中央の穴の位置。
+   * ⚠️ 決め手にはしないこと (紙が本当にずれている場合がある)。
+   * 候補が複数あるときの、最後の一押しとして軽く効かせる。
+   */
+  expectedCenter?: { x: number; y: number };
   /**
    * しきい値を画像から見当づけるか。
    * ⚠️ false のときは threshold だけを使うこと。手で決めた値に勝手な候補を混ぜると、
@@ -606,7 +619,17 @@ export function detectPegHoles(
     const symmetry = Math.abs(gapLeft - gapRight) / Math.max(1, spacing);
     const expected = options.expectedSpacing;
     const spacingError = expected && expected > 0 ? Math.abs(spacing - expected) / expected : 0;
-    const score = spacingError * 10 + symmetry * 2 + Math.abs(angle) * 0.05;
+
+    // ⚠️ 反対の端で見つかったものは、まず取り違え
+    const edgePenalty = options.expectedEdge && options.expectedEdge !== band.edge ? 5 : 0;
+
+    // ⚠️ 中心の遠さは軽く効かせるだけ。紙が本当にずれている場合を潰さないため
+    const center = options.expectedCenter;
+    const centerError = center
+      ? Math.hypot(mid.x - center.x, mid.y - center.y) / Math.max(1, width)
+      : 0;
+
+    const score = spacingError * 10 + edgePenalty + symmetry * 2 + centerError + Math.abs(angle) * 0.05;
 
     found.push({
       note: `${note} — 間隔 ${Math.round(spacing)}px / 傾き ${angle.toFixed(2)}°`,
@@ -663,6 +686,7 @@ export function referenceFromDetection(
     center: { ...detection.center },
     angle: detection.angle,
     spacing: detection.spacing,
+    edge: detection.edge,
     width: size?.width,
     height: size?.height,
   };

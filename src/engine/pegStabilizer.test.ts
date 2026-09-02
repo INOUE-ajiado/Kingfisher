@@ -584,3 +584,46 @@ describe('穴の周りがべったり黒く塗られた紙', () => {
     out.holes.forEach((h) => expect(h.width).toBeLessThan(60));
   });
 });
+
+/**
+ * 反対の端で見つかった 3 つを選ばない。
+ *
+ * ⚠️ 同じカットの紙は、穴が同じ側にある。上タップの束の中で 1 枚だけ
+ * 下端の何かを穴と見なすと、そのコマだけ大きくずれる
+ * (2026-09-03 の実データで、中央値から 340px 離れたコマがあった)。
+ */
+describe('基準と同じ端を優先する', () => {
+  function paperWithBothEnds(): Uint8ClampedArray {
+    const data = blankPaper();
+    // 上端: 本物のタップ穴 (間隔 220)
+    punch(data, W, W / 2 - 220, 60, 11, 11);
+    punch(data, W, W / 2, 60, 18, 10);
+    punch(data, W, W / 2 + 220, 60, 11, 11);
+    // 下端: 紛らわしい 3 つ (同じ間隔で、大きく右にずれている)
+    punch(data, W, W / 2 - 220 + 150, H - 60, 11, 11);
+    punch(data, W, W / 2 + 150, H - 60, 18, 10);
+    punch(data, W, W / 2 + 220 + 150, H - 60, 11, 11);
+    return data;
+  }
+
+  it('上端の基準があるなら、上端の 3 つを選ぶ', () => {
+    const out = detectPegHoles(paperWithBothEnds(), W, H, {
+      expectedSpacing: 220,
+      expectedEdge: 'top',
+    });
+
+    expect(out.detected).toBe(true);
+    expect(out.edge).toBe('top');
+    expect(out.center.x).toBeCloseTo(W / 2, -1);
+  });
+
+  it('下端の基準なら、下端の 3 つを選ぶ', () => {
+    const out = detectPegHoles(paperWithBothEnds(), W, H, {
+      expectedSpacing: 220,
+      expectedEdge: 'bottom',
+    });
+
+    expect(out.edge).toBe('bottom');
+    expect(out.center.x).toBeCloseTo(W / 2 + 150, -1);
+  });
+});
