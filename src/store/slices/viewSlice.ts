@@ -13,10 +13,12 @@ import {
   PegTransform,
   pegGeometryDiff,
   pegTransformMoves,
+  describePegDetection,
 } from '../../engine/pegStabilizer';
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import { PegCandidate, rejectPegOutliers } from '../../engine/pegBatch';
+import { PegSample, summarizePegBatch } from '../../engine/pegReport';
 import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
 import {
   backupPathFor,
@@ -41,6 +43,7 @@ function askPeg(
   transform?: PegTransform;
   angleDiff?: number;
   spacingRatio?: number;
+  diagnostic?: string;
 }> {
   return new Promise((resolve, reject) => {
     const onMessage = (e: MessageEvent<PegWorkerDone>) => {
@@ -53,6 +56,7 @@ function askPeg(
         transform: e.data.transform,
         angleDiff: e.data.angleDiff,
         spacingRatio: e.data.spacingRatio,
+        diagnostic: e.data.diagnostic,
       });
     };
     const onError = (e: ErrorEvent) => {
@@ -79,7 +83,14 @@ async function measurePegForFile(
   path: string,
   reference: PegReference,
   options: PegDetectOptions
-): Promise<{ ok: boolean; reason?: string; transform?: PegTransform; angleDiff?: number; spacingRatio?: number }> {
+): Promise<{
+  ok: boolean;
+  reason?: string;
+  transform?: PegTransform;
+  angleDiff?: number;
+  spacingRatio?: number;
+  diagnostic?: string;
+}> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
 
@@ -90,6 +101,7 @@ async function measurePegForFile(
     ok: true,
     transform: pegTransformTo(detection, reference),
     ...pegGeometryDiff(detection, reference),
+    diagnostic: describePegDetection(detection),
   };
 }
 
@@ -242,7 +254,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     holes: [],
     reference: null,
     message: '',
-    options: { autoThreshold: true, threshold: 70, searchPercent: 28 },
+    options: { autoThreshold: true, threshold: 70, searchPercent: 28, detailLog: false },
   },
 
   togglePegStabilizerEnabled: () =>
@@ -472,6 +484,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
             `タップ補正の基準: ${path}`,
             `${detection.message} / この画寸 ${image.width}x${image.height} へ全部を揃えます`
           );
+          logDebug('view', '基準の検出の中身', describePegDetection(detection));
           rest = paths.slice(i + 1);
           break;
         } catch (err: any) {
@@ -556,6 +569,18 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           angleDiff: result.angleDiff,
           spacingRatio: result.spacingRatio,
         });
+
+        /**
+         * ⚠️ 1 枚ごとの検出の中身を残すこと。中心だけでは
+         * 「違うものを穴と見なした」のか「紙が本当にずれた」のか区別できない。
+         */
+        if (state.pegStabilizer.options.detailLog) {
+          logDebug(
+            'view',
+            `検出 ${path.split(/[/\\]/).pop()}: ずれ X ${result.transform.offsetX}px / Y ${result.transform.offsetY}px`,
+            result.diagnostic
+          );
+        }
       });
 
       /**
@@ -564,6 +589,22 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
        * 穴と見なした結果である。焼くと元に戻せない上に、
        * 「数枚だけ絵がずれている」という一番気づきにくい壊れ方になる。
        */
+      /**
+       * ⚠️ 束全体のばらつきを必ず残すこと。ばらつきが小さいのに範囲が広ければ、
+       * 大半は揃っていて数枚だけ外れている = 誤検出を疑う場面である。
+       */
+      const samples: PegSample[] = candidates.map((c) => ({
+        path: c.path,
+        offsetX: c.transform.offsetX,
+        offsetY: c.transform.offsetY,
+        angleDiff: c.angleDiff ?? 0,
+        spacingRatio: c.spacingRatio ?? 1,
+      }));
+      const summary = summarizePegBatch(samples);
+      // ⚠️ 空のメッセージで行を増やさないこと。読むときに何の行か分からなくなる
+      logDebug('view', `補正量のばらつき (${samples.length} 枚)`, summary.slice(0, 4).join(' / '));
+      summary.slice(4).forEach((line) => logDebug('view', '中央値から離れているコマ', line, 'warn'));
+
       const checked = rejectPegOutliers(candidates);
       checked.rejected.forEach((r) => skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`));
 
@@ -690,7 +731,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       logDebug(
         'view',
         'タップ穴の検出条件を変更',
-        `しきい値 ${next.autoThreshold ? '自動' : next.threshold} / 探索範囲 端から ${next.searchPercent}%`
+        `しきい値 ${next.autoThreshold ? '自動' : next.threshold} / 探索範囲 端から ${next.searchPercent}%` +
+          ` / 詳しい解析ログ ${next.detailLog ? 'ON' : 'OFF'}`
       );
       return { pegStabilizer: { ...state.pegStabilizer, options: next } };
     }),

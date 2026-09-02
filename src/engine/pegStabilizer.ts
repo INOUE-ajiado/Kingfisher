@@ -44,6 +44,53 @@ export interface PegDetection {
   edge: 'top' | 'bottom';
   /** うまくいかなかった理由。黙って失敗しないための説明 */
   message: string;
+  /**
+   * どういう条件で見つけたか。精度を詰めるための材料。
+   *
+   * ⚠️ 「合っている / 合っていない」だけでは追えない。どのしきい値で、
+   * いくつの塊から、どの 3 つを選んだのかが分からないと、
+   * 誤検出したときに何を直せばよいか決められない (2026-09-02 のユーザー指定)。
+   */
+  found?: {
+    /** 穴の見え方 */
+    look: 'dark' | 'transparent';
+    /** 使ったしきい値 (transparent のときは意味を持たない) */
+    threshold: number;
+    /** 帯の中で見つけた塊の数 */
+    blobs: number;
+    /** そのうち穴らしい形だったもの */
+    candidates: number;
+    /** 間引きの粗さ (px)。重心の細かさの下限になる */
+    step: number;
+    /** 探した帯 (元画像の y 座標) */
+    band: { fromY: number; toY: number };
+  };
+}
+
+/**
+ * 検出の中身を 1 行にまとめる (解析ログ用)。
+ *
+ * ⚠️ 穴 3 つの座標と大きさを必ず出すこと。中心だけでは、
+ * 「そもそも違うものを穴と見なした」のか「穴は合っているが紙がずれた」のか
+ * 区別できない。
+ * ⚠️ 数値は丸めすぎないこと (0.1px 単位)。1px 未満のずれを追う場面がある。
+ */
+export function describePegDetection(detection: PegDetection): string {
+  if (!detection.detected) return detection.message;
+
+  const holes = detection.holes
+    .map((h) => `(${h.x.toFixed(1)},${h.y.toFixed(1)} ${Math.round(h.width)}x${Math.round(h.height)} 面積${Math.round(h.area)})`)
+    .join(' ');
+
+  const f = detection.found;
+  const how = f
+    ? `${detection.edge === 'top' ? '上端' : '下端'}/${f.look === 'dark' ? `暗い穴 しきい値${f.threshold}` : '透明な穴'}` +
+      ` 塊${f.blobs}→候補${f.candidates} 刻み${f.step}px 帯 y${f.band.fromY}〜${f.band.toY}`
+    : detection.edge === 'top'
+    ? '上端'
+    : '下端';
+
+  return `穴 ${holes} / 中心 ${detection.center.x.toFixed(2)},${detection.center.y.toFixed(2)} / 間隔 ${detection.spacing.toFixed(2)}px / 傾き ${detection.angle.toFixed(4)}° / ${how}`;
 }
 
 /** 合わせ先。ふつうは 1 枚目の検出結果をそのまま使う */
@@ -524,6 +571,14 @@ export function detectPegHoles(
       spacing: Math.round(spacing * 1000) / 1000,
       edge: band.edge,
       message: `${band.edge === 'top' ? '上端' : '下端'}で 3 つの穴を検出 (間隔 ${Math.round(spacing)}px / 傾き ${angle.toFixed(2)}°)`,
+      found: {
+        look,
+        threshold: level,
+        blobs: blobs.length,
+        candidates: candidates.length,
+        step,
+        band: { fromY: band.fromY, toY: band.toY },
+      },
     };
     }
   }

@@ -91,6 +91,11 @@ export interface PegStabilizerState {
     threshold: number;
     /** 紙の端から何 % を探すか */
     searchPercent: number;
+    /**
+     * 1 枚ごとの検出の中身を DEBUG ログへ残すか。
+     * ⚠️ 精度を詰めるとき用。42 枚なら 42 行増えるので、既定は切っておく。
+     */
+    detailLog: boolean;
   };
 }
 

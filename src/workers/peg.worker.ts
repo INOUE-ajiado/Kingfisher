@@ -12,6 +12,7 @@ import { backupPathFor, createFileIn, isBackupPath, resolveFileHandle } from '..
 import { readPixels, writePixels } from '../engine/imagePixels';
 import {
   bakePegTransform,
+  describePegDetection,
   detectPegHoles,
   PegDetectOptions,
   PegReference,
@@ -58,6 +59,8 @@ export interface PegWorkerDone {
   /** measure のときの、基準との並びの違い */
   angleDiff?: number;
   spacingRatio?: number;
+  /** 検出の中身 (精度を詰めるための解析ログ) */
+  diagnostic?: string;
   /** ログに出す補正量 */
   detail?: string;
 }
@@ -71,7 +74,14 @@ let setup: PegWorkerInit | null = null;
  */
 async function measureOne(
   path: string
-): Promise<{ ok: boolean; reason?: string; transform?: PegTransform; angleDiff?: number; spacingRatio?: number }> {
+): Promise<{
+  ok: boolean;
+  reason?: string;
+  transform?: PegTransform;
+  angleDiff?: number;
+  spacingRatio?: number;
+  diagnostic?: string;
+}> {
   const s = setup!;
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
   const image = await readPixels(await fileHandle.getFile(), path);
@@ -80,7 +90,12 @@ async function measureOne(
   if (!detection.detected) return { ok: false, reason: detection.message };
 
   const diff = pegGeometryDiff(detection, s.reference);
-  return { ok: true, transform: pegTransformTo(detection, s.reference), ...diff };
+  return {
+    ok: true,
+    transform: pegTransformTo(detection, s.reference),
+    ...diff,
+    diagnostic: describePegDetection(detection),
+  };
 }
 
 /** 決まった補正量で焼き込んで書き戻す */
