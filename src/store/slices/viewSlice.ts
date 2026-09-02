@@ -461,7 +461,12 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
     let reference = state.pegStabilizer.reference;
     let applied = 0;
+    /** 画寸だけ揃えたコマの数 (穴は合っていない) */
+    let padded = 0;
+    const paddedSet = new Set<string>();
     const skipped: string[] = [];
+    /** 見送ったコマのパス。画寸だけは揃えるために使う */
+    const skippedPaths: string[] = [];
     const startedAt = Date.now();
 
     /**
@@ -484,6 +489,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           const detection = detectPegHoles(image.data, image.width, image.height, pegOptions);
           if (!detection.detected) {
             skipped.push(`${path} (${detection.message})`);
+            skippedPaths.push(path);
             continue;
           }
           reference = referenceFromDetection(detection, { width: image.width, height: image.height });
@@ -566,11 +572,13 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         const path = rest[i];
         if (outcome.error) {
           skipped.push(`${path} (${outcome.error})`);
+          skippedPaths.push(path);
           return;
         }
         const result = outcome.value!;
         if (!result.ok || !result.transform) {
           skipped.push(`${path} (${result.reason})`);
+          skippedPaths.push(path);
           return;
         }
         candidates.push({
@@ -620,7 +628,10 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       summary.slice(4).forEach((line) => logDebug('view', '中央値から離れているコマ', line, 'warn'));
 
       const checked = rejectPegOutliers(candidates);
-      checked.rejected.forEach((r) => skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`));
+      checked.rejected.forEach((r) => {
+        skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`);
+        skippedPaths.push(r.path);
+      });
 
       /**
        * 揃える先は「束のどれも切らない大きさ」。
@@ -716,17 +727,46 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
        * 二段目: 揃っている分だけ焼き込む。
        * ⚠️ 基準にした 1 枚も、画寸が違うならここへ入れること (動かさずに縁だけ足す)。
        */
+      const noMove = { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 };
       const toBake = [...checked.accepted];
+
       if (
         referenceFrame &&
         target &&
         (referenceFrame.width !== target.width || referenceFrame.height !== target.height)
       ) {
-        toBake.push({
-          path: referenceFrame.path,
-          transform: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 },
-        });
+        toBake.push({ path: referenceFrame.path, transform: noMove });
         logDebug('view', '基準にした 1 枚も画寸を揃えます', `${referenceFrame.path} (動かさずに縁を足すだけ)`);
+      }
+
+      /**
+       * ⚠️ 補正できなかったコマも、画寸だけは揃えること。
+       * そこだけ大きさが違うと、コマ送りのたびに画面上で大きく飛ぶ
+       * (2026-09-02 の実データでは、見送られた 6 枚がそのまま飛んでいた)。
+       * ⚠️ 穴は合っていないので、動かさずに縁を足すだけにすること。
+       * 合っていないものを合ったように見せないため、必ずログに残す。
+       */
+      // ⚠️ 「補正できた分」と分けて数えるための一覧
+      const paddedOnly: string[] = target
+        ? skippedPaths.filter((path) => {
+            const size = sizes.find((v) => v.path === path);
+            return size && (size.width !== target.width || size.height !== target.height);
+          })
+        : [];
+
+      paddedOnly.forEach((path) => {
+        toBake.push({ path, transform: noMove });
+        paddedSet.add(path);
+      });
+      if (paddedOnly.length > 0) {
+        logDebug(
+          'view',
+          `補正できなかった ${paddedOnly.length} 枚も画寸だけ揃えます`,
+          `${paddedOnly.slice(0, 5).map((v) => v.split(/[/\\]/).pop()).join(', ')}` +
+            `${paddedOnly.length > 5 ? ` ほか ${paddedOnly.length - 5} 枚` : ''}` +
+            ` — ⚠️ タップ穴は合っていません (動かさずに縁を足すだけ)`,
+          'warn'
+        );
       }
 
       const baked = await runInLanes(toBake, lanes, async (candidate, _index, lane) => {
@@ -760,8 +800,17 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           skipped.push(`${path} (${result.reason})`);
           return;
         }
-        applied += 1;
         get().invalidateCachedImage(get().getImageCacheKey(view, path));
+
+        /**
+         * ⚠️ 画寸だけ揃えたコマを「補正できた」に数えないこと。
+         * 穴は合っていないので、数に混ぜると直ったように見えてしまう。
+         */
+        if (paddedSet.has(path)) {
+          padded += 1;
+          return;
+        }
+        applied += 1;
         if (result.detail) logDebug('view', `タップ補正を焼き込み: ${path}`, result.detail);
       });
     } finally {
@@ -784,13 +833,18 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
     const elapsed = Date.now() - startedAt;
     logDebug(
       'file',
-      `タップ補正の焼き込み: 完了 ${applied} 件 / 見送り ${skipped.length} 件`,
+      `タップ補正の焼き込み: 完了 ${applied} 件 / 見送り ${skipped.length} 件` +
+        (padded > 0 ? ` (うち ${padded} 枚は画寸だけ揃えた)` : ''),
       `${(elapsed / 1000).toFixed(1)} 秒 (1 枚あたり ${applied > 0 ? Math.round(elapsed / applied) : 0}ms) — ${where}`,
       skipped.length > 0 ? 'warn' : 'info'
     );
     return {
       ok: skipped.length === 0,
-      message: `${applied} 件にタップ補正を焼き込みました (${where} / ${(elapsed / 1000).toFixed(1)} 秒)。${detail}`,
+      message:
+        `${applied} 件にタップ補正を焼き込みました (${where} / ${(elapsed / 1000).toFixed(1)} 秒)。` +
+        (padded > 0 ? `
+${padded} 枚は穴を合わせられなかったので、画寸だけ揃えました。` : '') +
+        detail,
       applied,
     };
   },
