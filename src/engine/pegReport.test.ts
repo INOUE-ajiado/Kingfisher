@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatSpread, PegSample, spreadOf, summarizePegBatch } from './pegReport';
+import { describeCanvasFit, formatSpread, PegSample, spreadOf, summarizePegBatch } from './pegReport';
 
 /**
  * タップ補正の精度を詰めるための数値。
@@ -77,5 +77,45 @@ describe('束のまとめ', () => {
 
   it('測れたコマが無ければ、そう書く', () => {
     expect(summarizePegBatch([])).toEqual(['補正量を測れたコマがありません']);
+  });
+});
+
+/**
+ * 画寸を揃えるときの切り取り。
+ *
+ * ⚠️ 切り取りは元に戻せない。基準に選んだ 1 枚が束の中で小さいと、
+ * 全部が黙って切られる (2026-09-02 の実データで 37 枚すべてが下を 15〜35px、
+ * 5 枚が右を最大 902px 切られていた)。
+ */
+describe('揃える先と切り取り', () => {
+  const sizes = [
+    { path: 'a.jpg', width: 2333, height: 1642 },
+    { path: 'b.jpg', width: 3251, height: 1640 },
+    { path: 'c.jpg', width: 2331, height: 1657 },
+  ];
+
+  it('束の画寸の幅を出す', () => {
+    const lines = describeCanvasFit(sizes, { width: 2349, height: 1622 });
+
+    expect(lines[0]).toContain('幅 2331〜3251');
+    expect(lines[0]).toContain('高さ 1640〜1657');
+    expect(lines[0]).toContain('2349x1622');
+  });
+
+  it('切られる枚数と最大量を知らせる', () => {
+    const lines = describeCanvasFit(sizes, { width: 2349, height: 1622 });
+
+    expect(lines[1]).toContain('右を最大 902px (1 枚)');
+    expect(lines[1]).toContain('下を最大 35px (3 枚)');
+  });
+
+  it('全部が収まるなら切り取りの行を出さない', () => {
+    const lines = describeCanvasFit(sizes, { width: 3300, height: 1700 });
+
+    expect(lines).toHaveLength(1);
+  });
+
+  it('空なら何も言わない', () => {
+    expect(describeCanvasFit([], { width: 100, height: 100 })).toEqual([]);
   });
 });
