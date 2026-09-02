@@ -47,6 +47,8 @@ export interface PegWorkerBake {
   id: number;
   path: string;
   transform: PegTransform;
+  /** 揃える画寸。どのコマも切らない大きさを呼び出し側が決める */
+  outSize: { width: number; height: number } | null;
 }
 
 export interface PegWorkerDone {
@@ -108,7 +110,8 @@ async function measureOne(
 /** 決まった補正量で焼き込んで書き戻す */
 async function bakeOne(
   path: string,
-  transform: PegTransform
+  transform: PegTransform,
+  requested: { width: number; height: number } | null
 ): Promise<{ ok: boolean; reason?: string; detail?: string }> {
   const s = setup!;
   const fileHandle = await resolveFileHandle(s.dir, path, s.rootName);
@@ -116,13 +119,11 @@ async function bakeOne(
   const image = await readPixels(file, path);
 
   /**
-   * ⚠️ 画寸も基準へ揃えること。1 カットの全コマは同じ大きさである必要がある。
+   * ⚠️ 画寸も揃えること。1 カットの全コマは同じ大きさである必要がある。
    * 穴が絶対座標で揃っていても、画寸が違うと表示や合成で飛んで見える。
+   * ⚠️ どの大きさへ揃えるかは呼び出し側が決める (どのコマも切らない大きさ)。
    */
-  const outSize =
-    s.reference.width && s.reference.height
-      ? { width: s.reference.width, height: s.reference.height }
-      : { width: image.width, height: image.height };
+  const outSize = requested ?? { width: image.width, height: image.height };
   const sameSize = outSize.width === image.width && outSize.height === image.height;
 
   // ⚠️ 動かず、画寸も同じなら書き直さない (JPEG を作り直すだけ画質が落ちる)
@@ -171,7 +172,10 @@ self.onmessage = async (e: MessageEvent<PegWorkerInit | PegWorkerMeasure | PegWo
   }
 
   try {
-    const result = data.type === 'measure' ? await measureOne(data.path) : await bakeOne(data.path, data.transform);
+    const result =
+      data.type === 'measure'
+        ? await measureOne(data.path)
+        : await bakeOne(data.path, data.transform, data.outSize);
     const done: PegWorkerDone = { id: data.id, ...result };
     self.postMessage(done);
   } catch (err: any) {
