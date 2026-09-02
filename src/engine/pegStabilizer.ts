@@ -139,6 +139,15 @@ export interface PegDetectOptions {
   /** 走査に使う格子の目安の長辺 (px)。大きい画像はここまで間引く */
   sampleTarget?: number;
   /**
+   * 期待する穴の間隔 (px)。基準がすでに決まっているときに渡す。
+   *
+   * ⚠️ これがあると「どの 3 つを穴と見なすか」を選び分けられる。
+   * タップ穴の周りが黒く塗られていると、しきい値によっては塗りと穴がくっつき、
+   * 別の 3 つを穴と取り違える (2026-09-02 の実データ)。
+   * 同じカットの間隔はほぼ変わらないので、いちばん近いものを選べばよい。
+   */
+  expectedSpacing?: number;
+  /**
    * しきい値を画像から見当づけるか。
    * ⚠️ false のときは threshold だけを使うこと。手で決めた値に勝手な候補を混ぜると、
    * 「この値でどう見えるか」を確かめられない。
@@ -517,6 +526,13 @@ export function detectPegHoles(
   let bestNote = '';
   let bestCandidates = -1;
 
+  /**
+   * ⚠️ 最初に見つかったもので決めないこと。しきい値しだいで
+   * 「塗りと穴がくっついた別の 3 つ」が先に見つかることがある。
+   * 全部試して、いちばん確からしいものを選ぶ。
+   */
+  const found: { detection: PegDetection; score: number; note: string }[] = [];
+
   for (const band of bands) {
   for (const look of looks) {
     const thresholds =
@@ -562,7 +578,24 @@ export function detectPegHoles(
     const angle = (Math.atan2(right.y - left.y, right.x - left.x) * 180) / Math.PI;
     const spacing = (mid.x - left.x + (right.x - mid.x)) / 2;
 
-    return {
+    /**
+     * どれくらい「タップ穴らしいか」。小さいほど良い。
+     *
+     * ⚠️ 期待する間隔があるなら、それをいちばん重く見ること。同じカットの
+     * タップ穴の間隔はほぼ変わらないので、外れているものは取り違えである。
+     * ⚠️ 無いときは、左右の間隔が揃っていることと、傾きが小さいことで見る。
+     */
+    const gapLeft = mid.x - left.x;
+    const gapRight = right.x - mid.x;
+    const symmetry = Math.abs(gapLeft - gapRight) / Math.max(1, spacing);
+    const expected = options.expectedSpacing;
+    const spacingError = expected && expected > 0 ? Math.abs(spacing - expected) / expected : 0;
+    const score = spacingError * 10 + symmetry * 2 + Math.abs(angle) * 0.05;
+
+    found.push({
+      note: `${note} — 間隔 ${Math.round(spacing)}px / 傾き ${angle.toFixed(2)}°`,
+      score,
+      detection: {
       detected: true,
       status: 'success',
       holes: refined,
@@ -579,9 +612,23 @@ export function detectPegHoles(
         step,
         band: { fromY: band.fromY, toY: band.toY },
       },
-    };
+    },
+    });
     }
   }
+  }
+
+  if (found.length > 0) {
+    found.sort((a, b) => a.score - b.score);
+    const best = found[0];
+    // ⚠️ 何と比べて選んだのかを残すこと。取り違えを追うときの手がかりになる
+    const others = found.slice(1, 3).map((f) => f.note).join(' / ');
+    return {
+      ...best.detection,
+      message:
+        best.detection.message +
+        (found.length > 1 ? ` — ${found.length} 通りから選択 (次点: ${others})` : ''),
+    };
   }
 
   // ⚠️ 「見つかりません」で終わらせないこと。どこまで行って何で落ちたかを返す
