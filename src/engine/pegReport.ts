@@ -105,35 +105,38 @@ export interface PegSize {
 }
 
 /**
- * 基準の画寸へ揃えたときに、どれだけ切り取られるかを見積もる。
+ * 束のどのコマも切らずに収まる画寸を決める。
  *
- * ⚠️ 切り取りは元に戻せない。焼く前に「何枚が、どれだけ切られるか」を
- * 必ず知らせること。基準に選んだ 1 枚が束の中で小さいと、
- * 全部が黙って切られる (2026-09-02 の実データで、基準の高さ 1622 が最小だったため
- * 37 枚すべてが下を 15〜35px、5 枚が右を最大 902px 切られていた)。
+ * ⚠️ 横長のコマ (オートフィードで長く取り込まれた素材) を絶対に切らないこと
+ * (2026-09-02 のユーザー指定)。基準の 1 枚に合わせると、それより大きいコマが
+ * 黙って切られる。実データでは右が最大 902px 落ちていた。
+ * ⚠️ 幅と高さは別々に最大を取ること。「幅が最大のコマ」と「高さが最大のコマ」は
+ * 別であることが多い (実データでは 3251x1640 と 2331x1657)。
+ * ⚠️ 動かす分も足すこと。右へ動かすコマは、その分だけ余分に要る。
  */
-export function describeCanvasFit(sizes: PegSize[], target: { width: number; height: number }): string[] {
-  if (sizes.length === 0) return [];
+export function unionCanvas(
+  frames: { width: number; height: number; offsetX?: number; offsetY?: number }[]
+): { width: number; height: number } {
+  if (frames.length === 0) return { width: 0, height: 0 };
 
-  const widths = sizes.map((s) => s.width);
-  const heights = sizes.map((s) => s.height);
-  const lines = [
-    `束の画寸: 幅 ${Math.min(...widths)}〜${Math.max(...widths)} / 高さ ${Math.min(...heights)}〜${Math.max(...heights)}` +
-      ` (揃える先 ${target.width}x${target.height})`,
-  ];
+  let width = 0;
+  let height = 0;
+  frames.forEach((f) => {
+    width = Math.max(width, f.width + Math.max(0, Math.round(f.offsetX ?? 0)));
+    height = Math.max(height, f.height + Math.max(0, Math.round(f.offsetY ?? 0)));
+  });
+  return { width, height };
+}
 
-  const cutX = sizes.filter((s) => s.width > target.width).map((s) => s.width - target.width);
-  const cutY = sizes.filter((s) => s.height > target.height).map((s) => s.height - target.height);
+/** 揃える先に対して、どれだけ白で埋まるか */
+export function describePadding(sizes: PegSize[], target: { width: number; height: number }): string {
+  const padX = sizes.filter((s) => s.width < target.width).map((s) => target.width - s.width);
+  const padY = sizes.filter((s) => s.height < target.height).map((s) => target.height - s.height);
 
-  if (cutX.length > 0 || cutY.length > 0) {
-    const parts: string[] = [];
-    if (cutX.length > 0) parts.push(`右を最大 ${Math.max(...cutX)}px (${cutX.length} 枚)`);
-    if (cutY.length > 0) parts.push(`下を最大 ${Math.max(...cutY)}px (${cutY.length} 枚)`);
-    lines.push(
-      `⚠️ 切り取りが起きます: ${parts.join(' / ')}。` +
-        `もっと大きいコマを基準にすれば切らずに済みます (足りない縁は白で埋まります)`
-    );
-  }
+  if (padX.length === 0 && padY.length === 0) return '全部が同じ画寸なので、埋める縁はありません';
 
-  return lines;
+  const parts: string[] = [];
+  if (padX.length > 0) parts.push(`右を最大 ${Math.max(...padX)}px (${padX.length} 枚)`);
+  if (padY.length > 0) parts.push(`下を最大 ${Math.max(...padY)}px (${padY.length} 枚)`);
+  return `白で埋めます: ${parts.join(' / ')} (切り取りはありません)`;
 }

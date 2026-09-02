@@ -18,7 +18,7 @@ import {
 import { readPixels, writePixels } from '../../engine/imagePixels';
 import { laneCount, runInLanes } from '../../engine/jobPool';
 import { PegCandidate, rejectPegOutliers } from '../../engine/pegBatch';
-import { describeCanvasFit, PegSample, PegSize, summarizePegBatch } from '../../engine/pegReport';
+import { describePadding, PegSample, PegSize, summarizePegBatch, unionCanvas } from '../../engine/pegReport';
 import type { PegWorkerDone, PegWorkerInit } from '../../workers/peg.worker';
 import {
   backupPathFor,
@@ -123,17 +123,14 @@ async function bakePegIntoFile(
   rootName: string | null,
   path: string,
   transform: PegTransform,
-  setup: { mode: 'copy' | 'overwrite'; backup: boolean; reference: PegReference }
+  setup: { mode: 'copy' | 'overwrite'; backup: boolean; outSize: { width: number; height: number } | null }
 ): Promise<{ ok: boolean; reason?: string; detail?: string }> {
   const fileHandle = await resolveFileHandle(dir, path, rootName);
   const file: File = await fileHandle.getFile();
   const image = await readPixels(file, path);
 
-  // ⚠️ 画寸も基準へ揃える (ワーカー側と同じ手順にすること)
-  const outSize =
-    setup.reference.width && setup.reference.height
-      ? { width: setup.reference.width, height: setup.reference.height }
-      : { width: image.width, height: image.height };
+  // ⚠️ 画寸も揃える (ワーカー側と同じ手順にすること)
+  const outSize = setup.outSize ?? { width: image.width, height: image.height };
   const sameSize = outSize.width === image.width && outSize.height === image.height;
 
   if (!pegTransformMoves(transform) && sameSize) {
@@ -475,6 +472,9 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
      * ⚠️ 基準にした 1 枚は動かさない (それが基準なので、焼き込む対象から外す)。
      */
     let rest = paths;
+    /** 基準にしたコマ。画寸を揃えるときは、この 1 枚も一緒に書き直す */
+    let referenceFrame: { path: string; width: number; height: number } | null = null;
+
     if (!reference) {
       for (let i = 0; i < paths.length; i++) {
         const path = paths[i];
@@ -487,6 +487,7 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
             continue;
           }
           reference = referenceFromDetection(detection, { width: image.width, height: image.height });
+          referenceFrame = { path, width: image.width, height: image.height };
           logDebug(
             'view',
             `タップ補正の基準: ${path}`,
@@ -612,19 +613,6 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         angleDiff: c.angleDiff ?? 0,
         spacingRatio: c.spacingRatio ?? 1,
       }));
-      /**
-       * ⚠️ 切り取りは元に戻せない。焼く前に「何枚がどれだけ切られるか」を知らせること。
-       * 基準に選んだ 1 枚が束の中で小さいと、全部が黙って切られる。
-       */
-      const target =
-        reference.width && reference.height
-          ? { width: reference.width, height: reference.height }
-          : null;
-      if (target) {
-        const fit = describeCanvasFit(sizes, target);
-        if (fit[0]) logDebug('view', '画寸を揃える先', fit[0]);
-        if (fit[1]) logDebug('view', '切り取りの見込み', fit[1], 'warn');
-      }
 
       const summary = summarizePegBatch(samples);
       // ⚠️ 空のメッセージで行を増やさないこと。読むときに何の行か分からなくなる
@@ -633,6 +621,45 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
 
       const checked = rejectPegOutliers(candidates);
       checked.rejected.forEach((r) => skipped.push(`${r.path} (他と食い違うため見送り: ${r.reason})`));
+
+      /**
+       * 揃える先は「束のどれも切らない大きさ」。
+       *
+       * ⚠️ 横長のコマ (オートフィードで長く取り込まれた素材) を絶対に切らないこと
+       * (2026-09-02 のユーザー指定)。基準の 1 枚に合わせると、それより大きいコマが
+       * 黙って切られる (実データで右が最大 902px 落ちていた)。
+       * ⚠️ 幅と高さは別々に最大を取ること。幅が最大のコマと高さが最大のコマは別である。
+       * ⚠️ 基準にした 1 枚も一緒に書き直すこと。そこだけ画寸が違うと結局揃わない。
+       */
+      const fitFrames = [
+        ...checked.accepted.map((c) => {
+          const size = sizes.find((s) => s.path === c.path);
+          return {
+            width: size?.width ?? 0,
+            height: size?.height ?? 0,
+            offsetX: c.transform.offsetX,
+            offsetY: c.transform.offsetY,
+          };
+        }),
+        ...(referenceFrame ? [{ width: referenceFrame.width, height: referenceFrame.height }] : []),
+        ...(reference.width && reference.height
+          ? [{ width: reference.width, height: reference.height }]
+          : []),
+      ].filter((f) => f.width > 0 && f.height > 0);
+
+      const target = fitFrames.length > 0 ? unionCanvas(fitFrames) : null;
+
+      if (target) {
+        const widths = fitFrames.map((f) => f.width);
+        const heights = fitFrames.map((f) => f.height);
+        logDebug(
+          'view',
+          `画寸を揃える先: ${target.width}x${target.height}`,
+          `束の画寸: 幅 ${Math.min(...widths)}〜${Math.max(...widths)} / 高さ ${Math.min(...heights)}〜${Math.max(...heights)}` +
+            ` — どのコマも切らない大きさに合わせます`
+        );
+        logDebug('view', '縁の埋め方', describePadding(sizes, target));
+      }
 
       /**
        * ⚠️ 基準にした 1 枚が他とずれていると、全部がその誤りへ引きずられる。
@@ -685,14 +712,31 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
         );
       }
 
-      // 二段目: 揃っている分だけ焼き込む
-      const baked = await runInLanes(checked.accepted, lanes, async (candidate, _index, lane) => {
+      /**
+       * 二段目: 揃っている分だけ焼き込む。
+       * ⚠️ 基準にした 1 枚も、画寸が違うならここへ入れること (動かさずに縁だけ足す)。
+       */
+      const toBake = [...checked.accepted];
+      if (
+        referenceFrame &&
+        target &&
+        (referenceFrame.width !== target.width || referenceFrame.height !== target.height)
+      ) {
+        toBake.push({
+          path: referenceFrame.path,
+          transform: { offsetX: 0, offsetY: 0, rotation: 0, scale: 1 },
+        });
+        logDebug('view', '基準にした 1 枚も画寸を揃えます', `${referenceFrame.path} (動かさずに縁を足すだけ)`);
+      }
+
+      const baked = await runInLanes(toBake, lanes, async (candidate, _index, lane) => {
         if (useWorkers) {
           jobId += 1;
           return await askPeg(workers[lane], jobId, {
             type: 'bake',
             path: candidate.path,
             transform: candidate.transform,
+            outSize: target,
           });
         }
         return await bakePegIntoFile(
@@ -701,12 +745,12 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           state.rootFolderName,
           candidate.path,
           candidate.transform,
-          { mode, backup, reference: reference as PegReference }
+          { mode, backup, outSize: target }
         );
       });
 
       baked.forEach((outcome, i) => {
-        const path = checked.accepted[i].path;
+        const path = toBake[i].path;
         if (outcome.error) {
           skipped.push(`${path} (${outcome.error})`);
           return;
