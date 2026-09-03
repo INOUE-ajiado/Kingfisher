@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder, ROOT_SUBDIR_NAME } from '../../engine/cutFolder';
-import { Columns, Pipette } from 'lucide-react';
+import { Bug, Columns, Pipette } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -54,6 +54,14 @@ export const MenuBar: React.FC = () => {
     saveActiveCell,
     saveActiveCellAs,
   } = usePaintStore();
+
+  /**
+   * 操作ログのウィンドウ。
+   * ⚠️ 「見えている」かつ「独立している」ときだけ開いている扱いにすること。
+   * 右サイドバーの奥で開いているだけでは、押しても開いた気がしない。
+   */
+  const toggleDebugLogWindow = usePaintStore((st) => st.toggleDebugLogWindow);
+  const isDebugWindowOpen = usePaintStore((st) => st.panelVisibility.debugLog && st.isDebugLogFloating);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -455,6 +463,23 @@ export const MenuBar: React.FC = () => {
           >
             <Columns className="w-3.5 h-3.5" />
             <span>左右に並べる</span>
+          </button>
+
+          {/*
+            ⚠️ 操作ログはヘッダーから開け閉めできるようにしておくこと。
+            右サイドバーは狭くて 1 行が折り返し、読むのに向かない (2026-09-04 のユーザー指定)。
+          */}
+          <button
+            onClick={toggleDebugLogWindow}
+            title={isDebugWindowOpen ? '操作ログ (DEBUG) を閉じる' : '操作ログ (DEBUG) を別ウィンドウで開く'}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+              isDebugWindowOpen
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700'
+            }`}
+          >
+            <Bug className="w-3.5 h-3.5" />
+            <span>DEBUG</span>
           </button>
 
           <button

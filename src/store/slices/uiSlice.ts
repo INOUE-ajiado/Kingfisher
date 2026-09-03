@@ -140,6 +140,32 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
    */
   triggerRender: () => triggerRenderSignal(),
 
+  isDebugLogFloating: false,
+
+  toggleDebugLogFloating: () =>
+    set((state) => {
+      const next = !state.isDebugLogFloating;
+      logDebug('window', `操作ログを${next ? '独立ウィンドウにした' : '右サイドバーへ戻した'}`);
+      return { isDebugLogFloating: next };
+    }),
+
+  /**
+   * ヘッダーのボタン。
+   *
+   * ⚠️ 「見えているか」と「独立しているか」の 2 つを 1 つのボタンで扱うこと。
+   * 押したのに右サイドバーの奥で開いただけ、では開いた気がしない。
+   * 閉じるときは独立の指定も畳んでおく (次に開いたとき必ず前へ出る)。
+   */
+  toggleDebugLogWindow: () =>
+    set((state) => {
+      const open = state.panelVisibility.debugLog && state.isDebugLogFloating;
+      logDebug('window', `操作ログのウィンドウを${open ? '閉じた' : '開いた'}`, 'ヘッダーのボタン');
+      return {
+        panelVisibility: { ...state.panelVisibility, debugLog: !open },
+        isDebugLogFloating: !open,
+      };
+    }),
+
   /**
    * キーの効き先。最初はセル。
    *

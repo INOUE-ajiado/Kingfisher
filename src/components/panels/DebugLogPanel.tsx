@@ -8,8 +8,14 @@ import {
   Link,
   AlertTriangle,
   ChevronsLeftRight,
+  Pin,
+  X,
 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { useFloatingWindow } from '../../hooks/useFloatingWindow';
+import { DockPlaceholder } from '../common/DockPlaceholder';
+import { FloatingPortal } from '../common/FloatingPortal';
+import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { isSyncPairConsistent } from '../../store/types';
 import { describeBuild, describeEnvironment, readBuildEnv } from '../../engine/buildInfo';
 import {
@@ -86,6 +92,33 @@ export const DebugLogPanel: React.FC = () => {
   if (!buildEnvRef.current) buildEnvRef.current = readBuildEnv();
   const buildEnv = buildEnvRef.current;
   const rightSidebarWidth = usePaintStore((s) => s.rightSidebarWidth);
+  const isFloating = usePaintStore((s) => s.isDebugLogFloating);
+  const toggleFloating = usePaintStore((s) => s.toggleDebugLogFloating);
+  const closeWindow = usePaintStore((s) => s.toggleDebugLogWindow);
+
+  /**
+   * 引きはがし・移動・リサイズ・ドッキング復帰。
+   *
+   * ⚠️ 独立中は右サイドバー (overflow-y-auto) の外へ逃がすこと。
+   * 中に置いたままだと動かすたびに再描画が起きて重くなる (FloatingPortal のコメント参照)。
+   */
+  const {
+    targetRef,
+    windowStyle,
+    handleHeaderPointerDown,
+    getResizeHandler,
+    isOverDockTarget,
+    bringToFront,
+  } = useFloatingWindow<HTMLDivElement>({
+    id: 'debugLog',
+    isFloating,
+    getIsFloating: () => usePaintStore.getState().isDebugLogFloating,
+    toggleFloating,
+    dockTargetId: 'debugLog-dock-target',
+    minWidth: 420,
+    minHeight: 220,
+    contentOverflow: 'hidden',
+  });
   const setRightSidebarWidth = usePaintStore((s) => s.setRightSidebarWidth);
 
   /**
@@ -224,14 +257,47 @@ export const DebugLogPanel: React.FC = () => {
   }, [entries, statusLines]);
 
   return (
-    <div className="bg-white dark:bg-slate-900 flex flex-col select-none p-1.5 min-h-[100px] h-full">
-      <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-700 mb-1 flex items-center justify-between gap-1">
+    <>
+      {/* 切り離した跡地。ここへ落とすと右サイドバーへ戻る */}
+      {isFloating && (
+        // ⚠️ 細い帯にすること。跡地が右サイドバーの高さを食うと、
+        // わざわざ切り離した意味がなくなる
+        <DockPlaceholder
+          id="debugLog-dock-target"
+          label="DEBUG ログ"
+          onRestore={toggleFloating}
+          isActive={isOverDockTarget}
+          variant="strip-h"
+        />
+      )}
+
+    <FloatingPortal enabled={isFloating}>
+    <div
+      ref={targetRef}
+      style={windowStyle}
+      onPointerDownCapture={bringToFront}
+      className={
+        isFloating
+          ? 'bg-white dark:bg-slate-900 border-2 border-rose-500 shadow-2xl rounded-lg flex flex-col select-none p-1.5 animate-in fade-in duration-100'
+          : 'bg-white dark:bg-slate-900 flex flex-col select-none p-1.5 min-h-[100px] h-full'
+      }
+    >
+      <div
+        onPointerDown={handleHeaderPointerDown}
+        title={isFloating ? 'ドラッグで移動 / 跡地へドロップで戻す' : 'ドラッグで切り離して独立ウィンドウ化'}
+        className={`text-[11px] font-semibold text-slate-700 dark:text-slate-300 pb-1 border-b border-slate-200 dark:border-slate-700 mb-1 flex items-center justify-between gap-1 cursor-grab active:cursor-grabbing touch-none ${
+          isFloating ? 'bg-slate-100 dark:bg-slate-800 -mx-1.5 -mt-1.5 px-2 py-1 rounded-t-md' : ''
+        }`}
+      >
         <div className="flex items-center gap-1.5 truncate">
+          {isFloating && <Pin className="w-3 h-3 text-rose-500 flex-shrink-0" />}
           <Bug className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400 flex-shrink-0" />
           <span className="truncate">DEBUG ログ ({entries.length})</span>
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
+          {/* ⚠️ 独立中に「右パネルを広げる」は意味がないので出さない */}
+          {!isFloating && (
           <button
             onClick={toggleWide}
             title={isWide ? '右パネルの幅を元に戻す' : 'ログを読むために右パネルを広げる'}
@@ -243,6 +309,17 @@ export const DebugLogPanel: React.FC = () => {
           >
             <ChevronsLeftRight className="w-3 h-3" />
           </button>
+          )}
+
+          {isFloating && (
+            <button
+              onClick={closeWindow}
+              title="閉じる (ヘッダーの DEBUG ボタンでまた開けます)"
+              className="p-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40 transition-colors"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
 
           <button
             onClick={() => setSyncOnly((v) => !v)}
@@ -378,6 +455,10 @@ export const DebugLogPanel: React.FC = () => {
           })
         )}
       </div>
+
+      {isFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} topOffset={28} />}
     </div>
+    </FloatingPortal>
+    </>
   );
 };
