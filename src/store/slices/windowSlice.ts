@@ -17,8 +17,6 @@ const DEFAULT_LAYOUTS: Record<FloatingWindowId, FloatingWindowLayout> = {
   // ロールは映像なので横に広く取る
   rollA: { x: 160, y: 100, width: 720, height: 480 },
   rollB: { x: 220, y: 140, width: 720, height: 480 },
-  // ⚠️ ログは 1 行が長い。狭いと折り返しだらけで読めないので広めに開く
-  debugLog: { x: 240, y: 90, width: 900, height: 520 },
 };
 
 /** 最背面の独立ウィンドウに割り当てる z-index */

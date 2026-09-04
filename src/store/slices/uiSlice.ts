@@ -56,7 +56,9 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
     layerPanel: true,
     historyPanel: true,
     // 不具合の切り分けに使うので既定で出しておく (メニューから閉じられる)
-    debugLog: true,
+    // ⚠️ 既定は閉じておくこと。画面下の引き出しなので、開いたままだと
+    // 起動のたびに作業領域を 320px 覆う
+    debugLog: false,
   },
 
   togglePanelVisibility: (panel) =>
@@ -140,30 +142,21 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
    */
   triggerRender: () => triggerRenderSignal(),
 
-  isDebugLogFloating: false,
-
-  toggleDebugLogFloating: () =>
-    set((state) => {
-      const next = !state.isDebugLogFloating;
-      logDebug('window', `操作ログを${next ? '独立ウィンドウにした' : '右サイドバーへ戻した'}`);
-      return { isDebugLogFloating: next };
-    }),
-
   /**
-   * ヘッダーのボタン。
-   *
-   * ⚠️ 「見えているか」と「独立しているか」の 2 つを 1 つのボタンで扱うこと。
-   * 押したのに右サイドバーの奥で開いただけ、では開いた気がしない。
-   * 閉じるときは独立の指定も畳んでおく (次に開いたとき必ず前へ出る)。
+   * 引き出しの高さ。
+   * ⚠️ 低すぎると 1 行の詳細が読めない。既定は 320px。
    */
+  debugLogHeight: 320,
+
+  setDebugLogHeight: (height) =>
+    set({ debugLogHeight: Math.max(120, Math.min(900, Math.round(height))) }),
+
+  /** 画面下の引き出しを開け閉めする (ヘッダーのボタン / ウィンドウメニュー) */
   toggleDebugLogWindow: () =>
     set((state) => {
-      const open = state.panelVisibility.debugLog && state.isDebugLogFloating;
-      logDebug('window', `操作ログのウィンドウを${open ? '閉じた' : '開いた'}`, 'ヘッダーのボタン');
-      return {
-        panelVisibility: { ...state.panelVisibility, debugLog: !open },
-        isDebugLogFloating: !open,
-      };
+      const open = !state.panelVisibility.debugLog;
+      logDebug('window', `操作ログの引き出しを${open ? '開いた' : '閉じた'}`);
+      return { panelVisibility: { ...state.panelVisibility, debugLog: open } };
     }),
 
   /**

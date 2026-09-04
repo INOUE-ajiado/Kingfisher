@@ -13,7 +13,7 @@ import { LightTable } from './components/panels/LightTable';
 import { FileBrowser } from './components/panels/FileBrowser';
 import { LayerPanel } from './components/panels/LayerPanel';
 import { HistoryPanel } from './components/panels/HistoryPanel';
-import { DebugLogPanel } from './components/panels/DebugLogPanel';
+import { DebugLogDrawer } from './components/panels/DebugLogDrawer';
 import { logDebug } from './engine/debugLog';
 import { AboutModal } from './components/modals/AboutModal';
 import { PreferencesModal } from './components/modals/PreferencesModal';
@@ -172,7 +172,6 @@ export const App: React.FC = () => {
     colorChart: 260,
     layerPanel: 180,
     historyPanel: 160,
-    debugLog: 220,
   });
 
   /**
@@ -380,7 +379,6 @@ export const App: React.FC = () => {
                     { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
                     { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
                     { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
-                    { key: 'debugLog', visible: panelVisibility.debugLog, component: <DebugLogPanel /> },
                   ].filter((p) => p.visible);
 
                   return lowerPanels.map((panel, idx) => {
@@ -440,6 +438,13 @@ export const App: React.FC = () => {
           </span>
         </button>
       )}
+
+      {/*
+        操作ログの引き出し。画面の下からせり上がる。
+        ⚠️ いちばん外側に置くこと。作業領域の中に入れると、
+        そこのスクロールや重なり順に巻き込まれる。
+      */}
+      <DebugLogDrawer />
     </div>
   );
 };
