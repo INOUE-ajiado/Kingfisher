@@ -61,7 +61,7 @@ export const MenuBar: React.FC = () => {
    * 右サイドバーの奥で開いているだけでは、押しても開いた気がしない。
    */
   const toggleDebugLogWindow = usePaintStore((st) => st.toggleDebugLogWindow);
-  const isDebugWindowOpen = usePaintStore((st) => st.panelVisibility.debugLog && st.isDebugLogFloating);
+  const isDebugWindowOpen = usePaintStore((st) => st.panelVisibility.debugLog);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -353,7 +353,7 @@ export const MenuBar: React.FC = () => {
         { label: 'ライトテーブル', shortcut: 'F8', checked: panelVisibility.lightTable, action: () => togglePanelVisibility('lightTable') },
         { label: 'ファイルブラウザ', shortcut: 'F9', checked: panelVisibility.fileBrowser, action: () => togglePanelVisibility('fileBrowser') },
         { label: 'ヒストリーパネル', shortcut: '', checked: panelVisibility.historyPanel, action: () => togglePanelVisibility('historyPanel') },
-        { label: 'DEBUG ログ (操作ログ)', shortcut: '', checked: panelVisibility.debugLog, action: () => togglePanelVisibility('debugLog') },
+        { label: 'DEBUG ログ (画面下からせり上がる)', shortcut: '', checked: panelVisibility.debugLog, action: toggleDebugLogWindow },
         { type: 'divider' },
         { label: 'ダークモード (Dark Mode)', shortcut: '', checked: isDarkMode, action: toggleDarkMode },
       ],
@@ -471,7 +471,7 @@ export const MenuBar: React.FC = () => {
           */}
           <button
             onClick={toggleDebugLogWindow}
-            title={isDebugWindowOpen ? '操作ログ (DEBUG) を閉じる' : '操作ログ (DEBUG) を別ウィンドウで開く'}
+            title={isDebugWindowOpen ? '操作ログ (DEBUG) を閉じる' : '操作ログ (DEBUG) を画面下から開く'}
             className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
               isDebugWindowOpen
                 ? 'bg-rose-600 text-white shadow-xs'

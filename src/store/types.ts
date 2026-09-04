@@ -525,13 +525,14 @@ export interface UiSlice {
   isColorChartFloating: boolean
   toggleColorChartFloating: () => void
   /**
-   * 操作ログ (DEBUG) を独立ウィンドウで出しているか。
-   * ⚠️ ヘッダーのボタンから開け閉めする。右サイドバーは狭くて読みづらいため
-   * (2026-09-04 のユーザー指定)。
+   * 操作ログ (DEBUG) の引き出し。画面の下からせり上がる。
+   * ⚠️ 右サイドバーは狭くて 1 行が折り返し、読むのに向かない
+   * (2026-09-04 のユーザー指定)。開け閉めはヘッダーのボタンと
+   * ウィンドウメニューの両方から。
    */
-  isDebugLogFloating: boolean
-  toggleDebugLogFloating: () => void
-  /** ヘッダーのボタン用。閉じていれば独立ウィンドウで開き、開いていれば閉じる */
+  debugLogHeight: number
+  setDebugLogHeight: (height: number) => void
+  /** 開いていれば閉じ、閉じていれば開く */
   toggleDebugLogWindow: () => void
   // --- 未塗り漏れ点滅表示 ---
   showUnpaintedFlash: boolean
@@ -980,7 +981,7 @@ export interface RollSlice {
 }
 
 /** 独立ウィンドウとして切り離せるパネルの識別子 */
-export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart' | 'rollA' | 'rollB' | 'debugLog';
+export type FloatingWindowId = 'winA' | 'winB' | 'reference' | 'colorChart' | 'rollA' | 'rollB';
 
 export interface FloatingWindowLayout {
   x: number;
