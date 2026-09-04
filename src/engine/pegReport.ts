@@ -112,31 +112,58 @@ export interface PegSize {
  * 黙って切られる。実データでは右が最大 902px 落ちていた。
  * ⚠️ 幅と高さは別々に最大を取ること。「幅が最大のコマ」と「高さが最大のコマ」は
  * 別であることが多い (実データでは 3251x1640 と 2331x1657)。
- * ⚠️ 動かす分も足すこと。右へ動かすコマは、その分だけ余分に要る。
+ * ⚠️ 動かす分を足さないこと。同じ束にもう一度掛けたときに画寸が育つ。
+ * 実データで 0.52px の縦ずれが 1px に丸められて 1657 → 1658 になり、
+ * 動かす必要のない 39 枚が「画寸が違う」だけで JPEG を作り直していた
+ * (2026-09-04 の報告)。掛け直しても結果が変わらないこと (冪等) を優先する。
+ * ⚠️ 動かした先で端が数十 px 切れることはあるが、そこは紙の外の余白である
+ * (タップ穴で位置を合わせているので、紙そのものは動かない)。
  */
 export function unionCanvas(
-  frames: { width: number; height: number; offsetX?: number; offsetY?: number }[]
+  frames: { width: number; height: number }[]
 ): { width: number; height: number } {
   if (frames.length === 0) return { width: 0, height: 0 };
 
   let width = 0;
   let height = 0;
   frames.forEach((f) => {
-    width = Math.max(width, f.width + Math.max(0, Math.round(f.offsetX ?? 0)));
-    height = Math.max(height, f.height + Math.max(0, Math.round(f.offsetY ?? 0)));
+    width = Math.max(width, f.width);
+    height = Math.max(height, f.height);
   });
   return { width, height };
 }
 
-/** 揃える先に対して、どれだけ白で埋まるか */
-export function describePadding(sizes: PegSize[], target: { width: number; height: number }): string {
+/**
+ * 揃える先に対して、どれだけ白で埋まるか。
+ *
+ * ⚠️ 「切り取りはありません」と言い切らないこと。動かす分は画寸に足さない
+ * (足すと掛け直すたびに画寸が育つ) ので、動かした側の端はその分だけ画の外へ出る。
+ * 出るのは紙の外の余白だが、黙って落とさずログに残す。
+ */
+export function describePadding(
+  sizes: PegSize[],
+  target: { width: number; height: number },
+  moves?: { offsetX: number; offsetY: number }[]
+): string {
   const padX = sizes.filter((s) => s.width < target.width).map((s) => target.width - s.width);
   const padY = sizes.filter((s) => s.height < target.height).map((s) => target.height - s.height);
 
-  if (padX.length === 0 && padY.length === 0) return '全部が同じ画寸なので、埋める縁はありません';
+  const shiftX = Math.max(0, ...(moves ?? []).map((m) => Math.round(m.offsetX)));
+  const shiftY = Math.max(0, ...(moves ?? []).map((m) => Math.round(m.offsetY)));
+  const edge: string[] = [];
+  if (shiftX > 0) edge.push(`右端が最大 ${shiftX}px`);
+  if (shiftY > 0) edge.push(`下端が最大 ${shiftY}px`);
+  const tail =
+    edge.length > 0
+      ? ` / 動かした分だけ ${edge.join(' / ')} 画の外へ出ます (紙の外の余白)`
+      : ' (端は落ちません)';
+
+  if (padX.length === 0 && padY.length === 0) {
+    return `全部が同じ画寸なので、埋める縁はありません${tail}`;
+  }
 
   const parts: string[] = [];
   if (padX.length > 0) parts.push(`右を最大 ${Math.max(...padX)}px (${padX.length} 枚)`);
   if (padY.length > 0) parts.push(`下を最大 ${Math.max(...padY)}px (${padY.length} 枚)`);
-  return `白で埋めます: ${parts.join(' / ')} (切り取りはありません)`;
+  return `白で埋めます: ${parts.join(' / ')}${tail}`;
 }
