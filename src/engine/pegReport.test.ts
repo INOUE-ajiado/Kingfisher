@@ -103,18 +103,21 @@ describe('切らずに収まる画寸', () => {
     expect(out).toEqual({ width: 3251, height: 1657 });
   });
 
-  it('右や下へ動かす分も足す', () => {
-    const out = unionCanvas([
-      { width: 100, height: 100, offsetX: 12, offsetY: 0 },
-      { width: 100, height: 100, offsetX: 0, offsetY: 7 },
-    ]);
+  it('掛け直しても画寸が育たない (冪等)', () => {
+    // ⚠️ 動かす分を足すと、0.52px の縦ずれが 1px に丸められて 1657 → 1658 になり、
+    // 動かす必要のないコマまで「画寸が違う」だけで書き直される (2026-09-04 の報告)
+    const frames = [{ width: 3271, height: 1657 }, { width: 3271, height: 1657 }];
 
-    expect(out).toEqual({ width: 112, height: 107 });
+    const once = unionCanvas(frames);
+    const twice = unionCanvas([once, once]);
+
+    expect(once).toEqual({ width: 3271, height: 1657 });
+    expect(twice).toEqual(once);
   });
 
-  it('左や上へ動かす分は足さない (画は縮まない)', () => {
-    expect(unionCanvas([{ width: 100, height: 100, offsetX: -5, offsetY: -5 }])).toEqual({
-      width: 100,
+  it('入力の最大だけで決める (動かす量は見ない)', () => {
+    expect(unionCanvas([{ width: 100, height: 100 }, { width: 120, height: 90 }])).toEqual({
+      width: 120,
       height: 100,
     });
   });
@@ -134,7 +137,20 @@ describe('切らずに収まる画寸', () => {
 
     expect(text).toContain('右を最大 918px (1 枚)');
     expect(text).toContain('下を最大 15px (1 枚)');
-    expect(text).toContain('切り取りはありません');
+    expect(text).toContain('端は落ちません');
+  });
+
+  it('動かした分だけ端が画の外へ出ることを伝える', () => {
+    // ⚠️ 動かす量は画寸に足さない (足すと掛け直すたびに育つ)。
+    // そのぶん端が外へ出るので、黙って落とさずログに残す
+    const text = describePadding(
+      [{ path: 'a.jpg', width: 100, height: 100 }],
+      { width: 100, height: 100 },
+      [{ offsetX: 12.4, offsetY: -3 }, { offsetX: 2, offsetY: 0.4 }]
+    );
+
+    expect(text).toContain('右端が最大 12px');
+    expect(text).not.toContain('下端');
   });
 
   it('全部同じならそう言う', () => {

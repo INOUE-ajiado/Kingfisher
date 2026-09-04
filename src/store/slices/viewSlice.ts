@@ -687,12 +687,8 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
       const fitFrames = [
         ...checked.accepted.map((c) => {
           const size = sizes.find((s) => s.path === c.path);
-          return {
-            width: size?.width ?? 0,
-            height: size?.height ?? 0,
-            offsetX: c.transform.offsetX,
-            offsetY: c.transform.offsetY,
-          };
+          // ⚠️ 動かす量は渡さないこと。足すと掛け直すたびに画寸が育つ
+          return { width: size?.width ?? 0, height: size?.height ?? 0 };
         }),
         ...(referenceFrame ? [{ width: referenceFrame.width, height: referenceFrame.height }] : []),
         ...(reference.width && reference.height
@@ -711,7 +707,15 @@ export const createViewSlice: StateCreator<PaintStore, [], [], ViewSlice> = (set
           `束の画寸: 幅 ${Math.min(...widths)}〜${Math.max(...widths)} / 高さ ${Math.min(...heights)}〜${Math.max(...heights)}` +
             ` — どのコマも切らない大きさに合わせます`
         );
-        logDebug('view', '縁の埋め方', describePadding(sizes, target));
+        logDebug(
+          'view',
+          '縁の埋め方',
+          describePadding(
+            sizes,
+            target,
+            checked.accepted.map((c) => ({ offsetX: c.transform.offsetX, offsetY: c.transform.offsetY }))
+          )
+        );
       }
 
       /**
