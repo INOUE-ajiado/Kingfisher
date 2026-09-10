@@ -90,15 +90,21 @@ export const LayerPanel: React.FC = () => {
         </div>
       )}
 
-      {/* PSD レイヤーの一覧表示 */}
+      {/* PSD / PDF レイヤー・ページの一覧表示 */}
       {hasPsdLayers ? (
         <div className="flex-1 overflow-y-auto space-y-1">
           {psdLayers.map((layer, index) => {
             const isActive = layer.id === activePsdLayerId;
+            const isPdf = layer.id.startsWith('pdf-page-');
             return (
               <div
                 key={layer.id}
-                onClick={() => setActivePsdLayerId(layer.id)}
+                onClick={() => {
+                  setActivePsdLayerId(layer.id);
+                  if (isPdf && !layer.visible) {
+                    togglePsdLayerVisibility(layer.id);
+                  }
+                }}
                 className={`p-1.5 rounded flex items-center justify-between text-xs cursor-pointer border transition-colors ${
                   isActive
                     ? 'bg-indigo-50 dark:bg-indigo-900/40 border-indigo-500 font-semibold text-indigo-900 dark:text-indigo-200'
