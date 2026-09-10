@@ -754,6 +754,7 @@ export interface DocumentSlice {
   setActivePsdLayerId: (id: string | null) => void
   togglePsdLayerVisibility: (id: string) => void
   setPsdLayerOpacity: (id: string, opacity: number) => void
+  setPsdLayerBlendMode: (id: string, blendMode: string) => void
   reorderPsdLayers: (fromIndex: number, toIndex: number) => void
   // --- 画像データバッファ & プリフェッチキャッシュ ---
   currentImage: TGAImage | null

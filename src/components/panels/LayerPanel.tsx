@@ -16,6 +16,7 @@ export const LayerPanel: React.FC = () => {
     setActivePsdLayerId,
     togglePsdLayerVisibility,
     setPsdLayerOpacity,
+    setPsdLayerBlendMode,
     reorderPsdLayers,
   } = usePaintStore();
 
@@ -119,6 +120,27 @@ export const LayerPanel: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  <select
+                    value={layer.blendMode || 'normal'}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      setPsdLayerBlendMode(layer.id, e.target.value);
+                    }}
+                    className="text-[10px] bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded px-1 py-0.5 text-slate-700 dark:text-slate-200"
+                    title="合成モード (Blend Mode)"
+                  >
+                    <option value="normal">通常</option>
+                    <option value="multiply">乗算</option>
+                    <option value="screen">スクリーン</option>
+                    <option value="overlay">オーバーレイ</option>
+                    <option value="darken">比較(暗)</option>
+                    <option value="lighten">比較(明)</option>
+                    <option value="color-dodge">覆い焼き</option>
+                    <option value="color-burn">焼き込み</option>
+                    <option value="hard-light">ハードライト</option>
+                    <option value="soft-light">ソフトライト</option>
+                  </select>
                   <span className="text-[10px] font-mono text-slate-400 font-bold">
                     {Math.round(layer.opacity * 100)}%
                   </span>
