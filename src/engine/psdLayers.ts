@@ -76,32 +76,12 @@ export function parsePsdLayers(buffer: ArrayBuffer): PSDDecodeResult {
     });
   }
 
-  // 合成された初期画像 (Photoshop 全体合成画像 psd.canvas があれば優先利用)
-  let compositeImage: TGAImage | null = null;
-  if (psd.canvas) {
-    compositeImage = canvasToTgaImage(psd.canvas);
-  }
-  if (!compositeImage) {
-    compositeImage = renderPsdComposite(psd.width, psd.height, layers);
-  }
+  // 合成された初期画像 (レイヤー操作前後で完全な描画一致を保つため renderPsdComposite を利用)
+  const compositeImage = renderPsdComposite(psd.width, psd.height, layers);
 
   return {
     compositeImage,
     layers,
-  };
-}
-
-function canvasToTgaImage(canvas: HTMLCanvasElement): TGAImage | null {
-  if (typeof document === 'undefined') return null;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  return {
-    width: canvas.width,
-    height: canvas.height,
-    pixelDepth: 32,
-    data: imgData.data,
-    isReadOnly: true,
   };
 }
 
@@ -164,6 +144,8 @@ export function renderPsdComposite(
     if (ctx) {
       ctx.clearRect(0, 0, width, height);
 
+      let isFirstDrawnLayer = true;
+
       // layers[0] が最前面、layers[length - 1] が最背面となっているため
       // レイヤー重ね合わせ描画は最背面から最前面に向けてループを行う
       for (let i = layers.length - 1; i >= 0; i--) {
@@ -172,7 +154,14 @@ export function renderPsdComposite(
 
         ctx.save();
         ctx.globalAlpha = layer.opacity;
-        ctx.globalCompositeOperation = mapPsdBlendModeToCanvas(layer.blendMode);
+
+        // 透明キャンバスへの乗算による描画消失・黒化を防ぐため、最初の可視層は source-over でベース描画
+        if (isFirstDrawnLayer) {
+          ctx.globalCompositeOperation = 'source-over';
+          isFirstDrawnLayer = false;
+        } else {
+          ctx.globalCompositeOperation = mapPsdBlendModeToCanvas(layer.blendMode);
+        }
 
         if (layer.canvas) {
           ctx.drawImage(layer.canvas, layer.left, layer.top);
