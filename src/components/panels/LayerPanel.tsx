@@ -12,6 +12,8 @@ export const LayerPanel: React.FC = () => {
     addLayer,
     deleteLayer,
     psdLayers,
+    activePsdLayerId,
+    setActivePsdLayerId,
     togglePsdLayerVisibility,
     setPsdLayerOpacity,
     reorderPsdLayers,
@@ -86,61 +88,79 @@ export const LayerPanel: React.FC = () => {
       {/* PSD レイヤーの一覧表示 */}
       {hasPsdLayers ? (
         <div className="flex-1 overflow-y-auto space-y-1">
-          {psdLayers.map((layer, index) => (
-            <div
-              key={layer.id}
-              className="p-1.5 rounded flex items-center justify-between text-xs bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <button
-                  onClick={() => togglePsdLayerVisibility(layer.id)}
-                  title={layer.visible ? '非表示にする' : '表示する'}
-                  className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                >
-                  {layer.visible ? (
-                    <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                  ) : (
-                    <EyeOff className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600" />
-                  )}
-                </button>
-                <span className="truncate font-semibold text-[11px]">{layer.name}</span>
-              </div>
+          {psdLayers.map((layer, index) => {
+            const isActive = layer.id === activePsdLayerId;
+            return (
+              <div
+                key={layer.id}
+                onClick={() => setActivePsdLayerId(layer.id)}
+                className={`p-1.5 rounded flex items-center justify-between text-xs cursor-pointer border transition-colors ${
+                  isActive
+                    ? 'bg-indigo-50 dark:bg-indigo-900/40 border-indigo-500 font-semibold text-indigo-900 dark:text-indigo-200'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePsdLayerVisibility(layer.id);
+                    }}
+                    title={layer.visible ? '非表示にする' : '表示する'}
+                    className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                  >
+                    {layer.visible ? (
+                      <Eye className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    ) : (
+                      <EyeOff className="w-3.5 h-3.5 text-slate-400 dark:text-slate-600" />
+                    )}
+                  </button>
+                  <span className="truncate font-semibold text-[11px]">{layer.name}</span>
+                </div>
 
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-mono text-slate-400 font-bold">
-                  {Math.round(layer.opacity * 100)}%
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={layer.opacity}
-                  onChange={(e) => setPsdLayerOpacity(layer.id, Number(e.target.value))}
-                  className="w-12 accent-indigo-600 cursor-pointer"
-                  title={`不透明度: ${Math.round(layer.opacity * 100)}%`}
-                />
-                <div className="flex items-center gap-0.5">
-                  <button
-                    disabled={index === 0}
-                    onClick={() => reorderPsdLayers(index, index - 1)}
-                    title="背面へ移動"
-                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded"
-                  >
-                    <ArrowUp className="w-3 h-3 text-slate-500" />
-                  </button>
-                  <button
-                    disabled={index === psdLayers.length - 1}
-                    onClick={() => reorderPsdLayers(index, index + 1)}
-                    title="前面へ移動"
-                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded"
-                  >
-                    <ArrowDown className="w-3 h-3 text-slate-500" />
-                  </button>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono text-slate-400 font-bold">
+                    {Math.round(layer.opacity * 100)}%
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={layer.opacity}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setPsdLayerOpacity(layer.id, Number(e.target.value))}
+                    className="w-12 accent-indigo-600 cursor-pointer"
+                    title={`不透明度: ${Math.round(layer.opacity * 100)}%`}
+                  />
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      disabled={index === 0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderPsdLayers(index, index - 1);
+                      }}
+                      title="前面へ移動"
+                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded"
+                    >
+                      <ArrowUp className="w-3 h-3 text-slate-500" />
+                    </button>
+                    <button
+                      disabled={index === psdLayers.length - 1}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderPsdLayers(index, index + 1);
+                      }}
+                      title="背面へ移動"
+                      className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 rounded"
+                    >
+                      <ArrowDown className="w-3 h-3 text-slate-500" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* 通常の TGA / 仮想レイヤー一覧表示 */
