@@ -73,14 +73,14 @@ describe('resolveFileHandle', () => {
 });
 
 describe('isSupportedImageFile', () => {
-  it('tga / png / jpg / jpeg を受け入れる', () => {
-    for (const n of ['A0001.tga', 'a.PNG', 'b.jpg', 'c.JPEG']) {
+  it('tga / png / jpg / jpeg / psd / pdf を受け入れる', () => {
+    for (const n of ['A0001.tga', 'a.PNG', 'b.jpg', 'c.JPEG', 'd.psd', 'e.pdf']) {
       expect(isSupportedImageFile(n)).toBe(true);
     }
   });
 
   it('それ以外は弾く', () => {
-    for (const n of ['note.txt', 'sheet.pdf', 'x.tga.bak', 'psd']) {
+    for (const n of ['note.txt', 'x.tga.bak', 'psd_invalid']) {
       expect(isSupportedImageFile(n)).toBe(false);
     }
   });

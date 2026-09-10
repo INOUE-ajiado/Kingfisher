@@ -7,6 +7,7 @@
 
 import { decodeTGA, TGAImage } from './tga';
 import { parsePsdLayers, PSDDecodeResult } from './psdLayers';
+import { decodePdfBuffer } from './pdfDecode';
 import { usePaintStore } from '../store/usePaintStore';
 
 /** 画像ファイルが Kingfisher の編集対象 (TGA) かどうか */
@@ -17,6 +18,18 @@ export function isTgaFile(fileName: string): boolean {
 /** 画像ファイルが PSD かどうか */
 export function isPsdFile(fileName: string): boolean {
   return fileName.toLowerCase().endsWith('.psd');
+}
+
+/** 画像ファイルが PDF かどうか */
+export function isPdfFile(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith('.pdf');
+}
+
+/** PDF ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
+async function decodePdfImageFile(file: File): Promise<TGAImage> {
+  resetPsdLayers();
+  const buffer = await file.arrayBuffer();
+  return decodePdfBuffer(buffer);
 }
 
 /** PSD ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
@@ -115,6 +128,9 @@ export async function decodeAnyImageFile(
   }
   if (isPsdFile(file.name)) {
     return decodePsdImageFile(file);
+  }
+  if (isPdfFile(file.name)) {
+    return decodePdfImageFile(file);
   }
   resetPsdLayers();
   return decodeRasterImageFile(file);
