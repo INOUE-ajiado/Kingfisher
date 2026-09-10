@@ -1294,3 +1294,37 @@ describe('スライスをまたぐ参照', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('PSD レイヤーの操作 (setPsdLayers, setActivePsdLayerId, reorderPsdLayers)', () => {
+  it('setPsdLayers でレイヤーが設定され、先頭がアクティブになること', () => {
+    const layers = [
+      { id: 'layer-1', name: 'L1', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+      { id: 'layer-2', name: 'L2', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+    ];
+    s().setPsdLayers(layers);
+    expect(s().psdLayers.length).toBe(2);
+    expect(s().activePsdLayerId).toBe('layer-1');
+  });
+
+  it('setActivePsdLayerId でアクティブレイヤーを切り替えられること', () => {
+    const layers = [
+      { id: 'layer-1', name: 'L1', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+      { id: 'layer-2', name: 'L2', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+    ];
+    s().setPsdLayers(layers);
+    s().setActivePsdLayerId('layer-2');
+    expect(s().activePsdLayerId).toBe('layer-2');
+  });
+
+  it('reorderPsdLayers で順序が変更されること', () => {
+    const layers = [
+      { id: 'layer-1', name: 'L1', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+      { id: 'layer-2', name: 'L2', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
+    ];
+    s().setPsdLayers(layers);
+    // index 0 -> index 1
+    s().reorderPsdLayers(0, 1);
+    expect(s().psdLayers[0].id).toBe('layer-2');
+    expect(s().psdLayers[1].id).toBe('layer-1');
+  });
+});

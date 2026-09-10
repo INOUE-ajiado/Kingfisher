@@ -751,6 +751,7 @@ export interface DocumentSlice {
   psdLayers: PSDLayerData[]
   activePsdLayerId: string | null
   setPsdLayers: (layers: PSDLayerData[]) => void
+  setActivePsdLayerId: (id: string | null) => void
   togglePsdLayerVisibility: (id: string) => void
   setPsdLayerOpacity: (id: string, opacity: number) => void
   reorderPsdLayers: (fromIndex: number, toIndex: number) => void

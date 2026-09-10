@@ -21,6 +21,8 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
       activePsdLayerId: layers.length > 0 ? layers[0].id : null,
     }),
 
+  setActivePsdLayerId: (id) => set({ activePsdLayerId: id }),
+
   togglePsdLayerVisibility: (id) => {
     const { psdLayers, currentImage } = get();
     const updated = psdLayers.map((layer) =>
