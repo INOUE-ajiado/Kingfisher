@@ -81,6 +81,17 @@ function decodeRasterImageFile(file: File): Promise<TGAImage> {
   });
 }
 
+function resetPsdLayers() {
+  try {
+    const store = usePaintStore.getState();
+    if (store && typeof store.setPsdLayers === 'function') {
+      store.setPsdLayers([]);
+    }
+  } catch (err) {
+    // コンテキスト外等の安全ガード
+  }
+}
+
 /**
  * 拡張子を問わず 1 枚の画像ファイルをデコードする。
  * decodeTga を渡すと TGA のデコードだけを差し替えられる (Web Worker 版を注入する用途)。
@@ -90,12 +101,14 @@ export async function decodeAnyImageFile(
   decodeTga: (buffer: ArrayBuffer) => Promise<TGAImage> | TGAImage = decodeTGA
 ): Promise<TGAImage> {
   if (isTgaFile(file.name)) {
+    resetPsdLayers();
     const buffer = await file.arrayBuffer();
     return decodeTga(buffer);
   }
   if (isPsdFile(file.name)) {
     return decodePsdImageFile(file);
   }
+  resetPsdLayers();
   return decodeRasterImageFile(file);
 }
 

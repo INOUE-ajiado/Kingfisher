@@ -76,12 +76,32 @@ export function parsePsdLayers(buffer: ArrayBuffer): PSDDecodeResult {
     });
   }
 
-  // 合成された初期画像
-  const compositeImage = renderPsdComposite(psd.width, psd.height, layers);
+  // 合成された初期画像 (Photoshop 全体合成画像 psd.canvas があれば優先利用)
+  let compositeImage: TGAImage | null = null;
+  if (psd.canvas) {
+    compositeImage = canvasToTgaImage(psd.canvas);
+  }
+  if (!compositeImage) {
+    compositeImage = renderPsdComposite(psd.width, psd.height, layers);
+  }
 
   return {
     compositeImage,
     layers,
+  };
+}
+
+function canvasToTgaImage(canvas: HTMLCanvasElement): TGAImage | null {
+  if (typeof document === 'undefined') return null;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return {
+    width: canvas.width,
+    height: canvas.height,
+    pixelDepth: 32,
+    data: imgData.data,
+    isReadOnly: true,
   };
 }
 
@@ -103,7 +123,10 @@ export function renderPsdComposite(
     if (ctx) {
       ctx.clearRect(0, 0, width, height);
 
-      for (const layer of layers) {
+      // layers[0] が最前面、layers[length - 1] が最背面となっているため
+      // レイヤー重ね合わせ描画は最背面から最前面に向けてループを行う
+      for (let i = layers.length - 1; i >= 0; i--) {
+        const layer = layers[i];
         if (!layer.visible || layer.opacity <= 0) continue;
 
         ctx.save();
