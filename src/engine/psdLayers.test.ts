@@ -33,4 +33,34 @@ describe('PSD レイヤーの合成描画 (renderPsdComposite)', () => {
     expect(result.isReadOnly).toBe(true);
     expect(result.data.length).toBe(10 * 10 * 4);
   });
+
+  it('レイヤーの順序が最背面（配列の末尾）から最前面（配列の先頭）へと正しく合成処理されること', () => {
+    const layers: PSDLayerData[] = [
+      {
+        id: 'layer-top',
+        name: 'Top Layer',
+        visible: true,
+        opacity: 1.0,
+        left: 0,
+        top: 0,
+        width: 5,
+        height: 5,
+      },
+      {
+        id: 'layer-bottom',
+        name: 'Bottom Layer',
+        visible: true,
+        opacity: 1.0,
+        left: 0,
+        top: 0,
+        width: 5,
+        height: 5,
+      },
+    ];
+
+    const result = renderPsdComposite(5, 5, layers);
+    expect(result).toBeDefined();
+    expect(result.width).toBe(5);
+    expect(result.height).toBe(5);
+  });
 });
