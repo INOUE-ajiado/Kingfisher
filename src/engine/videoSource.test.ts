@@ -123,7 +123,7 @@ describe('コーデックの判別 (ファイル全体を読まない)', () => {
       box('ftyp', fourccBytes('qt  ')),
       box('mdat', new Uint8Array(4096)),
       box('moov', box('trak', stsd('ap4h'))),
-    ]);
+    ] as unknown as BlobPart[]);
 
     await expect(probeVideoCodec(file)).resolves.toMatchObject({ fourcc: 'ap4h', playable: 'no' });
   });
@@ -133,7 +133,7 @@ describe('コーデックの判別 (ファイル全体を読まない)', () => {
       box('ftyp', fourccBytes('isom')),
       box('moov', box('trak', stsd('avc1'))),
       box('mdat', new Uint8Array(64)),
-    ]);
+    ] as unknown as BlobPart[]);
 
     await expect(probeVideoCodec(file)).resolves.toMatchObject({ fourcc: 'avc1', playable: 'yes' });
   });

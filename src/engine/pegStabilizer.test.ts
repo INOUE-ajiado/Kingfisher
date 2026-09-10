@@ -298,7 +298,7 @@ describe('基準へ合わせる補正量', () => {
     const none = detectPegHoles(blankPaper(), W, H);
     const reference = referenceFromDetection(detectPegHoles(paperWithPegs(), W, H));
 
-    expect(pegTransformTo(none, reference, W, H)).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 });
+    expect(pegTransformTo(none, reference)).toEqual({ offsetX: 0, offsetY: 0, rotation: 0, scale: 1 });
   });
 });
 
@@ -364,7 +364,7 @@ describe('補正の焼き込み', () => {
     // ⚠️ 絵ごと拡大してしまうため、ありえない比は 1 に落とす
     const reference = { center: { x: 400, y: 60 }, angle: 0, spacing: 400 };
     const detection = detectPegHoles(paperWithPegs(), W, H); // spacing 220 前後
-    expect(pegTransformTo(detection, reference, W, H).scale).toBe(1);
+    expect(pegTransformTo(detection, reference).scale).toBe(1);
   });
 
   it('色を混ぜない (最近傍で運ぶ)', () => {

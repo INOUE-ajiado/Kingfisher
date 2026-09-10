@@ -3,11 +3,18 @@ import { Lock, KeyRound, ShieldAlert, LogIn, CheckCircle2 } from 'lucide-react';
 import { LogoTitle } from './LogoTitle';
 
 const AUTH_STORAGE_KEY = 'kingfisher_auth_token_v1';
+const AUTH_TIMESTAMP_KEY = 'kingfisher_auth_timestamp_v1';
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24時間
 
 // SHA-256 Protected Hash
-const TARGET_PASSWORD_HASH =
-  import.meta.env.VITE_APP_PASSWORD_HASH ||
-  '2cfbedf50a09b0767c5d4c17ecb94f4b81fc17a160ef609c0b7566f5fcea2974';
+const DEFAULT_FALLBACK_HASH = '2cfbedf50a09b0767c5d4c17ecb94f4b81fc17a160ef609c0b7566f5fcea2974';
+const TARGET_PASSWORD_HASH = import.meta.env.VITE_APP_PASSWORD_HASH || DEFAULT_FALLBACK_HASH;
+
+if (!import.meta.env.VITE_APP_PASSWORD_HASH && typeof console !== 'undefined') {
+  console.warn(
+    '[AuthGuard] VITE_APP_PASSWORD_HASH is not set. Using default fallback password hash.'
+  );
+}
 
 async function computeSha256(text: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -27,13 +34,43 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
 
+  const clearAuth = () => {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_TIMESTAMP_KEY);
+    setIsAuthenticated(false);
+  };
+
   useEffect(() => {
     const savedToken = localStorage.getItem(AUTH_STORAGE_KEY);
+    const savedTimestampStr = localStorage.getItem(AUTH_TIMESTAMP_KEY);
+    const now = Date.now();
+
     if (savedToken === TARGET_PASSWORD_HASH) {
-      setIsAuthenticated(true);
+      if (savedTimestampStr) {
+        const savedTime = parseInt(savedTimestampStr, 10);
+        if (!isNaN(savedTime) && now - savedTime < SESSION_TTL_MS) {
+          setIsAuthenticated(true);
+        } else {
+          // 有効期限切れ
+          clearAuth();
+        }
+      } else {
+        // 後換性：タイムスタンプがない場合は新たにセット
+        localStorage.setItem(AUTH_TIMESTAMP_KEY, now.toString());
+        setIsAuthenticated(true);
+      }
     } else {
-      setIsAuthenticated(false);
+      clearAuth();
     }
+
+    const handleLogoutEvent = () => {
+      clearAuth();
+    };
+
+    window.addEventListener('kingfisher:logout', handleLogoutEvent);
+    return () => {
+      window.removeEventListener('kingfisher:logout', handleLogoutEvent);
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -48,6 +85,7 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
 
       if (inputHash === TARGET_PASSWORD_HASH) {
         localStorage.setItem(AUTH_STORAGE_KEY, TARGET_PASSWORD_HASH);
+        localStorage.setItem(AUTH_TIMESTAMP_KEY, Date.now().toString());
         setIsAuthenticated(true);
       } else {
         setErrorMsg('パスワードが正しくありません。');

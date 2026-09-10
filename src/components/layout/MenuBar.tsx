@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder, ROOT_SUBDIR_NAME } from '../../engine/cutFolder';
-import { Bug, Columns, Pipette } from 'lucide-react';
+import { Bug, Columns, Pipette, LogOut } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -489,6 +489,15 @@ export const MenuBar: React.FC = () => {
           >
             <Pipette className="w-3.5 h-3.5" />
             <span>見本ビューア</span>
+          </button>
+
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('kingfisher:logout'))}
+            title="ログアウトして画面を保護・ロックします"
+            className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 shadow-xs transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5 text-amber-400" />
+            <span>ロック</span>
           </button>
         </div>
       </div>

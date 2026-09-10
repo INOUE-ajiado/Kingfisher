@@ -6,10 +6,48 @@
  */
 
 import { decodeTGA, TGAImage } from './tga';
+import { readPsd } from 'ag-psd';
 
 /** 画像ファイルが Kingfisher の編集対象 (TGA) かどうか */
 export function isTgaFile(fileName: string): boolean {
   return fileName.toLowerCase().endsWith('.tga');
+}
+
+/** 画像ファイルが PSD かどうか */
+export function isPsdFile(fileName: string): boolean {
+  return fileName.toLowerCase().endsWith('.psd');
+}
+
+/** PSD ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
+async function decodePsdImageFile(file: File): Promise<TGAImage> {
+  const buffer = await file.arrayBuffer();
+  const psd = readPsd(buffer);
+
+  if (psd.canvas) {
+    const ctx = psd.canvas.getContext('2d');
+    if (ctx) {
+      const imgData = ctx.getImageData(0, 0, psd.width, psd.height);
+      return {
+        width: psd.width,
+        height: psd.height,
+        pixelDepth: 32,
+        data: imgData.data,
+        isReadOnly: true,
+      };
+    }
+  }
+
+  if (psd.imageData) {
+    return {
+      width: psd.width,
+      height: psd.height,
+      pixelDepth: 32,
+      data: new Uint8ClampedArray(psd.imageData.data),
+      isReadOnly: true,
+    };
+  }
+
+  throw new Error('PSD 画像のデコードに失敗しました。');
 }
 
 /**
@@ -67,6 +105,9 @@ export async function decodeAnyImageFile(
   if (isTgaFile(file.name)) {
     const buffer = await file.arrayBuffer();
     return decodeTga(buffer);
+  }
+  if (isPsdFile(file.name)) {
+    return decodePsdImageFile(file);
   }
   return decodeRasterImageFile(file);
 }
