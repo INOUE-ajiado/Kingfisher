@@ -12,7 +12,7 @@ import {
   sampleColorAt,
 } from '../../engine/paintAlgorithm';
 import { cloneTGAImage, createCheckerPattern } from '../../engine/imageDecode';
-import { AlertTriangle, Maximize2, Minimize2, FolderOpen } from 'lucide-react';
+import { AlertTriangle, Maximize2, Minimize2, FolderOpen, Loader2, FileCode } from 'lucide-react';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { useFrameLoader, useCellPrefetch, useOnionSkinFrames } from '../../hooks/useFrameLoader';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
@@ -94,6 +94,8 @@ export const CellWindow: React.FC = () => {
     setFolderHandleB,
     canvasBgMatteMode,
     canvasCustomBgColor,
+    isPsdLoading,
+    psdLoadingFileName,
   } = usePaintStore();
 
   // 引きはがし・移動・リサイズ・ドッキング復帰・重なり順は useFloatingWindow に集約
@@ -1683,6 +1685,41 @@ export const CellWindow: React.FC = () => {
       }`}
       style={canvasBgMatteMode === 'custom' ? { backgroundColor: canvasCustomBgColor } : undefined}
     >
+      {/* 🔮 PSD デコード・レイヤー解析中の高級ローディングオーバーレイ */}
+      {isPsdLoading && (
+        <div className="absolute inset-0 z-[90] flex items-center justify-center bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-150 select-none">
+          <div className="flex flex-col items-center justify-center p-8 bg-slate-900/90 border border-indigo-500/30 rounded-2xl shadow-2xl max-w-sm text-center relative overflow-hidden">
+            {/* バックドロップグラデーション発光効果 */}
+            <div className="absolute -top-12 -left-12 w-32 h-32 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl pointer-events-none" />
+
+            <div className="relative mb-4">
+              <div className="w-16 h-16 rounded-2xl bg-indigo-950/80 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shadow-lg">
+                <FileCode className="w-8 h-8 animate-pulse text-indigo-400" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-slate-900 rounded-full p-1 border border-indigo-500/50">
+                <Loader2 className="w-5 h-5 text-indigo-400 animate-spin" />
+              </div>
+            </div>
+
+            <h3 className="text-sm font-bold text-white mb-1 tracking-wide flex items-center gap-1.5">
+              <span>PSD レイヤー解析中...</span>
+            </h3>
+            <p className="text-[11px] text-slate-300 font-mono truncate max-w-[240px] mb-3 bg-slate-800/80 px-2.5 py-1 rounded border border-slate-700">
+              {psdLoadingFileName || 'PSD File'}
+            </p>
+
+            {/* インディゴグラデーションプログレスバー */}
+            <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 relative">
+              <div className="absolute inset-y-0 bg-gradient-to-r from-indigo-500 via-blue-500 to-indigo-400 w-full rounded-full animate-pulse" />
+            </div>
+            <span className="text-[10px] text-slate-400 mt-2 font-medium">
+              Photoshop レイヤー構造とビットマップを展開しています
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* セルキャンバス＆参照エリア (画面分割レイアウト) */}
       <div
         ref={splitRowRef}

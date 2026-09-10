@@ -21,20 +21,28 @@ export function isPsdFile(fileName: string): boolean {
 
 /** PSD ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
 async function decodePsdImageFile(file: File): Promise<TGAImage> {
-  const buffer = await file.arrayBuffer();
-  const result: PSDDecodeResult = parsePsdLayers(buffer);
-
-  // ストアへ PSD レイヤー情報を流し込み
+  const store = usePaintStore.getState();
   try {
-    const store = usePaintStore.getState();
+    if (store && typeof store.setIsPsdLoading === 'function') {
+      store.setIsPsdLoading(true, file.name);
+    }
+    // 非同期スレッド譲渡によりローディングUIを確実に描画
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const buffer = await file.arrayBuffer();
+    const result: PSDDecodeResult = parsePsdLayers(buffer);
+
+    // ストアへ PSD レイヤー情報を流し込み
     if (store && typeof store.setPsdLayers === 'function') {
       store.setPsdLayers(result.layers);
     }
-  } catch (err) {
-    // コンテキスト外等の安全ガード
-  }
 
-  return result.compositeImage;
+    return result.compositeImage;
+  } finally {
+    if (store && typeof store.setIsPsdLoading === 'function') {
+      store.setIsPsdLoading(false);
+    }
+  }
 }
 
 /**

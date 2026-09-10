@@ -14,6 +14,14 @@ const MAX_HISTORY = 30;
 export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice> = (set, get) => ({
   psdLayers: [],
   activePsdLayerId: null,
+  isPsdLoading: false,
+  psdLoadingFileName: null,
+
+  setIsPsdLoading: (loading, fileName = null) =>
+    set({
+      isPsdLoading: loading,
+      psdLoadingFileName: loading ? fileName : null,
+    }),
 
   setPsdLayers: (layers) =>
     set({

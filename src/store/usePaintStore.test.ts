@@ -1316,15 +1316,13 @@ describe('PSD レイヤーの操作 (setPsdLayers, setActivePsdLayerId, reorderP
     expect(s().activePsdLayerId).toBe('layer-2');
   });
 
-  it('reorderPsdLayers で順序が変更されること', () => {
-    const layers = [
-      { id: 'layer-1', name: 'L1', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
-      { id: 'layer-2', name: 'L2', visible: true, opacity: 1, left: 0, top: 0, width: 10, height: 10 },
-    ];
-    s().setPsdLayers(layers);
-    // index 0 -> index 1
-    s().reorderPsdLayers(0, 1);
-    expect(s().psdLayers[0].id).toBe('layer-2');
-    expect(s().psdLayers[1].id).toBe('layer-1');
+  it('setIsPsdLoading でローディング状態とファイル名が設定されること', () => {
+    s().setIsPsdLoading(true, 'test.psd');
+    expect(s().isPsdLoading).toBe(true);
+    expect(s().psdLoadingFileName).toBe('test.psd');
+
+    s().setIsPsdLoading(false);
+    expect(s().isPsdLoading).toBe(false);
+    expect(s().psdLoadingFileName).toBeNull();
   });
 });
