@@ -7,7 +7,7 @@
 
 import { decodeTGA, TGAImage } from './tga';
 import { parsePsdLayers, PSDDecodeResult } from './psdLayers';
-import { decodePdfBuffer } from './pdfDecode';
+import { decodePdfAllPages } from './pdfDecode';
 import { usePaintStore } from '../store/usePaintStore';
 
 /** 画像ファイルが Kingfisher の編集対象 (TGA) かどうか */
@@ -27,9 +27,26 @@ export function isPdfFile(fileName: string): boolean {
 
 /** PDF ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
 async function decodePdfImageFile(file: File): Promise<TGAImage> {
-  resetPsdLayers();
-  const buffer = await file.arrayBuffer();
-  return decodePdfBuffer(buffer);
+  const store = usePaintStore.getState();
+  try {
+    if (store && typeof store.setIsPsdLoading === 'function') {
+      store.setIsPsdLoading(true, file.name);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const buffer = await file.arrayBuffer();
+    const result = await decodePdfAllPages(buffer, file.name);
+
+    if (store && typeof store.setPsdLayers === 'function') {
+      store.setPsdLayers(result.layers);
+    }
+
+    return result.compositeImage;
+  } finally {
+    if (store && typeof store.setIsPsdLoading === 'function') {
+      store.setIsPsdLoading(false);
+    }
+  }
 }
 
 /** PSD ファイルを RGBA 配列へデコードする (閲覧専用扱い) */

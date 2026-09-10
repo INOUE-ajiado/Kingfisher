@@ -29,7 +29,28 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
       activePsdLayerId: layers.length > 0 ? layers[0].id : null,
     }),
 
-  setActivePsdLayerId: (id) => set({ activePsdLayerId: id }),
+  setActivePsdLayerId: (id) => {
+    const { psdLayers, currentImage } = get();
+    const target = psdLayers.find((l) => l.id === id);
+    let nextImage = currentImage;
+
+    // PDF ページ切り替えの場合、選択されたページの画像を即座にキャンバスへ反映
+    if (target && id && id.startsWith('pdf-page-') && target.canvas) {
+      const ctx = target.canvas.getContext('2d');
+      if (ctx) {
+        const imgData = ctx.getImageData(0, 0, target.canvas.width, target.canvas.height);
+        nextImage = {
+          width: target.canvas.width,
+          height: target.canvas.height,
+          pixelDepth: 32,
+          data: imgData.data,
+          isReadOnly: true,
+        };
+      }
+    }
+
+    set({ activePsdLayerId: id, currentImage: nextImage });
+  },
 
   togglePsdLayerVisibility: (id) => {
     const { psdLayers, currentImage } = get();
