@@ -224,7 +224,7 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     if (!image) {
       return { ok: false, message: `${label} に保存できる画像が読み込まれていません。` };
     }
-    if (image.isReadOnly) {
+    if (image.isReadOnly && !get().isAuthenticated) {
       return { ok: false, message: `${label} の画像は閲覧専用のため保存できません。` };
     }
     // window ではなく globalThis を見る (ブラウザでは同一。テスト環境に window は無い)
@@ -293,7 +293,7 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     if (!image) {
       return { ok: false, message: `${label} に保存できる画像が読み込まれていません。` };
     }
-    if (image.isReadOnly) {
+    if (image.isReadOnly && !get().isAuthenticated) {
       return { ok: false, message: `${label} の画像は閲覧専用のため保存できません。` };
     }
     if (!folderHandle) {

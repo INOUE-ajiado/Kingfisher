@@ -101,12 +101,13 @@ function decodeRasterImageFile(file: File): Promise<TGAImage> {
       }
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, img.width, img.height);
+      const isAuthenticated = usePaintStore.getState().isAuthenticated;
       resolve({
         width: img.width,
         height: img.height,
         pixelDepth: 32,
         data: imgData.data,
-        isReadOnly: true,
+        isReadOnly: isAuthenticated ? false : true,
       });
     };
 
@@ -138,19 +139,24 @@ export async function decodeAnyImageFile(
   file: File,
   decodeTga: (buffer: ArrayBuffer) => Promise<TGAImage> | TGAImage = decodeTGA
 ): Promise<TGAImage> {
+  let img: TGAImage;
   if (isTgaFile(file.name)) {
     resetPsdLayers();
     const buffer = await file.arrayBuffer();
-    return decodeTga(buffer);
+    img = await decodeTga(buffer);
+  } else if (isPsdFile(file.name)) {
+    img = await decodePsdImageFile(file);
+  } else if (isPdfFile(file.name)) {
+    img = await decodePdfImageFile(file);
+  } else {
+    resetPsdLayers();
+    img = await decodeRasterImageFile(file);
   }
-  if (isPsdFile(file.name)) {
-    return decodePsdImageFile(file);
+
+  if (usePaintStore.getState().isAuthenticated) {
+    img.isReadOnly = false;
   }
-  if (isPdfFile(file.name)) {
-    return decodePdfImageFile(file);
-  }
-  resetPsdLayers();
-  return decodeRasterImageFile(file);
+  return img;
 }
 
 /** キャンバス背景の市松模様パターン */

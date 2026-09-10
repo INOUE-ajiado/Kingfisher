@@ -1054,7 +1054,9 @@ export const CellWindow: React.FC = () => {
 
     // 閲覧専用（タイムシートや指示メモなどの JPG/PNG 画像）の場合は塗り・描画操作をガード。
     // 黙って無視すると「ツールが反応しない」ようにしか見えないので理由を表示する。
-    if (targetImg.isReadOnly && activeTool !== 'eyedropper' && e.button !== 1 && !e.altKey) {
+    // 認証済みユーザー (@ajiado.co.jp) の場合はすべてのファイルを編集可能にする
+    const isAuthenticated = usePaintStore.getState().isAuthenticated;
+    if (targetImg.isReadOnly && !isAuthenticated && activeTool !== 'eyedropper' && e.button !== 1 && !e.altKey) {
       setReadOnlyNoticeView(viewIdx);
       return;
     }
@@ -1361,7 +1363,7 @@ export const CellWindow: React.FC = () => {
                   Win A ({folderNameA || 'Orig'}): {resolveFileNameForView(currentFileIndex, 0) || '---'}
                   {isDirtyA ? ' *' : ''}
                 </span>
-                {currentImage?.isReadOnly && (
+                {currentImage?.isReadOnly && !usePaintStore.getState().isAuthenticated && (
                   <span className="flex-shrink-0 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs whitespace-nowrap">
                     🔒 閲覧専用 (描画不可)
                   </span>
@@ -1503,7 +1505,7 @@ export const CellWindow: React.FC = () => {
               >
                 <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
                   <span>Win B ({folderNameB || 'Retake'}): {resolveFileNameForView(splitFileIndex, 1) || '---'}{isDirtyB ? ' *' : ''}</span>
-                  {splitImage?.isReadOnly && (
+                  {splitImage?.isReadOnly && !usePaintStore.getState().isAuthenticated && (
                     <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
                       🔒 閲覧専用 (Sheet View)
                     </span>
