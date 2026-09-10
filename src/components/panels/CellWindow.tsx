@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
+import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
 import { collectDroppedVideoFiles, commonRootName } from '../../engine/videoSource';
 import { sortNatural } from '../../engine/naturalOrder';
 import {
@@ -458,24 +459,13 @@ export const CellWindow: React.FC = () => {
     resetDragState('winA');
     resetDragState('winB');
 
-    // ⚠️ dataTransfer.items はハンドラを抜けた時点で無効になる。
-    // await を挟む前に、エントリとハンドルの取得を同期的に始めておく。
-    // (従来は 1 件目の処理を await した後で 2 件目を読んでいたため、
-    //  複数まとめてドロップすると取りこぼしが起きていた)
-    const entries: any[] = [];
-    const handlePromises: Promise<any>[] = [];
-    const items = e.dataTransfer.items;
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item: any = items[i];
-        if (typeof item.getAsFileSystemHandle === 'function') {
-          handlePromises.push(item.getAsFileSystemHandle().catch(() => null));
-        }
-        const entry = item.webkitGetAsEntry?.();
-        if (entry) entries.push(entry);
-      }
-    }
-    const plainFiles: File[] = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
+    const items = readDropItems(e.dataTransfer);
+    const store = usePaintStore.getState();
+
+    const multi = await readMultipleDroppedFolders(items, store);
+    if (multi.handled) return;
+
+    const { plainFiles, handlePromises, entries } = items;
 
     const isWinA = targetWin === 'winA';
     const fileMap = new Map<string, File>();

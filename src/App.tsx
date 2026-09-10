@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import { usePaintStore } from './store/usePaintStore';
-import { readDropItems, readDroppedFolder } from './engine/dropFolder';
+import { readDropItems, readDroppedFolder, readMultipleDroppedFolders } from './engine/dropFolder';
 import { sortNatural } from './engine/naturalOrder';
 import { isPaneDrag } from './components/panels/PaneTabBar';
 import { MenuBar } from './components/layout/MenuBar';
@@ -136,9 +136,12 @@ export const App: React.FC = () => {
     setIsRootDragOver(false);
 
     const items = readDropItems(e.dataTransfer);
-    const folder = await readDroppedFolder(items);
-
     const store = usePaintStore.getState();
+
+    const multi = await readMultipleDroppedFolders(items, store);
+    if (multi.handled) return;
+
+    const folder = await readDroppedFolder(items);
 
     logDebug(
       'folder',

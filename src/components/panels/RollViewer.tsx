@@ -7,6 +7,7 @@ import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
 import { resolveDropHandles } from '../../engine/fileSystemPath';
+import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
 import {
   registerRollVideo,
   getRollVideo,
@@ -299,23 +300,13 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     e.stopPropagation();
     setIsDragOver(false);
 
-    // ⚠️ dataTransfer.items は await を挟んだ時点で無効になるので、先に同期で読み取る。
-    // ⚠️ files だけを見ないこと。フォルダを落とした場合そこにはフォルダ自体しか入らず、
-    // 中の .mov / .mp4 が見えない。
-    const plainFiles = e.dataTransfer.files ? Array.from(e.dataTransfer.files) : [];
-    const entries: any[] = [];
-    const handlePromises: Promise<any>[] = [];
-    const items = e.dataTransfer.items;
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item: any = items[i];
-        if (typeof item.getAsFileSystemHandle === 'function') {
-          handlePromises.push(item.getAsFileSystemHandle().catch(() => null));
-        }
-        const entry = item.webkitGetAsEntry?.();
-        if (entry) entries.push(entry);
-      }
-    }
+    const items = readDropItems(e.dataTransfer);
+    const store = usePaintStore.getState();
+
+    const multi = await readMultipleDroppedFolders(items, store);
+    if (multi.handled) return;
+
+    const { plainFiles, handlePromises, entries } = items;
 
     const handles = await resolveDropHandles(handlePromises);
     // フォルダの中に複数入っていることがあるので、まとめて受け取って一覧にする
