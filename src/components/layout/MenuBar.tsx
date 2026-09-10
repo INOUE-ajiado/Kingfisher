@@ -53,6 +53,8 @@ export const MenuBar: React.FC = () => {
     setAutoRevertTool,
     saveActiveCell,
     saveActiveCellAs,
+    user,
+    logout,
   } = usePaintStore();
 
   /**
@@ -491,13 +493,26 @@ export const MenuBar: React.FC = () => {
             <span>見本ビューア</span>
           </button>
 
+          {user && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-indigo-900/30 border border-indigo-500/40 text-[10px] text-indigo-200">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="Avatar" className="w-3.5 h-3.5 rounded-full" />
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              )}
+              <span className="font-mono max-w-[120px] truncate" title={user.email || ''}>
+                {user.email}
+              </span>
+            </div>
+          )}
+
           <button
-            onClick={() => window.dispatchEvent(new CustomEvent('kingfisher:logout'))}
-            title="ログアウトして画面を保護・ロックします"
+            onClick={() => logout()}
+            title="ログアウトしてGoogle認証を終了します"
             className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 shadow-xs transition-colors"
           >
             <LogOut className="w-3.5 h-3.5 text-amber-400" />
-            <span>ロック</span>
+            <span>ログアウト</span>
           </button>
         </div>
       </div>

@@ -14,6 +14,7 @@ import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo, DroppedVideo } from '../engine/videoSource';
 import { PaneLayout, PaneId } from '../engine/paneLayout';
 import { PSDLayerData } from '../engine/psdLayers';
+import type { User } from 'firebase/auth';
 
 export type { PaneLayout, PaneId, PSDLayerData };
 
@@ -1048,6 +1049,18 @@ export interface LayoutSlice {
   resetPaneLayout: () => void
 }
 
+export interface AuthSlice {
+  user: User | null;
+  isAuthenticated: boolean;
+  isAuthChecking: boolean;
+  authError: string | null;
+  setUser: (user: User | null) => void;
+  setAuthChecking: (isChecking: boolean) => void;
+  setAuthError: (error: string | null) => void;
+  loginWithGoogle: () => Promise<boolean>;
+  logout: () => Promise<void>;
+}
+
 export interface PaintStore
   extends UiSlice,
     ViewSlice,
@@ -1058,7 +1071,8 @@ export interface PaintStore
     EditSlice,
     LightTableSlice,
     RollSlice,
-    LayoutSlice {}
+    LayoutSlice,
+    AuthSlice {}
 
 export const defaultColors: PaletteItem[] = [
   { id: '1', name: 'Hair', color: { r: 255, g: 215, b: 0, a: 255, hex: '#FFD700' } },
