@@ -417,6 +417,13 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       return { roll: { ...state.roll, sync: true, syncOffset: offset } };
     }),
 
+  updateRollSyncOffset: (offset: number) =>
+    set((state) => {
+      if (!state.roll.sync) return state;
+      logDebug('sync', `ロールの再生連動の時刻差を更新 (時刻差 ${offset.toFixed(3)} 秒)`);
+      return { roll: { ...state.roll, syncOffset: offset } };
+    }),
+
   /**
    * 2 面のツリーの選択を連動させる / やめる。
    *
@@ -434,23 +441,38 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
         return { roll: { ...state.roll, fileSync: false } };
       }
 
-      const { rollA, rollB } = state.roll.views;
+      let { rollA, rollB } = state.roll.views;
       // 片方に一覧が無ければ合わせようがない
       if (rollA.files.length === 0 || rollB.files.length === 0) {
         logDebug('sync', 'ロールの選択連動は入れられない (片方の一覧が空)');
         return state;
       }
 
-      const atA = indexOfCurrent(rollA);
-      const atB = indexOfCurrent(rollB);
-      // どちらかがまだ開いていなければ、ずれの決めようが無いので 0 から始める
+      let atA = indexOfCurrent(rollA);
+      let atB = indexOfCurrent(rollB);
+
+      let nextRoll: RollState = { ...state.roll };
+
+      // 片方がまだ開いていなければ、開いている側と同じインデックスのファイルを開く
+      if (atA >= 0 && atB < 0) {
+        const targetIdx = Math.min(rollB.files.length - 1, atA);
+        nextRoll = withView(nextRoll, 'rollB', openedView(rollB, rollB.files[targetIdx]));
+        atB = targetIdx;
+      } else if (atB >= 0 && atA < 0) {
+        const targetIdx = Math.min(rollA.files.length - 1, atB);
+        nextRoll = withView(nextRoll, 'rollA', openedView(rollA, rollA.files[targetIdx]));
+        atA = targetIdx;
+      }
+
       const offset = atA >= 0 && atB >= 0 ? atB - atA : 0;
+      nextRoll = { ...nextRoll, fileSync: true, fileSyncOffset: offset };
+
       logDebug(
         'sync',
         `ロールの選択連動を入れた (ずれ ${offset})`,
-        `この 2 本を対にして固定: ${describeRollPair(state.roll)}`
+        `この 2 本を対にして固定: ${describeRollPair(nextRoll)}`
       );
-      return { roll: { ...state.roll, fileSync: true, fileSyncOffset: offset } };
+      return { roll: nextRoll };
     }),
 
   /** ずれを 0 に戻し、ロール B をロール A と同じ位置へ揃える */

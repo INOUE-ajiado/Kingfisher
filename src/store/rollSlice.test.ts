@@ -278,6 +278,13 @@ describe('連動', () => {
     s().toggleRollSync();
     expect(s().roll.sync).toBe(false);
   });
+
+  it('時刻差だけを更新できる', () => {
+    openBoth();
+    s().toggleRollSync(1.0);
+    s().updateRollSyncOffset(2.5);
+    expect(s().roll.syncOffset).toBeCloseTo(2.5, 6);
+  });
 });
 
 describe('ツリーの選択の連動', () => {

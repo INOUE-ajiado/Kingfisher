@@ -25,8 +25,9 @@ const FPS_SAMPLES = 24;
 /**
  * 連動中に許すずれ (秒)。これを超えたら相手の時刻を直す。
  * 毎コマ書き戻すと相手のデコードを乱すので、明らかにずれた時だけ触る。
+ * ⚠️ 24fps アニメーションで 1 コマ (約 0.0417s) 未満のズレ (20ms) を閾値にする。
  */
-const SYNC_DRIFT_TOLERANCE = 0.08;
+const SYNC_DRIFT_TOLERANCE = 0.02;
 
 function formatTimecode(seconds: number, fps: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00:00+00';
@@ -82,6 +83,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     reportRollPlaybackFailure,
     setRollFps,
     toggleRollSync,
+    updateRollSyncOffset,
     openRollWindow,
   } = usePaintStore();
 
@@ -431,7 +433,17 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
 
     const before = describeRollTimes();
     video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
-    syncPartnerTime(video.currentTime);
+
+    // ⚠️ 再生連動 (roll.sync) 中なら、相手を無理に同期させるのではなく
+    // この面だけを動かしたあとの新しい時刻差を覚えて連動を維持する
+    const state = usePaintStore.getState();
+    if (state.roll.sync) {
+      const a = getRollVideo('rollA');
+      const b = getRollVideo('rollB');
+      if (a && b) {
+        updateRollSyncOffset(b.currentTime - a.currentTime);
+      }
+    }
 
     logDebug(
       'roll',
@@ -668,6 +680,12 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             }}
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
+            onEnded={() => {
+              setIsPlaying(false);
+              const partner = partnerVideo();
+              partner?.pause();
+              endPairedPlayback();
+            }}
             onSeeked={(e) => paintTime(e.currentTarget.currentTime)}
             onError={() => { setIsPlaying(false); void reportRollPlaybackFailure(rollId); }}
           />
@@ -717,9 +735,11 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           step={0.001}
           defaultValue={0}
           disabled={disabled}
+          onPointerDown={() => setActiveRollId(rollId)}
           onChange={(e) => {
             const v = videoRef.current;
             if (!v) return;
+            setActiveRollId(rollId);
             const before = seekBurstRef.current ?? describeRollTimes();
             seekBurstRef.current = before;
             v.currentTime = Number(e.target.value);
@@ -732,6 +752,12 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               const from = seekBurstRef.current;
               seekBurstRef.current = null;
               seekTimerRef.current = null;
+              const state = usePaintStore.getState();
+              if (state.roll.sync) {
+                const a = getRollVideo('rollA');
+                const b = getRollVideo('rollB');
+                if (a && b) updateRollSyncOffset(b.currentTime - a.currentTime);
+              }
               logDebug(
                 'roll',
                 `シークバーで移動 — ${tone.label} 主導 / ${describeRollSync()}`,

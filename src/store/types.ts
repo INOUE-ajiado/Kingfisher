@@ -986,6 +986,8 @@ export interface RollSlice {
    * 開始時の時刻差 (B - A、秒) を渡すと、その差を保ったまま追従する。
    */
   toggleRollSync: (offset?: number) => void
+  /** 連動中の時刻差 (B - A、秒) だけを更新する (片方の面だけ動かしたとき用) */
+  updateRollSyncOffset: (offset: number) => void
   /**
    * 2 面のツリーで選ぶロールを連動させる / やめる。
    * 開始時に今それぞれ開いている本数の差を記録し、以降その差を保って追従する。
