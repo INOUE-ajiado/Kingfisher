@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
-import { AuthGuard } from './components/common/AuthGuard.tsx';
 import { logDebug } from './engine/debugLog.ts';
 import './index.css';
 
@@ -30,8 +29,6 @@ window.addEventListener('error', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AuthGuard>
-      <App />
-    </AuthGuard>
+    <App />
   </React.StrictMode>,
 );
