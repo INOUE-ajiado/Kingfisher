@@ -21,8 +21,11 @@ import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
 import { ExportVectorModal } from './components/modals/ExportVectorModal';
 import { ExportTraceModal } from './components/modals/ExportTraceModal';
+import { AuthGuardModal } from './components/modals/AuthGuardModal';
 import { MobileGuard } from './components/common/MobileGuard';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './engine/firebase';
 
 export const App: React.FC = () => {
   const {
@@ -32,7 +35,18 @@ export const App: React.FC = () => {
     panelVisibility,
     isRightSidebarOpen,
     toggleRightSidebarOpen,
+    setUser,
+    setAuthChecking,
   } = usePaintStore();
+
+  // Firebase Authentication リスナーの設定
+  useEffect(() => {
+    setAuthChecking(true);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+    return () => unsubscribe();
+  }, [setUser, setAuthChecking]);
 
   // ⚡ 仕様書 (Kingfisher_Shortcut_Override_Specification.md) 準拠のグローバルオーバーライドフック
   useGlobalShortcuts();
@@ -423,6 +437,7 @@ export const App: React.FC = () => {
       <ReplaceColorModal />
       <ExportVectorModal />
       <ExportTraceModal />
+      <AuthGuardModal />
       <MobileGuard />
 
       {/* 🌟 右サイドパネル非表示時のみ表示される縦全高コンパクト再展開バー (Light/Darkテーマ対応) */}
