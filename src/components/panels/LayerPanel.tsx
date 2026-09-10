@@ -47,7 +47,11 @@ export const LayerPanel: React.FC = () => {
           {hasPsdLayers ? (
             <>
               <FileCode className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>PSD レイヤー ({psdLayers.length})</span>
+              <span>
+                {psdLayers[0]?.id.startsWith('pdf-page-')
+                  ? `PDF ページ (${psdLayers.length})`
+                  : `PSD レイヤー (${psdLayers.length})`}
+              </span>
             </>
           ) : (
             <>
