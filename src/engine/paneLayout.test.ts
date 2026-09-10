@@ -54,9 +54,9 @@ describe('表示と非表示', () => {
   });
 
   it('閉じると枠ごと消える', () => {
-    let layout = layoutOf(['winA'], ['winB'], ['roll']);
+    let layout = layoutOf(['winA'], ['winB'], ['rollA']);
     layout = hidePane(layout, 'winB');
-    expect(shape(layout)).toEqual(['[winA]', '[roll]']);
+    expect(shape(layout)).toEqual(['[winA]', '[rollA]']);
   });
 
   it('最後の 1 枚も閉じられる', () => {
@@ -82,33 +82,33 @@ describe('表示と非表示', () => {
 
 describe('タブとして重ねる', () => {
   it('別の枠へ重ねると、移した面が表示中になる', () => {
-    let layout = layoutOf(['winA'], ['roll']);
+    let layout = layoutOf(['winA'], ['rollA']);
     const target = layout.slots[0].id;
-    layout = movePaneToSlot(layout, 'roll', target);
-    expect(shape(layout)).toEqual(['winA+[roll]']);
+    layout = movePaneToSlot(layout, 'rollA', target);
+    expect(shape(layout)).toEqual(['winA+[rollA]']);
   });
 
   it('重ねた側でタブを切り替えられる', () => {
-    let layout = layoutOf(['winA', 'roll']);
+    let layout = layoutOf(['winA', 'rollA']);
     layout = setActivePane(layout, layout.slots[0].id, 'winA');
-    expect(shape(layout)).toEqual(['[winA]+roll']);
+    expect(shape(layout)).toEqual(['[winA]+rollA']);
   });
 
   it('重なりから 1 枚を引き出して独立した枠にできる', () => {
-    let layout = layoutOf(['winA', 'roll']);
-    layout = movePaneToIndex(layout, 'roll', 0);
-    expect(shape(layout)).toEqual(['[roll]', '[winA]']);
+    let layout = layoutOf(['winA', 'rollA']);
+    layout = movePaneToIndex(layout, 'rollA', 0);
+    expect(shape(layout)).toEqual(['[rollA]', '[winA]']);
   });
 
   it('重なりの表示中の面を閉じると、残りが出る', () => {
-    let layout = layoutOf(['winA', 'roll']);
-    layout = setActivePane(layout, layout.slots[0].id, 'roll');
-    layout = hidePane(layout, 'roll');
+    let layout = layoutOf(['winA', 'rollA']);
+    layout = setActivePane(layout, layout.slots[0].id, 'rollA');
+    layout = hidePane(layout, 'rollA');
     expect(shape(layout)).toEqual(['[winA]']);
   });
 
   it('自分しかいない枠へ重ねようとしても壊れない', () => {
-    const layout = layoutOf(['winA'], ['roll']);
+    const layout = layoutOf(['winA'], ['rollA']);
     const same = movePaneToSlot(layout, 'winA', layout.slots[0].id);
     expect(shape(same)).toEqual(shape(layout));
   });
@@ -128,9 +128,9 @@ describe('位置の入れ替え', () => {
   });
 
   it('枠ごと左右へ動かせる', () => {
-    let layout = layoutOf(['winA'], ['winB'], ['roll']);
+    let layout = layoutOf(['winA'], ['winB'], ['rollA']);
     layout = moveSlot(layout, layout.slots[2].id, 0);
-    expect(shape(layout)).toEqual(['[roll]', '[winA]', '[winB]']);
+    expect(shape(layout)).toEqual(['[rollA]', '[winA]', '[winB]']);
   });
 
   it('好きな位置へ差し込める', () => {
@@ -148,37 +148,37 @@ describe('位置の入れ替え', () => {
 
 describe('一面表示', () => {
   it('指定した面だけが出る', () => {
-    let layout = layoutOf(['winA'], ['winB'], ['roll']);
-    layout = toggleMaximize(layout, 'roll');
-    expect(visiblePanes(layout)).toEqual(['roll']);
+    let layout = layoutOf(['winA'], ['winB'], ['rollA']);
+    layout = toggleMaximize(layout, 'rollA');
+    expect(visiblePanes(layout)).toEqual(['rollA']);
   });
 
   it('もう一度指定すると元の並びに戻る', () => {
-    let layout = layoutOf(['winA'], ['winB'], ['roll']);
-    layout = toggleMaximize(layout, 'roll');
-    layout = toggleMaximize(layout, 'roll');
-    expect(visiblePanes(layout)).toEqual(['winA', 'winB', 'roll']);
-    expect(shape(layout)).toEqual(['[winA]', '[winB]', '[roll]']);
+    let layout = layoutOf(['winA'], ['winB'], ['rollA']);
+    layout = toggleMaximize(layout, 'rollA');
+    layout = toggleMaximize(layout, 'rollA');
+    expect(visiblePanes(layout)).toEqual(['winA', 'winB', 'rollA']);
+    expect(shape(layout)).toEqual(['[winA]', '[winB]', '[rollA]']);
   });
 
   it('一面表示中の面を閉じたら通常表示へ戻す', () => {
     // 閉じた面を一面表示したままだと、何も映らない画面になる
-    let layout = layoutOf(['winA'], ['roll']);
-    layout = toggleMaximize(layout, 'roll');
-    layout = hidePane(layout, 'roll');
+    let layout = layoutOf(['winA'], ['rollA']);
+    layout = toggleMaximize(layout, 'rollA');
+    layout = hidePane(layout, 'rollA');
     expect(layout.maximized).toBeNull();
     expect(visiblePanes(layout)).toEqual(['winA']);
   });
 
   it('出ていない面は一面表示にできない', () => {
-    const layout = toggleMaximize(layoutOf(['winA']), 'roll');
+    const layout = toggleMaximize(layoutOf(['winA']), 'rollA');
     expect(layout.maximized).toBeNull();
   });
 });
 
 describe('横幅の取り分', () => {
   it('枠ごとに変えられる', () => {
-    let layout = layoutOf(['winA'], ['roll']);
+    let layout = layoutOf(['winA'], ['rollA']);
     layout = setSlotFlex(layout, layout.slots[1].id, 3);
     expect(layout.slots[1].flexGrow).toBe(3);
   });
@@ -191,7 +191,7 @@ describe('横幅の取り分', () => {
   });
 
   it('均等に戻せる', () => {
-    let layout = layoutOf(['winA'], ['roll']);
+    let layout = layoutOf(['winA'], ['rollA']);
     layout = setSlotFlex(layout, layout.slots[0].id, 5);
     expect(evenOutSlots(layout).slots.every((s) => s.flexGrow === 1)).toBe(true);
   });
@@ -199,18 +199,18 @@ describe('横幅の取り分', () => {
 
 describe('不変条件', () => {
   it('表示中の面は必ずその枠に含まれる', () => {
-    let layout = layoutOf(['winA', 'winB', 'roll']);
+    let layout = layoutOf(['winA', 'winB', 'rollA']);
     const id = layout.slots[0].id;
-    layout = setActivePane(layout, id, 'roll');
-    layout = hidePane(layout, 'roll');
+    layout = setActivePane(layout, id, 'rollA');
+    layout = hidePane(layout, 'rollA');
     const slot = layout.slots[0];
     expect(slot.panes).toContain(slot.activePane);
   });
 
   it('同じ面が 2 か所に現れない', () => {
-    let layout = layoutOf(['winA'], ['winB'], ['roll']);
-    layout = movePaneToSlot(layout, 'roll', layout.slots[0].id);
-    layout = movePaneToIndex(layout, 'roll', 2);
+    let layout = layoutOf(['winA'], ['winB'], ['rollA']);
+    layout = movePaneToSlot(layout, 'rollA', layout.slots[0].id);
+    layout = movePaneToIndex(layout, 'rollA', 2);
     const all = layout.slots.flatMap((s) => s.panes);
     expect(new Set(all).size).toBe(all.length);
   });
@@ -218,7 +218,7 @@ describe('不変条件', () => {
   it('枠の識別子は重複しない', () => {
     let layout = layoutOf(['winA']);
     layout = showPane(layout, 'winB');
-    layout = showPane(layout, 'roll');
+    layout = showPane(layout, 'rollA');
     const ids = layout.slots.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -226,8 +226,8 @@ describe('不変条件', () => {
   it('存在しない面や枠を指定しても落ちない', () => {
     const layout = layoutOf(['winA']);
     expect(() => setActivePane(layout, 'なし', 'winA')).not.toThrow();
-    expect(() => movePaneToSlot(layout, 'roll', 'なし')).not.toThrow();
+    expect(() => movePaneToSlot(layout, 'rollA', 'なし')).not.toThrow();
     expect(() => moveSlot(layout, 'なし', 0)).not.toThrow();
-    expect(findSlotOf(layout, 'roll')).toBeNull();
+    expect(findSlotOf(layout, 'rollA')).toBeNull();
   });
 });
