@@ -88,20 +88,45 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     set({ psdLayers: updated, currentImage: nextImage });
   },
 
-  reorderPsdLayers: (fromIndex, toIndex) => {
-    const { psdLayers, currentImage } = get();
-    if (fromIndex < 0 || fromIndex >= psdLayers.length || toIndex < 0 || toIndex >= psdLayers.length) {
-      return;
-    }
-    const updated = [...psdLayers];
-    const [moved] = updated.splice(fromIndex, 1);
-    updated.splice(toIndex, 0, moved);
+  reorderPsdLayers: (fromIndex: number, toIndex: number) => {
+    const { psdLayers } = get();
+    if (fromIndex < 0 || fromIndex >= psdLayers.length || toIndex < 0 || toIndex >= psdLayers.length) return;
 
-    let nextImage = currentImage;
-    if (currentImage && updated.length > 0) {
-      nextImage = renderPsdComposite(currentImage.width, currentImage.height, updated);
+    const nextLayers = psdLayers.slice();
+    const [moved] = nextLayers.splice(fromIndex, 1);
+    nextLayers.splice(toIndex, 0, moved);
+
+    set({ psdLayers: nextLayers });
+    get().triggerRender();
+  },
+
+  stepPdfPage: (delta: number) => {
+    const { psdLayers, activePsdLayerId, setActivePsdLayerId } = get();
+    if (!psdLayers || psdLayers.length === 0) return false;
+
+    const pdfPages = psdLayers.filter((l) => l.id.startsWith('pdf-page-'));
+    if (pdfPages.length === 0) return false;
+
+    let currentIdx = pdfPages.findIndex((l) => l.id === activePsdLayerId);
+    if (currentIdx < 0) {
+      currentIdx = pdfPages.findIndex((l) => l.visible);
     }
-    set({ psdLayers: updated, currentImage: nextImage });
+    if (currentIdx < 0) currentIdx = 0;
+
+    const nextIdx = Math.max(0, Math.min(pdfPages.length - 1, currentIdx + delta));
+    const targetPage = pdfPages[nextIdx];
+
+    const updatedPsdLayers = psdLayers.map((l) => {
+      if (l.id.startsWith('pdf-page-')) {
+        return { ...l, visible: l.id === targetPage.id };
+      }
+      return l;
+    });
+
+    get().setPsdLayers(updatedPsdLayers);
+    setActivePsdLayerId(targetPage.id);
+    get().triggerRender();
+    return true;
   },
 
   currentImage: null,

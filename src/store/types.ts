@@ -760,6 +760,7 @@ export interface DocumentSlice {
   setPsdLayerOpacity: (id: string, opacity: number) => void
   setPsdLayerBlendMode: (id: string, blendMode: string) => void
   reorderPsdLayers: (fromIndex: number, toIndex: number) => void
+  stepPdfPage: (delta: number) => boolean
   // --- 画像データバッファ & プリフェッチキャッシュ ---
   currentImage: TGAImage | null
   splitImage: TGAImage | null

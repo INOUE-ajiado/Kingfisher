@@ -157,29 +157,36 @@ export const useGlobalShortcuts = () => {
       // 以前は 1 / 2 / 3 に修飾キーの判定が無く、Ctrl+1 でブラウザのタブが
       // 切り替わると同時にパレットのタブまで変わっていた。
       const hasModifier = e.ctrlKey || e.altKey || e.metaKey;
-
-      if (e.key === 'F1') {
-      e.preventDefault();
-      e.stopPropagation();
-      window.open('/Kingfisher_Manual.html', '_blank');
-      return;
-      }
-
       if (hasModifier) return;
+
+      // 🟢 4. PDF ページ送り/戻しキー (← / → / ArrowLeft / ArrowRight)
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        const store = usePaintStore.getState();
+        const delta = e.key === 'ArrowRight' ? 1 : -1;
+        if (store.stepPdfPage(delta)) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+      }
 
       // コマ送りキー (PageDown / ↓ / テンキー3)
       // ⚠️ どのキーで動いたかを DEBUG ログへ残す。2 画面連動の追跡でここが要る
       if (e.key === 'PageDown' || e.key === 'ArrowDown' || e.code === 'Numpad3') {
-      e.preventDefault();
-      nextCell(`キー ${e.key === 'ArrowDown' ? '↓' : e.key}`);
-      return;
+        e.preventDefault();
+        const store = usePaintStore.getState();
+        if (store.stepPdfPage(1)) return;
+        nextCell(`キー ${e.key === 'ArrowDown' ? '↓' : e.key}`);
+        return;
       }
 
       // コマ戻しキー (PageUp / ↑ / テンキー9)
       if (e.key === 'PageUp' || e.key === 'ArrowUp' || e.code === 'Numpad9') {
-      e.preventDefault();
-      prevCell(`キー ${e.key === 'ArrowUp' ? '↑' : e.key}`);
-      return;
+        e.preventDefault();
+        const store = usePaintStore.getState();
+        if (store.stepPdfPage(-1)) return;
+        prevCell(`キー ${e.key === 'ArrowUp' ? '↑' : e.key}`);
+        return;
       }
 
       // パレットタブ切替 (1: Normal, 2: Shadow, 3: Highlight)
