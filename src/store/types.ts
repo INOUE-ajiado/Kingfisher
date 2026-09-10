@@ -750,6 +750,9 @@ export interface DocumentSlice {
   // --- PSD レイヤー管理 ---
   psdLayers: PSDLayerData[]
   activePsdLayerId: string | null
+  isPsdLoading: boolean
+  psdLoadingFileName: string | null
+  setIsPsdLoading: (loading: boolean, fileName?: string | null) => void
   setPsdLayers: (layers: PSDLayerData[]) => void
   setActivePsdLayerId: (id: string | null) => void
   togglePsdLayerVisibility: (id: string) => void

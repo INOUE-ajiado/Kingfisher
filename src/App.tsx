@@ -375,9 +375,9 @@ export const App: React.FC = () => {
               <div className="flex-1 flex flex-col gap-0 overflow-y-auto no-scrollbar">
                 {(() => {
                   const lowerPanels = [
+                    { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
                     { key: 'toolOptions', visible: panelVisibility.toolOptions, component: <ToolOptionsPanel /> },
                     { key: 'colorChart', visible: panelVisibility.colorChart, component: <ColorChart /> },
-                    { key: 'layerPanel', visible: panelVisibility.layerPanel, component: <LayerPanel /> },
                     { key: 'historyPanel', visible: panelVisibility.historyPanel, component: <HistoryPanel /> },
                   ].filter((p) => p.visible);
 
