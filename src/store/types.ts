@@ -13,8 +13,9 @@ import { RotateDirection } from '../engine/rotateImage';
 import { compareNatural } from '../engine/naturalOrder';
 import { CodecInfo as VideoCodecInfo, DroppedVideo } from '../engine/videoSource';
 import { PaneLayout, PaneId } from '../engine/paneLayout';
+import { PSDLayerData } from '../engine/psdLayers';
 
-export type { PaneLayout, PaneId };
+export type { PaneLayout, PaneId, PSDLayerData };
 
 export type { VideoCodecInfo, DroppedVideo };
 
@@ -746,6 +747,13 @@ export interface FileSlice {
 
 /** 編集中の画像・キャッシュ・未保存管理・操作履歴・再生 */
 export interface DocumentSlice {
+  // --- PSD レイヤー管理 ---
+  psdLayers: PSDLayerData[]
+  activePsdLayerId: string | null
+  setPsdLayers: (layers: PSDLayerData[]) => void
+  togglePsdLayerVisibility: (id: string) => void
+  setPsdLayerOpacity: (id: string, opacity: number) => void
+  reorderPsdLayers: (fromIndex: number, toIndex: number) => void
   // --- 画像データバッファ & プリフェッチキャッシュ ---
   currentImage: TGAImage | null
   splitImage: TGAImage | null

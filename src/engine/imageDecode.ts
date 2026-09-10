@@ -6,7 +6,8 @@
  */
 
 import { decodeTGA, TGAImage } from './tga';
-import { readPsd } from 'ag-psd';
+import { parsePsdLayers, PSDDecodeResult } from './psdLayers';
+import { usePaintStore } from '../store/usePaintStore';
 
 /** 画像ファイルが Kingfisher の編集対象 (TGA) かどうか */
 export function isTgaFile(fileName: string): boolean {
@@ -21,33 +22,19 @@ export function isPsdFile(fileName: string): boolean {
 /** PSD ファイルを RGBA 配列へデコードする (閲覧専用扱い) */
 async function decodePsdImageFile(file: File): Promise<TGAImage> {
   const buffer = await file.arrayBuffer();
-  const psd = readPsd(buffer);
+  const result: PSDDecodeResult = parsePsdLayers(buffer);
 
-  if (psd.canvas) {
-    const ctx = psd.canvas.getContext('2d');
-    if (ctx) {
-      const imgData = ctx.getImageData(0, 0, psd.width, psd.height);
-      return {
-        width: psd.width,
-        height: psd.height,
-        pixelDepth: 32,
-        data: imgData.data,
-        isReadOnly: true,
-      };
+  // ストアへ PSD レイヤー情報を流し込み
+  try {
+    const store = usePaintStore.getState();
+    if (store && typeof store.setPsdLayers === 'function') {
+      store.setPsdLayers(result.layers);
     }
+  } catch (err) {
+    // コンテキスト外等の安全ガード
   }
 
-  if (psd.imageData) {
-    return {
-      width: psd.width,
-      height: psd.height,
-      pixelDepth: 32,
-      data: new Uint8ClampedArray(psd.imageData.data),
-      isReadOnly: true,
-    };
-  }
-
-  throw new Error('PSD 画像のデコードに失敗しました。');
+  return result.compositeImage;
 }
 
 /**

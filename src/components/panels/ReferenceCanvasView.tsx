@@ -223,8 +223,25 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newScale = Math.min(Math.max(0.2, referenceCanvas.transform.scale * zoomFactor), 5.0);
-    setReferenceTransform({ ...referenceCanvas.transform, scale: newScale });
+    const currentTransform = referenceCanvas.transform;
+    const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
+
+    // 🎯 マウスカーソル座標を中心とするアンカーズームオフセット計算
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+
+    const scaleRatio = newScale / currentTransform.scale;
+    const newOffsetX = (mx - cx) * (1 - scaleRatio) + currentTransform.offsetX * scaleRatio;
+    const newOffsetY = (my - cy) * (1 - scaleRatio) + currentTransform.offsetY * scaleRatio;
+
+    setReferenceTransform({
+      scale: newScale,
+      offsetX: newOffsetX,
+      offsetY: newOffsetY,
+    });
   };
 
   // ⚠️ 完全シームレスな引きはがし (Tear-off) ＆ 独立ウィンドウ自由移動ハンドラー
