@@ -49,7 +49,7 @@ export async function resolveFileHandle(
  * 以前は経路ごとに条件が散っており (`.tga` のみ / `.tga` と `.jpg` だけ /
  * 4 種すべて)、同じフォルダでも開き方によって .png が見えたり見えなかったりした。
  */
-export const SUPPORTED_IMAGE_PATTERN = /\.(tga|png|jpe?g|psd)$/i;
+export const SUPPORTED_IMAGE_PATTERN = /\.(tga|png|jpe?g|psd|pdf)$/i;
 
 export function isSupportedImageFile(fileName: string): boolean {
   return SUPPORTED_IMAGE_PATTERN.test(fileName);
