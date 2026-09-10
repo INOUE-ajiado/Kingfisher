@@ -983,23 +983,24 @@ ${padded} 枚は穴を合わせられなかったので、画寸だけ揃えま�
 
   toggleSyncMode: () =>
     set((state) => {
+      const nextSyncMode = !state.syncMode;
+      state.setRollSyncAll(nextSyncMode);
+
       if (!state.syncMode) {
         // 連動開始: 今それぞれが表示しているコマの差をそのまま保つ。
-        // 以前は Win B を Win A の位置へ強制的に合わせていたため、
-        // 狙って選んだコマがずれてしまっていた。
         const offset = state.splitFileIndex - state.currentFileIndex;
         const nameA = state.resolveFileNameForView(state.currentFileIndex, 0) ?? '実体なし';
         const nameB = state.resolveFileNameForView(state.splitFileIndex, 1) ?? '実体なし';
         logDebug(
           'sync',
-          `左右連動を入れた (コマ差 ${offset > 0 ? `+${offset}` : offset})`,
-          `この 2 枚を対にして固定: Win A=${state.currentFileIndex} (${nameA}) ⇄ Win B=${state.splitFileIndex} (${nameB})`
+          `共通連携を入れた (セルコマ差 ${offset > 0 ? `+${offset}` : offset} / ロール連携 ON)`,
+          `Win A=${state.currentFileIndex} (${nameA}) ⇄ Win B=${state.splitFileIndex} (${nameB})`
         );
         return { syncMode: true, syncFrameOffset: offset };
       }
       logDebug(
         'sync',
-        '左右連動を切った',
+        '共通連携を切った (セル連動 OFF / ロール連携 OFF)',
         `切った時点 Win A=${state.currentFileIndex} (${state.resolveFileNameForView(state.currentFileIndex, 0) ?? '実体なし'}) / ` +
           `Win B=${state.splitFileIndex} (${state.resolveFileNameForView(state.splitFileIndex, 1) ?? '実体なし'})`
       );

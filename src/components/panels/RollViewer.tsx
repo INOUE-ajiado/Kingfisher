@@ -82,8 +82,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     stepRoll,
     reportRollPlaybackFailure,
     setRollFps,
-    toggleRollSync,
     updateRollSyncOffset,
+    toggleSyncMode,
+    syncMode,
     openRollWindow,
   } = usePaintStore();
 
@@ -469,22 +470,6 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     );
   };
 
-  /**
-   * 連動の開始 / 終了。
-   *
-   * ⚠️ 開始時の時刻差を保つこと。片方を頭出ししてから連動させる使い方があるので、
-   * 強制的に同じ時刻へ合わせると狙って選んだ位置がずれる (セルの左右連動と同じ考え方)。
-   */
-  const handleToggleSync = () => {
-    if (roll.sync) {
-      toggleRollSync();
-      return;
-    }
-    const a = getRollVideo('rollA');
-    const b = getRollVideo('rollB');
-    const offset = a && b ? b.currentTime - a.currentTime : 0;
-    toggleRollSync(offset);
-  };
 
   /**
    * キーボード操作。← → でコマ送り (2 面いっしょ)、↑ ↓ で前後のロール、
@@ -642,17 +627,17 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
           {partnerOpen && (
             <button
-              onClick={(e) => { e.stopPropagation(); handleToggleSync(); }}
+              onClick={(e) => { e.stopPropagation(); toggleSyncMode(); }}
               title={
-                roll.sync
-                  ? '再生の連動を解除する'
-                  : 'もう一方のロールと再生を連動させる (今の時刻差を保ちます)。ツリーで選ぶロールの連動はファイルツリー側の「選択連動」'
+                roll.sync || syncMode
+                  ? '連携を解除する (セル・ロール全体の共通連携)'
+                  : '連携を入れる (セル・ロール全体の共通連携)'
               }
               className={`p-0.5 rounded transition-colors ${
-                roll.sync ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/25'
+                roll.sync || syncMode ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/25'
               }`}
             >
-              {roll.sync ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
+              {roll.sync || syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
             </button>
           )}
           <button

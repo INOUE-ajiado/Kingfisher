@@ -17,6 +17,7 @@ import { StateCreator } from 'zustand';
 import { PaintStore, RollSlice, RollState, RollViewState, RollId, ROLL_IDS } from '../types';
 import { DroppedVideo, toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
 import { logDebug } from '../../engine/debugLog';
+import { getRollVideo } from '../../components/panels/rollVideoRegistry';
 
 /** 推定できるまでのコマ送りの既定値。日本のアニメは 24fps 基準 */
 const DEFAULT_FPS = 24;
@@ -422,6 +423,41 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       if (!state.roll.sync) return state;
       logDebug('sync', `ロールの再生連動の時刻差を更新 (時刻差 ${offset.toFixed(3)} 秒)`);
       return { roll: { ...state.roll, syncOffset: offset } };
+    }),
+
+  setRollSyncAll: (enabled: boolean) =>
+    set((state) => {
+      if (!enabled) {
+        logDebug('sync', 'ロールの連携を一括で解除した');
+        return { roll: { ...state.roll, sync: false, fileSync: false } };
+      }
+
+      const a = getRollVideo('rollA');
+      const b = getRollVideo('rollB');
+      const timeOffset = a && b ? b.currentTime - a.currentTime : state.roll.syncOffset;
+
+      let { rollA, rollB } = state.roll.views;
+      let atA = indexOfCurrent(rollA);
+      let atB = indexOfCurrent(rollB);
+
+      let nextRoll: RollState = { ...state.roll, sync: true, syncOffset: timeOffset };
+
+      if (rollA.files.length > 0 && rollB.files.length > 0) {
+        if (atA >= 0 && atB < 0) {
+          const targetIdx = Math.min(rollB.files.length - 1, atA);
+          nextRoll = withView(nextRoll, 'rollB', openedView(rollB, rollB.files[targetIdx]));
+          atB = targetIdx;
+        } else if (atB >= 0 && atA < 0) {
+          const targetIdx = Math.min(rollA.files.length - 1, atB);
+          nextRoll = withView(nextRoll, 'rollA', openedView(rollA, rollA.files[targetIdx]));
+          atA = targetIdx;
+        }
+        const fileOffset = atA >= 0 && atB >= 0 ? atB - atA : 0;
+        nextRoll = { ...nextRoll, fileSync: true, fileSyncOffset: fileOffset };
+      }
+
+      logDebug('sync', 'ロールの連携を一括で有効化した', describeRollPair(nextRoll));
+      return { roll: nextRoll };
     }),
 
   /**
