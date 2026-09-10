@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 // Firebase configuration for project kingfisher-paint-2026
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDummyKeyForKingfisherPaint2026",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyD9BhCdyGWfchjMrI3J7SkCbgi0sHRWeG4",
   authDomain: "kingfisher-paint-2026.firebaseapp.com",
   projectId: "kingfisher-paint-2026",
   storageBucket: "kingfisher-paint-2026.firebasestorage.app",
   messagingSenderId: "274734495597",
-  appId: "1:274734495597:web:a61d19859f518a4a4b5bf7"
+  appId: "1:274734495597:web:e1d3bca484e279c2abcc64"
 };
 
 // Initialize Firebase App
