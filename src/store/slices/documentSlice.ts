@@ -5,12 +5,62 @@
 import { StateCreator } from 'zustand';
 import { encodeTGA } from '../../engine/tga';
 import { resolveFileHandle, ensureWritePermission } from '../../engine/fileSystemPath';
+import { renderPsdComposite } from '../../engine/psdLayers';
 import { PaintStore, DocumentSlice } from '../types';
 
 /** 1 セルあたりに保持する履歴の最大数 (基準状態「編集前」を含む) */
 const MAX_HISTORY = 30;
 
 export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice> = (set, get) => ({
+  psdLayers: [],
+  activePsdLayerId: null,
+
+  setPsdLayers: (layers) =>
+    set({
+      psdLayers: layers,
+      activePsdLayerId: layers.length > 0 ? layers[0].id : null,
+    }),
+
+  togglePsdLayerVisibility: (id) => {
+    const { psdLayers, currentImage } = get();
+    const updated = psdLayers.map((layer) =>
+      layer.id === id ? { ...layer, visible: !layer.visible } : layer
+    );
+    let nextImage = currentImage;
+    if (currentImage && updated.length > 0) {
+      nextImage = renderPsdComposite(currentImage.width, currentImage.height, updated);
+    }
+    set({ psdLayers: updated, currentImage: nextImage });
+  },
+
+  setPsdLayerOpacity: (id, opacity) => {
+    const { psdLayers, currentImage } = get();
+    const updated = psdLayers.map((layer) =>
+      layer.id === id ? { ...layer, opacity: Math.max(0, Math.min(1, opacity)) } : layer
+    );
+    let nextImage = currentImage;
+    if (currentImage && updated.length > 0) {
+      nextImage = renderPsdComposite(currentImage.width, currentImage.height, updated);
+    }
+    set({ psdLayers: updated, currentImage: nextImage });
+  },
+
+  reorderPsdLayers: (fromIndex, toIndex) => {
+    const { psdLayers, currentImage } = get();
+    if (fromIndex < 0 || fromIndex >= psdLayers.length || toIndex < 0 || toIndex >= psdLayers.length) {
+      return;
+    }
+    const updated = [...psdLayers];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
+
+    let nextImage = currentImage;
+    if (currentImage && updated.length > 0) {
+      nextImage = renderPsdComposite(currentImage.width, currentImage.height, updated);
+    }
+    set({ psdLayers: updated, currentImage: nextImage });
+  },
+
   currentImage: null,
 
   splitImage: null,
