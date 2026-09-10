@@ -47,6 +47,18 @@ export const createDocumentSlice: StateCreator<PaintStore, [], [], DocumentSlice
     set({ psdLayers: updated, currentImage: nextImage });
   },
 
+  setPsdLayerBlendMode: (id, blendMode) => {
+    const { psdLayers, currentImage } = get();
+    const updated = psdLayers.map((layer) =>
+      layer.id === id ? { ...layer, blendMode } : layer
+    );
+    let nextImage = currentImage;
+    if (currentImage && updated.length > 0) {
+      nextImage = renderPsdComposite(currentImage.width, currentImage.height, updated);
+    }
+    set({ psdLayers: updated, currentImage: nextImage });
+  },
+
   reorderPsdLayers: (fromIndex, toIndex) => {
     const { psdLayers, currentImage } = get();
     if (fromIndex < 0 || fromIndex >= psdLayers.length || toIndex < 0 || toIndex >= psdLayers.length) {

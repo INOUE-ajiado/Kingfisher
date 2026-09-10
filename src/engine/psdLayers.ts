@@ -105,6 +105,47 @@ function canvasToTgaImage(canvas: HTMLCanvasElement): TGAImage | null {
   };
 }
 
+export function mapPsdBlendModeToCanvas(blendMode?: string): GlobalCompositeOperation {
+  if (!blendMode) return 'source-over';
+  const mode = blendMode.toLowerCase().replace(/[\s\-_]/g, '');
+  switch (mode) {
+    case 'multiply':
+      return 'multiply';
+    case 'screen':
+      return 'screen';
+    case 'overlay':
+      return 'overlay';
+    case 'darken':
+      return 'darken';
+    case 'lighten':
+      return 'lighten';
+    case 'colordodge':
+      return 'color-dodge';
+    case 'colorburn':
+      return 'color-burn';
+    case 'hardlight':
+      return 'hard-light';
+    case 'softlight':
+      return 'soft-light';
+    case 'difference':
+      return 'difference';
+    case 'exclusion':
+      return 'exclusion';
+    case 'hue':
+      return 'hue';
+    case 'saturation':
+      return 'saturation';
+    case 'color':
+      return 'color';
+    case 'luminosity':
+      return 'luminosity';
+    case 'normal':
+    case 'passthrough':
+    default:
+      return 'source-over';
+  }
+}
+
 /**
  * 有効な PSD レイヤー群をキャンバス上で下層から順に重ね合わせて合成し、
  * Kingfisher 共通の TGAImage 形式として出力する。
@@ -131,6 +172,7 @@ export function renderPsdComposite(
 
         ctx.save();
         ctx.globalAlpha = layer.opacity;
+        ctx.globalCompositeOperation = mapPsdBlendModeToCanvas(layer.blendMode);
 
         if (layer.canvas) {
           ctx.drawImage(layer.canvas, layer.left, layer.top);
