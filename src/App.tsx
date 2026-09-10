@@ -24,7 +24,7 @@ import { ExportTraceModal } from './components/modals/ExportTraceModal';
 import { AuthGuardModal } from './components/modals/AuthGuardModal';
 import { MobileGuard } from './components/common/MobileGuard';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { auth } from './engine/firebase';
 
 export const App: React.FC = () => {
@@ -42,6 +42,16 @@ export const App: React.FC = () => {
   // Firebase Authentication リスナーの設定
   useEffect(() => {
     setAuthChecking(true);
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          setUser(result.user);
+        }
+      })
+      .catch((err) => {
+        console.error('Redirect result error:', err);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
     });

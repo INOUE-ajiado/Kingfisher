@@ -1,5 +1,5 @@
 import { StateCreator } from 'zustand';
-import { signInWithPopup, signOut, User } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, signOut, User } from 'firebase/auth';
 import { auth, googleProvider, isAjiadoDomain } from '../../engine/firebase';
 import { PaintStore, AuthSlice } from '../types';
 
@@ -35,6 +35,7 @@ export const createAuthSlice: StateCreator<PaintStore, [], [], AuthSlice> = (set
   loginWithGoogle: async (): Promise<boolean> => {
     set({ authError: null, isAuthChecking: true });
     try {
+      // Try popup first
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
 
@@ -54,18 +55,35 @@ export const createAuthSlice: StateCreator<PaintStore, [], [], AuthSlice> = (set
     } catch (err: any) {
       console.error('Google Sign-In Error:', err);
 
+      // If popup is blocked by COOP policy or popup-closed-by-user, fallback to Redirect mode
+      if (
+        err.code === 'auth/popup-closed-by-user' ||
+        err.code === 'auth/popup-blocked' ||
+        err.message?.includes('Cross-Origin-Opener-Policy')
+      ) {
+        console.log('Falling back to signInWithRedirect due to COOP / popup restriction...');
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return true;
+        } catch (redirectErr: any) {
+          console.error('Redirect Sign-In Error:', redirectErr);
+          set({
+            user: null,
+            isAuthenticated: false,
+            isAuthChecking: false,
+            authError: redirectErr.message || 'ログイン中にエラーが発生しました。'
+          });
+          return false;
+        }
+      }
+
       let errorMessage = 'ログイン中にエラーが発生しました。';
-      if (err.code === 'auth/popup-closed-by-user') {
-        set({ isAuthChecking: false, authError: null });
-        return false;
-      } else if (err.code === 'auth/invalid-api-key' || err.message?.includes('API key')) {
-        errorMessage = 'Firebase APIキーが未設定または無効です。Firebase Consoleのプロジェクト設定から有効なWeb APIキーを設定してください。';
+      if (err.code === 'auth/invalid-api-key' || err.message?.includes('API key')) {
+        errorMessage = 'Firebase APIキーが未設定または無効です。';
       } else if (err.code === 'auth/operation-not-allowed') {
-        errorMessage = 'Firebase Consoleで「Google認証プロバイダ」が有効化されていません。Authentication > Sign-in method でGoogleを有効にしてください。';
+        errorMessage = 'Firebase Consoleで「Google認証プロバイダ」が有効化されていません。';
       } else if (err.code === 'auth/unauthorized-domain') {
         errorMessage = '現在のドメインがFirebase Consoleの「承認済みドメイン (Authorized domains)」に追加されていません。';
-      } else if (err.code === 'auth/popup-blocked') {
-        errorMessage = 'ブラウザのポップアップがブロックされました。ポップアップを許可して再度お試しください。';
       } else if (err.message) {
         errorMessage = `認証エラー [${err.code || 'UNKNOWN'}]: ${err.message}`;
       }
