@@ -7,8 +7,8 @@ const firebaseConfig = {
   authDomain: "kingfisher-paint-2026.firebaseapp.com",
   projectId: "kingfisher-paint-2026",
   storageBucket: "kingfisher-paint-2026.firebasestorage.app",
-  messagingSenderId: "367332219782",
-  appId: "1:367332219782:web:a61d19859f518a4a4b5bf7"
+  messagingSenderId: "274734495597",
+  appId: "1:274734495597:web:a61d19859f518a4a4b5bf7"
 };
 
 // Initialize Firebase App
