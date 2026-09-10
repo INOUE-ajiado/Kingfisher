@@ -325,15 +325,16 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   /**
    * 再生 / 一時停止。
    *
-   * both を立てると、再生の連動を入れていなくても 2 面いっしょに動かす
-   * (Space の「同時再生」)。時刻を揃えるかどうかは従来どおり連動の有無で決まる。
+   * both または roll.sync を立てると 2 面いっしょに動かす。
+   * ⚠️ ロール映像の尺が異なる場合、同じ尺分連動し、尺が足りないロールは最後で留まり、
+   * 尺が長い方のロールの再生・操作を優先する。
    */
   const togglePlay = (both = false) => {
     const video = videoRef.current;
     if (!video) return;
-    // 連動中はこちらが主導する。押した側をアクティブにしておく
     setActiveRollId(rollId);
-    const partner = both ? getRollVideo(otherRollId(rollId)) : partnerVideo();
+    const isSyncOn = usePaintStore.getState().roll.sync;
+    const partner = (both || isSyncOn) ? getRollVideo(otherRollId(rollId)) : partnerVideo();
 
     if (!video.paused) {
       video.pause();
@@ -347,18 +348,12 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       return;
     }
 
-    /**
-     * ⚠️ Space の同時再生は、流している間の時刻差を覚えて足並みを保つ。
-     * ⚠️ 終わりまで再生しきった状態から押したときは、2 本とも頭へ戻すこと。
-     * ブラウザは終わった映像だけを頭から流し直すので、そのままだと
-     * 片方が途中、片方が頭という並びになり、見比べにならない。
-     */
-    if (both && partner) {
-      if (video.ended) {
+    if (partner) {
+      if (video.ended && partner.ended) {
         video.currentTime = 0;
         partner.currentTime = 0;
-        beginPairedPlayback(0);
-      } else {
+        if (both) beginPairedPlayback(0);
+      } else if (both) {
         beginPairedPlayback(rollId === 'rollA' ? partner.currentTime - video.currentTime : video.currentTime - partner.currentTime);
       }
     }
@@ -367,14 +362,20 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     syncPartnerTime(video.currentTime);
     logDebug(
       'roll',
-      `再生 — ${tone.label} から${both ? ' (Space: 2 面同時)' : ''}${partner ? ' / 相手も動かす' : ''}`,
+      `再生 — ${tone.label} から${both ? ' (Space)' : ''}${partner ? ' / 相手も動かす' : ''}`,
       `${describeRollTimes()} / ${describeRollSync()}` +
         `${getPairedPlaybackOffset() !== null ? ` / 同時再生の時刻差 ${getPairedPlaybackOffset()!.toFixed(3)}s を保つ` : ''}`
     );
-    // ⚠️ 握り潰さないこと。ボタンからの再生はユーザー操作なので普通は通るが、
-    // 自動再生ポリシーで弾かれると「押しても何も起きない」だけになり原因が追えない。
+
     video.play().catch((err) => console.error('Failed to play roll:', err));
-    partner?.play().catch((err) => console.error('Failed to play linked roll:', err));
+    if (partner) {
+      // 相手が終端に達していても、長い方が動く場合は再生させて終端位置を維持する
+      if (partner.ended) {
+        const partnerDuration = Number.isFinite(partner.duration) ? partner.duration : 0;
+        partner.currentTime = Math.max(0, partnerDuration - 0.05);
+      }
+      partner.play().catch((err) => console.error('Failed to play linked roll:', err));
+    }
   };
 
   /**
@@ -614,12 +615,20 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
         </div>
         <div className="flex items-center gap-1">
-          {isActive && partnerOpen && (
+          {partnerOpen && (roll.sync || roll.fileSync || isActive) && (
             <span
-              title="ツリーから映像を選ぶと、この面に開きます"
-              className="text-[9px] font-bold bg-amber-400 text-slate-900 px-1 rounded flex-shrink-0"
+              title={
+                roll.sync || roll.fileSync
+                  ? '連動中: ファイル選択や操作が 2 画面で連携します'
+                  : 'ツリーから映像を選ぶと、この面に開きます'
+              }
+              className={`text-[9px] font-bold px-1 rounded flex-shrink-0 ${
+                roll.sync || roll.fileSync
+                  ? 'bg-emerald-400 text-slate-900'
+                  : 'bg-amber-400 text-slate-900'
+              }`}
             >
-              選択先
+              {roll.sync || roll.fileSync ? '選択先 (連動)' : '選択先'}
             </span>
           )}
           {!partnerOpen && (
@@ -681,9 +690,17 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             onPlay={() => setIsPlaying(true)}
             onPause={() => setIsPlaying(false)}
             onEnded={() => {
+              const partner = partnerVideo() ?? (usePaintStore.getState().roll.sync ? getRollVideo(otherRollId(rollId)) : null);
+              if (partner) {
+                const partnerDuration = Number.isFinite(partner.duration) ? partner.duration : 0;
+                // ⚠️ 相手の動画がまだ終わっていない（尺が長い）場合は、短かった側は最後で留まり、相手の再生を継続する
+                if (!partner.ended && partner.currentTime < partnerDuration - 0.1) {
+                  logDebug('roll', `${tone.label} が終端に到達。尺の長い相手の再生を継続します`);
+                  return;
+                }
+                partner.pause();
+              }
               setIsPlaying(false);
-              const partner = partnerVideo();
-              partner?.pause();
               endPairedPlayback();
             }}
             onSeeked={(e) => paintTime(e.currentTarget.currentTime)}
