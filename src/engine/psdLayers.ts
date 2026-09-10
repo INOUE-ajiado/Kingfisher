@@ -1,5 +1,6 @@
 import { readPsd, Layer as AgLayer } from 'ag-psd';
 import { TGAImage } from './tga';
+import { usePaintStore } from '../store/usePaintStore';
 
 export interface PSDLayerData {
   id: string;
@@ -26,26 +27,27 @@ export function parsePsdLayers(buffer: ArrayBuffer): PSDDecodeResult {
   const layers: PSDLayerData[] = [];
   let seq = 0;
 
-  function collectLayers(items?: AgLayer[]) {
+  function collectLayers(items?: AgLayer[], parentVisible = true, parentOpacity = 1.0) {
     if (!items) return;
     for (const item of items) {
-      // フォルダ（グループ）ではなく画像データを持つレイヤーを抽出
+      const itemVisible = parentVisible && item.hidden !== true;
+      const itemOpacity = parentOpacity * (typeof item.opacity === 'number' ? item.opacity : 1.0);
+
+      // フォルダ（グループ）の場合、非表示・透明度を引き継いで再帰走査
       if (item.children) {
-        collectLayers(item.children);
+        collectLayers(item.children, itemVisible, itemOpacity);
       } else {
         seq += 1;
         const left = item.left || 0;
         const top = item.top || 0;
         const width = item.canvas ? item.canvas.width : (typeof item.right === 'number' ? item.right - left : 0);
         const height = item.canvas ? item.canvas.height : (typeof item.bottom === 'number' ? item.bottom - top : 0);
-        const opacity = typeof item.opacity === 'number' ? item.opacity : 1.0;
-        const visible = item.hidden !== true;
 
         layers.push({
           id: `psd-layer-${seq}`,
           name: item.name || `Layer ${seq}`,
-          visible,
-          opacity,
+          visible: itemVisible,
+          opacity: itemOpacity,
           blendMode: item.blendMode,
           left,
           top,
@@ -76,8 +78,27 @@ export function parsePsdLayers(buffer: ArrayBuffer): PSDDecodeResult {
     });
   }
 
-  // 合成された初期画像 (レイヤー操作前後で完全な描画一致を保つため renderPsdComposite を利用)
-  const compositeImage = renderPsdComposite(psd.width, psd.height, layers);
+  let compositeImage: TGAImage;
+
+  // Photoshop が保持する完璧な事前合成データ (psd.canvas) が存在する場合はそれを優先使用
+  if (psd.canvas && typeof document !== 'undefined') {
+    const ctx = psd.canvas.getContext('2d');
+    if (ctx) {
+      const imgData = ctx.getImageData(0, 0, psd.width, psd.height);
+      const isAuth = usePaintStore?.getState()?.isAuthenticated ?? false;
+      compositeImage = {
+        width: psd.width,
+        height: psd.height,
+        pixelDepth: 32,
+        data: imgData.data,
+        isReadOnly: !isAuth,
+      };
+    } else {
+      compositeImage = renderPsdComposite(psd.width, psd.height, layers);
+    }
+  } else {
+    compositeImage = renderPsdComposite(psd.width, psd.height, layers);
+  }
 
   return {
     compositeImage,
@@ -135,6 +156,8 @@ export function renderPsdComposite(
   height: number,
   layers: PSDLayerData[]
 ): TGAImage {
+  const isAuth = usePaintStore?.getState()?.isAuthenticated ?? false;
+
   if (typeof document !== 'undefined') {
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -168,8 +191,8 @@ export function renderPsdComposite(
         } else if (layer.imageData) {
           // imageData を描画用 Offscreen Canvas へ展開
           const tmpCanvas = document.createElement('canvas');
-          tmpCanvas.width = layer.imageData.width;
-          tmpCanvas.height = layer.imageData.height;
+          tmpCanvas.width = layer.imageData.width || layer.width;
+          tmpCanvas.height = layer.imageData.height || layer.height;
           const tmpCtx = tmpCanvas.getContext('2d');
           if (tmpCtx) {
             tmpCtx.putImageData(layer.imageData, 0, 0);
@@ -186,7 +209,7 @@ export function renderPsdComposite(
         height,
         pixelDepth: 32,
         data: imgData.data,
-        isReadOnly: true,
+        isReadOnly: !isAuth,
       };
     }
   }
@@ -197,6 +220,6 @@ export function renderPsdComposite(
     height,
     pixelDepth: 32,
     data: new Uint8ClampedArray(width * height * 4),
-    isReadOnly: true,
+    isReadOnly: !isAuth,
   };
 }
