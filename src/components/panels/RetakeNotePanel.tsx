@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Clock, Plus, Trash2, Download, Upload, Copy, Check, FileCode, Tag } from 'lucide-react';
+import { Clock, Plus, Trash2, Download, Upload, Copy, Check, FileCode, Tag, Edit2 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RollId } from '../../store/types';
 import { getRollVideo } from './rollVideoRegistry';
@@ -40,6 +40,12 @@ interface RetakeNotePanelProps {
   rollId: RollId;
 }
 
+interface ContextMenuState {
+  mouseX: number;
+  mouseY: number;
+  itemId: string;
+}
+
 export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
   const roll = usePaintStore((s) => s.roll);
   const view = roll.views[rollId];
@@ -50,7 +56,22 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // 編集モード状態
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [editingTag, setEditingTag] = useState('撮影');
+
+  // 右クリックコンテキストメニュー状態
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
   const videoName = view.fileName || '名称未設定';
+
+  // コンテキストメニュー外クリック時のクローズ処理
+  useEffect(() => {
+    const handleClickOutside = () => setContextMenu(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
 
   // 1. 自動保存からの復元
   useEffect(() => {
@@ -101,9 +122,36 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
     logDebug('roll', `リテイクメモ追加: [${timecode}] ${selectedTag}: ${newItem.text}`);
   };
 
+  /** アイテムの編集開始 */
+  const handleStartEdit = (item: RetakeItem) => {
+    setEditingItemId(item.id);
+    setEditingText(item.text);
+    setEditingTag(item.tag || '撮影');
+  };
+
+  /** アイテムの編集保存 */
+  const handleSaveEdit = (id: string) => {
+    if (!editingText.trim()) return;
+    const updated = items.map((it) => (it.id === id ? { ...it, text: editingText.trim(), tag: editingTag } : it));
+    updateItems(updated);
+    setEditingItemId(null);
+    logDebug('roll', `リテイクメモ更新: ${editingTag}: ${editingText.trim()}`);
+  };
+
   /** アイテムの削除 */
   const handleDeleteItem = (id: string) => {
     updateItems(items.filter((it) => it.id !== id));
+  };
+
+  /** 右クリックコンテキストメニュー発火 */
+  const handleItemContextMenu = (e: React.MouseEvent, item: RetakeItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      itemId: item.id,
+    });
   };
 
   /** 該当コマへのシーク */
@@ -161,7 +209,7 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900/60 backdrop-blur-md text-slate-100 text-[11px] p-2 select-none border-t border-white/10">
+    <div className="flex flex-col h-full bg-slate-900/60 backdrop-blur-md text-slate-100 text-[11px] p-2 select-none border-t border-white/10 relative">
       {/* パネルヘッダー */}
       <div className="flex items-center justify-between pb-2 border-b border-white/10">
         <div className="flex items-center gap-1.5 font-bold text-amber-300">
@@ -227,7 +275,7 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
             onPointerDown={(e) => e.currentTarget.blur()}
             onClick={() => {
               const { timecode } = getCurrentTimecode();
-              setInputText((prev) => `[${timecode}] ${prev}`);
+              setInputText((prev) => (prev ? `[${timecode}] ${prev}` : `[${timecode}] `));
             }}
             title="現在のタイムコードを入力欄に挿入"
             className="px-1.5 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 flex-shrink-0"
@@ -237,21 +285,30 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
           </button>
         </div>
 
-        <div className="flex items-center gap-1">
-          <input
-            type="text"
+        <div className="flex items-start gap-1.5">
+          <textarea
+            rows={3}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="リテイク指示・修正内容を入力..."
-            className="flex-1 bg-slate-950/70 border border-white/15 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400"
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter' && e.shiftKey) {
+                e.preventDefault();
+                handleAddItem();
+              }
+            }}
+            placeholder="リテイク指示・修正内容を入力... (Enterで改行 / Shift+Enterで追加)"
+            className="flex-1 bg-slate-950/70 border border-white/15 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400 resize-none leading-normal"
           />
           <button
             type="submit"
             tabIndex={-1}
             onPointerDown={(e) => e.currentTarget.blur()}
-            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold transition-colors"
+            title="リテイクメモを追加 (Shift+Enter)"
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold transition-colors flex items-center justify-center gap-1 flex-shrink-0 h-[58px]"
           >
             <Plus className="w-3.5 h-3.5" />
+            <span>追加</span>
           </button>
         </div>
       </form>
@@ -262,46 +319,122 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
           <div className="text-center text-slate-500 py-6 select-none">
             <Tag className="w-6 h-6 mx-auto mb-1 opacity-40" />
             <p>リテイクメモはありません</p>
-            <p className="text-[9px] opacity-70 mt-0.5">指示を入力して ➕ で追加してください</p>
+            <p className="text-[9px] opacity-70 mt-0.5">指示を入力して「追加」で保存してください</p>
           </div>
         ) : (
-          items.map((it) => (
-            <div
-              key={it.id}
-              className="group flex items-start justify-between gap-1.5 p-1.5 rounded bg-white/5 hover:bg-white/10 border border-white/5 transition-colors cursor-pointer"
-              onClick={() => handleSeekToItem(it)}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1 text-[9px] font-mono text-amber-300">
-                  <Clock className="w-3 h-3 text-indigo-400 flex-shrink-0" />
-                  <span>{it.timecode}</span>
-                  <span className="text-slate-400">(f:{it.frame})</span>
-                  {it.tag && (
-                    <span className="px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-bold ml-1">
-                      {it.tag}
-                    </span>
-                  )}
+          items.map((it) =>
+            editingItemId === it.id ? (
+              <div key={it.id} className="p-2 rounded bg-slate-950/90 border border-amber-400/70 space-y-1.5 my-1 shadow-lg">
+                <div className="flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-amber-300 font-bold">修正先:</span>
+                    <select
+                      value={editingTag}
+                      onChange={(e) => setEditingTag(e.target.value)}
+                      className="bg-slate-900 border border-white/20 rounded px-1.5 py-0.5 text-amber-300 font-bold text-[9px]"
+                    >
+                      {RETAKE_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-400">{it.timecode}</span>
                 </div>
-                <p className="text-slate-200 mt-0.5 whitespace-pre-wrap select-text leading-tight">
-                  {it.text}
-                </p>
+                <textarea
+                  rows={3}
+                  value={editingText}
+                  onChange={(e) => setEditingText(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter' && e.shiftKey) {
+                      e.preventDefault();
+                      handleSaveEdit(it.id);
+                    } else if (e.key === 'Escape') {
+                      setEditingItemId(null);
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-white/20 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400 resize-none leading-normal"
+                  autoFocus
+                />
+                <div className="flex items-center justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setEditingItemId(null)}
+                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px]"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveEdit(it.id)}
+                    className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px]"
+                  >
+                    保存 (Shift+Enter)
+                  </button>
+                </div>
               </div>
-              <button
-                tabIndex={-1}
-                onPointerDown={(e) => e.currentTarget.blur()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteItem(it.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 text-slate-400 hover:text-red-400 rounded transition-all"
-                title="削除"
+            ) : (
+              <div
+                key={it.id}
+                onContextMenu={(e) => handleItemContextMenu(e, it)}
+                onDoubleClick={() => handleStartEdit(it)}
+                onClick={() => handleSeekToItem(it)}
+                title="ダブルクリックで編集 / 右クリックでメニュー表示"
+                className="group flex items-start justify-between gap-1.5 p-1.5 rounded bg-white/5 hover:bg-white/10 border border-white/5 transition-colors cursor-pointer"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1 text-[9px] font-mono text-amber-300">
+                    <Clock className="w-3 h-3 text-indigo-400 flex-shrink-0" />
+                    <span>{it.timecode}</span>
+                    <span className="text-slate-400">(f:{it.frame})</span>
+                    {it.tag && (
+                      <span className="px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-bold ml-1">
+                        {it.tag}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-200 mt-0.5 whitespace-pre-wrap select-text leading-tight">
+                    {it.text}
+                  </p>
+                </div>
+              </div>
+            )
+          )
         )}
       </div>
+
+      {/* 右クリックコンテキストメニュー */}
+      {contextMenu && (
+        <div
+          style={{ top: contextMenu.mouseY, left: contextMenu.mouseX }}
+          className="fixed z-[100] bg-slate-800/95 backdrop-blur-md border border-white/20 rounded shadow-2xl text-[11px] text-slate-100 py-1 min-w-[110px] select-none"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => {
+              const item = items.find((it) => it.id === contextMenu.itemId);
+              if (item) handleStartEdit(item);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-amber-500 hover:text-slate-950 font-medium flex items-center gap-2 transition-colors"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-amber-400 hover:text-slate-950" />
+            <span>編集</span>
+          </button>
+          <button
+            onClick={() => {
+              handleDeleteItem(contextMenu.itemId);
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-red-600 text-red-300 hover:text-white font-medium flex items-center gap-2 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>削除</span>
+          </button>
+        </div>
+      )}
 
       <input
         ref={fileInputRef}
