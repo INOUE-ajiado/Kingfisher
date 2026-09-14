@@ -1,11 +1,7 @@
-/**
- * Apple ProRes (apch / apcn / apcs 等) などのブラウザ非対応映像を
- * ブラウザ内 (WebAssembly / FFmpeg) で H.264 MP4 へ自動変換するモジュール。
- */
-
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { logDebug } from './debugLog';
+import { getProResCacheKey, getCachedProResVideo, saveCachedProResVideo } from './proresCache';
 
 let ffmpegInstance: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
@@ -70,20 +66,31 @@ export async function getFFmpeg(): Promise<FFmpeg> {
   return loadPromise;
 }
 
-/** 変換済みファイルのキャッシュ (同じファイルの再選択時は即時利用) */
+/** 変換済みファイルのメモリキャッシュ */
 const conversionCache = new Map<string, { blob: Blob; objectUrl: string }>();
 
 /**
- * ProRes 映像ファイルをブラウザ再生可能な H.264 MP4 へ自動変換する
+ * ProRes 映像ファイルをブラウザ再生可能な H.264 / WebM へ自動変換する
+ * (IndexedDB による永続キャッシュ ＆ ファストプレビュー即時表示に対応)
  */
 export async function convertProResToMp4(
   file: File,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  onFastPreviewReady?: (preview: { blob: Blob; objectUrl: string }) => void
 ): Promise<{ blob: Blob; objectUrl: string }> {
-  const cacheKey = `${file.name}_${file.size}_${file.lastModified}`;
+  const cacheKey = getProResCacheKey(file);
+
+  // 1. メモリキャッシュ
   if (conversionCache.has(cacheKey)) {
-    logDebug('roll', `変換済みキャッシュを利用: ${file.name}`);
+    logDebug('roll', `変換済みメモリキャッシュを利用: ${file.name}`);
     return conversionCache.get(cacheKey)!;
+  }
+
+  // 2. IndexedDB 永続キャッシュの確認 (0 秒即時読み込み)
+  const dbCached = await getCachedProResVideo(cacheKey);
+  if (dbCached) {
+    conversionCache.set(cacheKey, dbCached);
+    return dbCached;
   }
 
   const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -118,7 +125,37 @@ export async function convertProResToMp4(
     await ffmpeg.writeFile(inName, fileData);
     logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
 
-    // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ変換
+    // 先頭プレビュー (即時再生) が要求されている場合、先頭1秒間を超高速エンコードして通知
+    if (onFastPreviewReady) {
+      try {
+        const prevName = `prev_${Date.now()}.webm`;
+        logDebug('roll', `先頭プレビュー (1秒) を超高速生成中...`);
+        await ffmpeg.exec([
+          '-ss',
+          '0',
+          '-t',
+          '1',
+          '-i',
+          inName,
+          '-c:v',
+          'vp8',
+          '-b:v',
+          '1M',
+          '-an',
+          prevName,
+        ]);
+        const prevData = (await ffmpeg.readFile(prevName)) as Uint8Array;
+        const prevBlob = new Blob([new Uint8Array(prevData)], { type: 'video/webm' });
+        const prevUrl = URL.createObjectURL(prevBlob);
+        await ffmpeg.deleteFile(prevName).catch(() => {});
+        logDebug('roll', `先頭プレビュー生成完了。即時再生を開始します`);
+        onFastPreviewReady({ blob: prevBlob, objectUrl: prevUrl });
+      } catch (prevErr: any) {
+        logDebug('roll', `先頭プレビュー生成スキップ: ${prevErr?.message || prevErr}`, undefined, 'info');
+      }
+    }
+
+    // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ全編変換
     let converted = false;
 
     // 試行1: VP8 (WebM) — modern ブラウザ (Chrome/Safari/Firefox/Edge) 100% 対応
@@ -222,7 +259,8 @@ export async function convertProResToMp4(
 
     const result = { blob, objectUrl };
     conversionCache.set(cacheKey, result);
-    logDebug('roll', `ProRes 自動変換が正常に完了しました: ${file.name}`);
+    void saveCachedProResVideo(cacheKey, blob);
+    logDebug('roll', `ProRes 自動変換が正常に完了し IndexedDB に保存されました: ${file.name}`);
     return result;
   } catch (err: any) {
     logDebug('roll', `ProRes 自動変換中にエラーが発生しました: ${err?.message || err}`, undefined, 'warn');

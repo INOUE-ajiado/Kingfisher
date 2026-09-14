@@ -365,14 +365,28 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       }));
 
       try {
-        const converted = await convertProResToMp4(view.file, (pct) => {
-          set((state) => ({
-            roll: withView(state.roll, id, {
-              ...state.roll.views[id],
-              convertProgress: pct,
-            }),
-          }));
-        });
+        const converted = await convertProResToMp4(
+          view.file,
+          (pct) => {
+            set((state) => ({
+              roll: withView(state.roll, id, {
+                ...state.roll.views[id],
+                convertProgress: pct,
+              }),
+            }));
+          },
+          (preview) => {
+            set((state) => ({
+              roll: withView(state.roll, id, {
+                ...state.roll.views[id],
+                status: 'ready',
+                objectUrl: preview.objectUrl,
+                message: 'ファストプレビュー再生中',
+              }),
+            }));
+            logDebug('roll', `${rollLabel(id)} のファストプレビューが準備完了。即時再生を開始します`);
+          }
+        );
 
         set((state) => ({
           roll: withView(state.roll, id, {
