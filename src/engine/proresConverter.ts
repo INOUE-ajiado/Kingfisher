@@ -30,29 +30,39 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     logDebug('roll', `[FFmpeg WASM] デコーダコアの読み込みを開始します (Same-Origin: ${localBaseURL})`);
 
     try {
-      const coreURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.js`, 'text/javascript');
-      const wasmURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
-      
-      logDebug('roll', '[FFmpeg WASM] コアスクリプト・WASMバイナリのBlob変換完了。モジュールを初期化中...');
-      await ffmpeg.load({ coreURL, wasmURL });
+      logDebug('roll', '[FFmpeg WASM] 直パスでの ESM モジュール読み込みを試行中...');
+      await ffmpeg.load({
+        coreURL: `${localBaseURL}/ffmpeg-core.js`,
+        wasmURL: `${localBaseURL}/ffmpeg-core.wasm`,
+      });
       ffmpegInstance = ffmpeg;
-      logDebug('roll', '[FFmpeg WASM] デコーダ (Same-Origin) の初期化・読み込みに成功しました');
+      logDebug('roll', '[FFmpeg WASM] デコーダ (Same-Origin Direct) の初期化・読み込みに成功しました');
       return ffmpeg;
-    } catch (localErr: any) {
-      logDebug('roll', `[FFmpeg WASM] Same-Origin 読み込み失敗: ${localErr?.message || localErr}`, undefined, 'warn');
-      logDebug('roll', `[FFmpeg WASM] CDN フォールバックを試行中 (${cdnBaseURL})...`);
+    } catch (directErr: any) {
+      logDebug('roll', `[FFmpeg WASM] 直パス読み込み失敗: ${directErr?.message || directErr}。Blob URL変換を試行...`, undefined, 'warn');
       try {
-        const coreURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript');
-        const wasmURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
+        const coreURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.js`, 'text/javascript');
+        const wasmURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
         await ffmpeg.load({ coreURL, wasmURL });
         ffmpegInstance = ffmpeg;
-        logDebug('roll', '[FFmpeg WASM] デコーダ (CDN) の初期化・読み込みに成功しました');
+        logDebug('roll', '[FFmpeg WASM] デコーダ (Same-Origin Blob) の初期化・読み込みに成功しました');
         return ffmpeg;
-      } catch (err: any) {
-        loadPromise = null;
-        logDebug('roll', `[FFmpeg WASM] 致命的エラー: デコーダの読み込みに失敗しました (${err?.message || err})`, undefined, 'warn');
-        console.error('FFmpeg WASM load error:', err);
-        throw err;
+      } catch (localErr: any) {
+        logDebug('roll', `[FFmpeg WASM] Same-Origin 読み込み失敗: ${localErr?.message || localErr}`, undefined, 'warn');
+        logDebug('roll', `[FFmpeg WASM] CDN フォールバックを試行中 (${cdnBaseURL})...`);
+        try {
+          const coreURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript');
+          const wasmURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
+          await ffmpeg.load({ coreURL, wasmURL });
+          ffmpegInstance = ffmpeg;
+          logDebug('roll', '[FFmpeg WASM] デコーダ (CDN) の初期化・読み込みに成功しました');
+          return ffmpeg;
+        } catch (err: any) {
+          loadPromise = null;
+          logDebug('roll', `[FFmpeg WASM] 致命的エラー: デコーダの読み込みに失敗しました (${err?.message || err})`, undefined, 'warn');
+          console.error('FFmpeg WASM load error:', err);
+          throw err;
+        }
       }
     }
   })();
