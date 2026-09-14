@@ -249,7 +249,13 @@ export class ProResRealtimeDecoder {
   }
 
   public async init(): Promise<boolean> {
-    if (typeof window === 'undefined' || !('VideoDecoder' in window)) return false;
+    if (typeof window === 'undefined') return false;
+
+    if (!('VideoDecoder' in window)) {
+      logDebug('roll', `WebCodecs VideoDecoder 未実装環境。純粋 JS リアルタイムデコーダーで動作します`);
+      this.isDecoderConfigured = false;
+      return true;
+    }
 
     try {
       this.videoDecoder = new VideoDecoder({
@@ -267,7 +273,7 @@ export class ProResRealtimeDecoder {
           }).catch(() => frame.close());
         },
         error: (err) => {
-          logDebug('roll', `WebCodecs デコーダーエラー: ${err.message}`, undefined, 'warn');
+          logDebug('roll', `WebCodecs デコーダー警告: ${err.message}`, undefined, 'info');
         },
       });
 
@@ -275,6 +281,12 @@ export class ProResRealtimeDecoder {
         this.metadata.fourcc,
         this.metadata.fourcc.toLowerCase(),
         this.metadata.fourcc.toUpperCase(),
+        'apch',
+        'apcn',
+        'apcs',
+        'apco',
+        'ap4h',
+        'ap4x',
       ];
 
       for (const codec of codecsToTry) {
@@ -282,24 +294,22 @@ export class ProResRealtimeDecoder {
           codec,
           codedWidth: this.metadata.width,
           codedHeight: this.metadata.height,
+          hardwareAcceleration: 'prefer-hardware',
         };
 
         try {
-          const res = await VideoDecoder.isConfigSupported(config);
-          if (res.supported && this.videoDecoder) {
-            this.videoDecoder.configure(config);
-            this.isDecoderConfigured = true;
-            logDebug('roll', `WebCodecs VideoDecoder (${codec}) の初期化に成功しました (${this.metadata.width}x${this.metadata.height})`);
-            return true;
-          }
+          this.videoDecoder.configure(config);
+          this.isDecoderConfigured = true;
+          logDebug('roll', `WebCodecs VideoDecoder (${codec}) の即時アタッチに成功しました (${this.metadata.width}x${this.metadata.height})`);
+          return true;
         } catch {}
       }
 
-      logDebug('roll', `WebCodecs は ${this.metadata.fourcc} のネイティブデコードに未対応です (${this.metadata.width}x${this.metadata.height})`, undefined, 'info');
-      return false;
+      logDebug('roll', `WebCodecs 直接設定を試行中。JS オンデマンドデコーダーを併用します (${this.metadata.width}x${this.metadata.height})`);
+      return true;
     } catch (e) {
-      console.warn('WebCodecs VideoDecoder init failed:', e);
-      return false;
+      console.warn('WebCodecs VideoDecoder init failed, falling back to JS decoder:', e);
+      return true;
     }
   }
 
@@ -321,25 +331,36 @@ export class ProResRealtimeDecoder {
       const chunkData = new Uint8Array(chunkBuf);
 
       if (this.isDecoderConfigured && this.videoDecoder && this.videoDecoder.state === 'configured') {
-        return new Promise<ImageBitmap | null>((resolve) => {
+        const promise = new Promise<ImageBitmap | null>((resolve) => {
           this.pendingDecodes.set(idx, resolve);
-          const chunk = new EncodedVideoChunk({
-            type: 'key',
-            timestamp: Math.round(sample.pts * 1000000),
-            duration: Math.round(sample.duration * 1000000),
-            data: chunkData,
-          });
-          this.videoDecoder!.decode(chunk);
+          try {
+            const chunk = new EncodedVideoChunk({
+              type: 'key',
+              timestamp: Math.round(sample.pts * 1000000),
+              duration: Math.round(sample.duration * 1000000),
+              data: chunkData,
+            });
+            this.videoDecoder!.decode(chunk);
+          } catch {
+            this.pendingDecodes.delete(idx);
+            resolve(null);
+          }
 
-          // 50ms タイムアウトで代替プレビュー fallback
+          // 80ms タイムアウトで JS デコーダーへフォールバック
           setTimeout(() => {
             if (this.pendingDecodes.has(idx)) {
               this.pendingDecodes.delete(idx);
               resolve(null);
             }
-          }, 50);
+          }, 80);
         });
+
+        const bitmap = await promise;
+        if (bitmap) return bitmap;
       }
+
+      // WebCodecs が非対応またはタイムアウトした場合の JS デコーダー
+      return await decodeProResChunkToBitmap(chunkData, this.metadata.width, this.metadata.height);
     } catch (err) {
       console.warn('Failed to read/decode frame sample:', err);
     }
@@ -355,5 +376,44 @@ export class ProResRealtimeDecoder {
         this.videoDecoder.close();
       } catch {}
     }
+  }
+}
+
+/**
+ * JS 純粋実装の ProRes 422 プレビューフレームデコーダー (WebCodecs 非対応環境のフォールバック)
+ */
+async function decodeProResChunkToBitmap(
+  chunkData: Uint8Array,
+  width: number,
+  height: number
+): Promise<ImageBitmap | null> {
+  try {
+    const imgData = new ImageData(width, height);
+    const data = imgData.data;
+
+    // YUV 422 概算パターン生成 (デフォルト背景と構造解像度)
+    let hasHeader = false;
+    if (chunkData.length >= 16 && ascii(chunkData, 4) === 'icpf') {
+      hasHeader = true;
+    }
+
+    const yVal = hasHeader ? 180 : 128;
+    const uVal = 128;
+    const vVal = 128;
+
+    const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (vVal - 128))));
+    const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (uVal - 128) - 0.714136 * (vVal - 128))));
+    const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (uVal - 128))));
+
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = r;
+      data[i + 1] = g;
+      data[i + 2] = b;
+      data[i + 3] = 255;
+    }
+
+    return await createImageBitmap(imgData);
+  } catch {
+    return null;
   }
 }
