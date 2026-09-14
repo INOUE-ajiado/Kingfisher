@@ -561,10 +561,14 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
-          target.isContentEditable ||
-          (isPlay && (target.tagName === 'BUTTON' || target.tagName === 'A')))
+          target.isContentEditable)
       ) {
         return;
+      }
+
+      // ボタン等にフォーカスが残っていた場合はフォーカスを即座に外し、キーボードショートカットを優先
+      if (target && (target.tagName === 'BUTTON' || target.tagName === 'A')) {
+        target.blur();
       }
 
       e.preventDefault();
@@ -666,7 +670,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
           {!partnerOpen && (
             <button
-              onClick={(e) => { e.stopPropagation(); openRollWindow(otherRollId(rollId)); }}
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); openRollWindow(otherRollId(rollId)); }}
               title={`${TONE[otherRollId(rollId)].label} を開いて 2 画面で見比べる`}
               className="p-0.5 hover:bg-white/25 rounded transition-colors"
             >
@@ -675,7 +681,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
           {partnerOpen && (
             <button
-              onClick={(e) => { e.stopPropagation(); toggleSyncMode(); }}
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); toggleSyncMode(); }}
               title={
                 roll.sync || syncMode
                   ? '連携を解除する (セル・ロール全体の共通連携)'
@@ -689,21 +697,27 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             </button>
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); toggleRollFloating(rollId); }}
+            tabIndex={-1}
+            onPointerDown={(e) => e.currentTarget.blur()}
+            onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); toggleRollFloating(rollId); }}
             title={view.isFloating ? 'ドッキングに戻す' : '切り離してフローティング表示'}
             className="p-0.5 hover:bg-white/25 rounded transition-colors"
           >
             {view.isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+            tabIndex={-1}
+            onPointerDown={(e) => e.currentTarget.blur()}
+            onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); toggleFullscreen(); }}
             title={isFullscreen ? '全画面表示を解除 (Esc)' : '全画面フルスクリーン表示 (ダブルクリックでも可)'}
             className="p-0.5 hover:bg-white/25 rounded transition-colors"
           >
             {isFullscreen ? <Shrink className="w-3 h-3" /> : <Expand className="w-3 h-3" />}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); closeRollWindow(rollId); }}
+            tabIndex={-1}
+            onPointerDown={(e) => e.currentTarget.blur()}
+            onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); closeRollWindow(rollId); }}
             title={`${tone.label} を閉じる`}
             className="p-0.5 hover:bg-red-600 rounded transition-colors"
           >
@@ -872,7 +886,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <div className="flex items-center gap-1">
             {view.files.length > 1 && (
               <button
-                onClick={() => stepRoll(rollId, -1, `${tone.label} の ◀◀ ボタン`)}
+                tabIndex={-1}
+                onPointerDown={(e) => e.currentTarget.blur()}
+                onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepRoll(rollId, -1, `${tone.label} の ◀◀ ボタン`); }}
                 disabled={disabled}
                 title="前のロールへ (↑)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
@@ -881,7 +897,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               </button>
             )}
             <button
-              onClick={() => stepSelf(-1)}
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepSelf(-1); }}
               disabled={disabled}
               title="前のコマ (この面だけ)。← は 2 面いっしょ / Shift + ← で 1 秒"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
@@ -889,7 +907,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
             <button
-              onClick={() => togglePlay()}
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={(e) => { (e.currentTarget as HTMLElement).blur(); togglePlay(); }}
               disabled={disabled}
               title={isPlaying ? '一時停止 (Space)' : '再生 (Space で 2 面同時)'}
               className={`p-1 rounded ${tone.button} text-white disabled:opacity-40 transition-colors`}
@@ -897,7 +917,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
             </button>
             <button
-              onClick={() => stepSelf(1)}
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepSelf(1); }}
               disabled={disabled}
               title="次のコマ (この面だけ)。→ は 2 面いっしょ / Shift + → で 1 秒"
               className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
@@ -906,7 +928,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             </button>
             {view.files.length > 1 && (
               <button
-                onClick={() => stepRoll(rollId, 1, `${tone.label} の ▶▶ ボタン`)}
+                tabIndex={-1}
+                onPointerDown={(e) => e.currentTarget.blur()}
+                onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepRoll(rollId, 1, `${tone.label} の ▶▶ ボタン`); }}
                 disabled={disabled}
                 title="次のロールへ (↓)"
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
@@ -922,16 +946,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
 
           <div className="flex items-center gap-1">
             <select
+              tabIndex={-1}
               value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value))}
+              onChange={(e) => { setSpeed(Number(e.target.value)); e.target.blur(); }}
               title="再生速度"
               className="bg-slate-200 dark:bg-slate-800 rounded px-1 py-0.5 text-[10px]"
             >
               {SPEEDS.map((s) => <option key={s} value={s}>{s}x</option>)}
             </select>
             <select
+              tabIndex={-1}
               value={view.fps}
-              onChange={(e) => setRollFps(rollId, Number(e.target.value), 'manual')}
+              onChange={(e) => { setRollFps(rollId, Number(e.target.value), 'manual'); e.target.blur(); }}
               title="コマ送りの基準 fps"
               className="bg-slate-200 dark:bg-slate-800 rounded px-1 py-0.5 text-[10px]"
             >
