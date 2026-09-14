@@ -76,18 +76,55 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       return null;
     }
 
-    // moov から stsd (codec, width, height), stsz (sizes), stco/co64 (offsets), stts (durations) を探索
+    // 1. moovBytes 内からすべての trak (Track) アトムの範囲を特定し、ProRes ビデオトラックを探す
+    let videoTrakBytes: Uint8Array = moovBytes;
     let fourcc = 'apch';
+
+    let foundVideoTrak = false;
+    for (let i = 0; i + 8 <= moovBytes.length; i++) {
+      if (moovBytes[i] === 0x74 && moovBytes[i + 1] === 0x72 && moovBytes[i + 2] === 0x61 && moovBytes[i + 3] === 0x6b) {
+        // trak アトム発見 (直前 4 バイトがサイズ)
+        let trakStart = i - 4;
+        let size = 0;
+        if (trakStart >= 0 && trakStart + 8 <= moovBytes.length) {
+          const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + trakStart);
+          size = view.getUint32(0);
+        }
+        let trakEnd = size > 0 ? Math.min(trakStart + size, moovBytes.length) : moovBytes.length;
+        if (trakStart < 0) trakStart = 0;
+
+        const trakSub = moovBytes.subarray(trakStart, trakEnd);
+        // この trak 内に ProRes fourcc を持つ stsd があるかチェック
+        for (let j = 0; j + 20 <= trakSub.length; j++) {
+          if (trakSub[j] === 0x73 && trakSub[j + 1] === 0x74 && trakSub[j + 2] === 0x73 && trakSub[j + 3] === 0x64) {
+            const candidate = ascii(trakSub, j + 16);
+            if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate)) {
+              fourcc = candidate;
+              videoTrakBytes = trakSub;
+              foundVideoTrak = true;
+              logDebug('roll', `[ProRes DEBUG] ProRes ビデオトラック(trak) 発見: fourcc=${fourcc}, trak 範囲=${trakStart}..${trakEnd}`);
+              break;
+            }
+          }
+        }
+        if (foundVideoTrak) break;
+      }
+    }
+
+    if (!foundVideoTrak) {
+      logDebug('roll', `[ProRes DEBUG] 警告: ProRes (apch/apcn/apcs/apco) の trak が明確に識別できませんでした。moov 全体をパースします。`, undefined, 'warn');
+    }
+
     let width = 1920;
     let height = 1080;
 
-    // 1. stsd 探索
-    for (let i = 0; i + 48 <= moovBytes.length; i++) {
-      if (moovBytes[i] === 0x73 && moovBytes[i + 1] === 0x74 && moovBytes[i + 2] === 0x73 && moovBytes[i + 3] === 0x64) {
-        const candidate = ascii(moovBytes, i + 16);
-        if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate)) {
-          fourcc = candidate;
-          const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 16);
+    // 2. stsd 探索 (解像度取得)
+    for (let i = 0; i + 48 <= videoTrakBytes.length; i++) {
+      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x73 && videoTrakBytes[i + 3] === 0x64) {
+        const candidate = ascii(videoTrakBytes, i + 16);
+        if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate) || !foundVideoTrak) {
+          if (!foundVideoTrak) fourcc = candidate;
+          const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 16);
           if (view.byteLength >= 32) {
             const w = view.getUint16(28);
             const h = view.getUint16(30);
@@ -102,10 +139,10 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       }
     }
 
-    // 2. tkhd 探索 (width / height の検証)
-    for (let i = 0; i + 96 <= moovBytes.length; i++) {
-      if (moovBytes[i] === 0x74 && moovBytes[i + 1] === 0x6b && moovBytes[i + 2] === 0x68 && moovBytes[i + 3] === 0x64) {
-        const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 8);
+    // 3. tkhd 探索 (width / height の検証)
+    for (let i = 0; i + 96 <= videoTrakBytes.length; i++) {
+      if (videoTrakBytes[i] === 0x74 && videoTrakBytes[i + 1] === 0x6b && videoTrakBytes[i + 2] === 0x68 && videoTrakBytes[i + 3] === 0x64) {
+        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
         const version = view.getUint8(0);
         const w = (version === 1 ? view.getUint32(88) : view.getUint32(76)) >> 16;
         const h = (version === 1 ? view.getUint32(92) : view.getUint32(80)) >> 16;
@@ -118,17 +155,17 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       }
     }
 
-    // 3. stsz 探索 (サンプルサイズ一覧)
+    // 4. stsz 探索 (ProRes ビデオトラック内のサンプルサイズ一覧)
     const sizes: number[] = [];
-    for (let i = 0; i + 20 <= moovBytes.length; i++) {
-      if (moovBytes[i] === 0x73 && moovBytes[i + 1] === 0x74 && moovBytes[i + 2] === 0x73 && moovBytes[i + 3] === 0x7a) {
-        const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 8);
+    for (let i = 0; i + 20 <= videoTrakBytes.length; i++) {
+      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x73 && videoTrakBytes[i + 3] === 0x7a) {
+        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
         const defaultSize = view.getUint32(4);
         const count = view.getUint32(8);
         if (defaultSize > 0) {
           for (let c = 0; c < count; c++) sizes.push(defaultSize);
         } else {
-          for (let c = 0; c < count && i + 20 + c * 4 < moovBytes.length; c++) {
+          for (let c = 0; c < count && i + 20 + c * 4 < videoTrakBytes.length; c++) {
             sizes.push(view.getUint32(12 + c * 4));
           }
         }
@@ -137,23 +174,23 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       }
     }
 
-    // 4. stco / co64 探索 (サンプル chunk オフセット一覧)
+    // 5. stco / co64 探索 (ProRes ビデオトラック内の chunk オフセット一覧)
     const rawOffsets: number[] = [];
-    for (let i = 0; i + 16 <= moovBytes.length; i++) {
-      if (moovBytes[i] === 0x73 && moovBytes[i + 1] === 0x74 && moovBytes[i + 2] === 0x63 && moovBytes[i + 3] === 0x6f) {
+    for (let i = 0; i + 16 <= videoTrakBytes.length; i++) {
+      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x63 && videoTrakBytes[i + 3] === 0x6f) {
         // stco (32bit)
-        const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 8);
+        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
         const count = view.getUint32(4);
-        for (let c = 0; c < count && i + 16 + c * 4 < moovBytes.length; c++) {
+        for (let c = 0; c < count && i + 16 + c * 4 < videoTrakBytes.length; c++) {
           rawOffsets.push(view.getUint32(8 + c * 4));
         }
         logDebug('roll', `[ProRes DEBUG] stco 検出: 全 ${rawOffsets.length} チャック (サンプル[0]オフセット: ${rawOffsets[0]})`);
         if (rawOffsets.length > 0) break;
-      } else if (moovBytes[i] === 0x63 && moovBytes[i + 1] === 0x6f && moovBytes[i + 2] === 0x36 && moovBytes[i + 3] === 0x34) {
+      } else if (videoTrakBytes[i] === 0x63 && videoTrakBytes[i + 1] === 0x6f && videoTrakBytes[i + 2] === 0x36 && videoTrakBytes[i + 3] === 0x34) {
         // co64 (64bit)
-        const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 8);
+        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
         const count = view.getUint32(4);
-        for (let c = 0; c < count && i + 16 + c * 8 < moovBytes.length; c++) {
+        for (let c = 0; c < count && i + 16 + c * 8 < videoTrakBytes.length; c++) {
           const high = view.getUint32(8 + c * 8);
           const low = view.getUint32(12 + c * 8);
           rawOffsets.push(high * 4294967296 + low);
@@ -186,7 +223,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       currentPts += defaultFrameDuration;
     }
 
-    // 5. サンプル[0] の icpf (ProRes フレームヘッダー) から解像度を直接検出
+    // 6. サンプル[0] の icpf (ProRes フレームヘッダー) から解像度を直接検証
     if (samples.length > 0 && samples[0].size >= 16) {
       try {
         const sampleOffset = samples[0].offset;
