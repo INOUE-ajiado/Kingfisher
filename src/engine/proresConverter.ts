@@ -125,22 +125,28 @@ export async function convertProResToMp4(
     await ffmpeg.writeFile(inName, fileData);
     logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
 
-    // 先頭プレビュー (即時再生) が要求されている場合、先頭1秒間を超高速エンコードして通知
+    // 先頭プレビュー (即時再生) が要求されている場合、先頭3秒間を超高速エンコードして通知
     if (onFastPreviewReady) {
       try {
         const prevName = `prev_${Date.now()}.webm`;
-        logDebug('roll', `先頭プレビュー (1秒) を超高速生成中...`);
+        logDebug('roll', `先頭プレビュー (3秒/640x360) を爆速生成中...`);
         await ffmpeg.exec([
           '-ss',
           '0',
           '-t',
-          '1',
+          '3',
           '-i',
           inName,
+          '-s',
+          '640x360',
           '-c:v',
           'vp8',
           '-b:v',
-          '1M',
+          '800k',
+          '-deadline',
+          'realtime',
+          '-cpu-used',
+          '8',
           '-an',
           prevName,
         ]);
@@ -158,11 +164,11 @@ export async function convertProResToMp4(
     // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ全編変換
     let converted = false;
 
-    // 試行1: VP8 (WebM) — modern ブラウザ (Chrome/Safari/Firefox/Edge) 100% 対応
+    // 試行1: VP8 (WebM) — リアルタイム設定で高速全編変換
     try {
       outName = `out_${Date.now()}.webm`;
       mimeType = 'video/webm';
-      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp8 -b:v 2M ${outName}`);
+      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp8 -b:v 2M -deadline realtime -cpu-used 5 ${outName}`);
       await ffmpeg.exec([
         '-i',
         inName,
@@ -170,6 +176,10 @@ export async function convertProResToMp4(
         'vp8',
         '-b:v',
         '2M',
+        '-deadline',
+        'realtime',
+        '-cpu-used',
+        '5',
         '-an', // 音声ストリームが無い/エラー予防
         outName,
       ]);
