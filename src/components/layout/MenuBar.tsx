@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { isSupportedImageFile } from '../../engine/fileSystemPath';
 import { scanCutRootFolder, ROOT_SUBDIR_NAME } from '../../engine/cutFolder';
-import { Bug, Columns, Pipette, LogOut } from 'lucide-react';
+import { Bug, Columns, Pipette, LogOut, User, ChevronRight } from 'lucide-react';
 import { LogoTitle } from '../common/LogoTitle';
 
 export const MenuBar: React.FC = () => {
@@ -372,6 +372,12 @@ export const MenuBar: React.FC = () => {
         { label: 'ショートカット一覧', shortcut: '', action: () => setActiveModal('shortcuts') },
         { type: 'divider' },
         { label: 'Kingfisher について', shortcut: '', action: () => setActiveModal('about') },
+        ...(user
+          ? [
+              { type: 'divider' },
+              { type: 'user' },
+            ]
+          : []),
       ],
     },
   ];
@@ -416,6 +422,40 @@ export const MenuBar: React.FC = () => {
                     if (item.type === 'divider') {
                       return <div key={idx} className="my-1 border-t border-slate-200 dark:border-slate-700" />;
                     }
+                    if (item.type === 'user' && user) {
+                      return (
+                        <div
+                          key={idx}
+                          className="relative group px-3 py-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer transition-colors rounded-b"
+                        >
+                          <div className="flex items-center gap-2 min-w-0 pr-2">
+                            {user.photoURL ? (
+                              <img src={user.photoURL} alt="User Avatar" className="w-4 h-4 rounded-full flex-shrink-0 object-cover" />
+                            ) : (
+                              <User className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                            )}
+                            <span className="truncate text-[11px] font-mono text-slate-700 dark:text-slate-200" title={user.email || ''}>
+                              {user.email || 'ログインユーザー'}
+                            </span>
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 group-hover:text-slate-200 transition-transform group-hover:translate-x-0.5" />
+
+                          {/* 横にドロップ表示されるログアウトボタン */}
+                          <div className="hidden group-hover:flex absolute left-full top-0 ml-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-2xl p-1 z-[10000] min-w-[120px] flex-col animate-in fade-in slide-in-from-left-1 duration-150">
+                            <button
+                              onClick={() => {
+                                logout();
+                                setOpenMenu(null);
+                              }}
+                              className="w-full px-3 py-1.5 text-left text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 hover:text-red-700 dark:hover:text-red-300 font-bold rounded flex items-center gap-2 transition-colors"
+                            >
+                              <LogOut className="w-3.5 h-3.5 text-red-500" />
+                              <span>ログアウト</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
                     return (
                       <button
                         key={idx}
@@ -453,7 +493,7 @@ export const MenuBar: React.FC = () => {
 
         {/* 統合アクションボタン群 (左右比較・見本ビューア) */}
         {/* 左右連動はファイルブラウザ側に同じ操作があるため、ここには置かない */}
-        <div className="flex items-center gap-1 border-r border-slate-200 dark:border-slate-800 pr-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={toggleIsSplitView}
             title="画面を左右2分割してセルを並べて比較 (Win A / Win B)"
@@ -491,28 +531,6 @@ export const MenuBar: React.FC = () => {
           >
             <Pipette className="w-3.5 h-3.5" />
             <span>見本ビューア</span>
-          </button>
-
-          {user && (
-            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-indigo-900/30 border border-indigo-500/40 text-[10px] text-indigo-200">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="Avatar" className="w-3.5 h-3.5 rounded-full" />
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              )}
-              <span className="font-mono max-w-[120px] truncate" title={user.email || ''}>
-                {user.email}
-              </span>
-            </div>
-          )}
-
-          <button
-            onClick={() => logout()}
-            title="ログアウトしてGoogle認証を終了します"
-            className="px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 shadow-xs transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5 text-amber-400" />
-            <span>ログアウト</span>
           </button>
         </div>
       </div>
