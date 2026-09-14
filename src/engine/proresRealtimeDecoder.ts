@@ -309,34 +309,13 @@ export class ProResRealtimeDecoder {
 
   public async init(): Promise<boolean> {
     if (typeof window === 'undefined') return false;
-
     if (!('VideoDecoder' in window)) {
-      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder 未実装環境。純粋 JS リアルタイムデコーダーで動作します`);
-      this.isDecoderConfigured = false;
-      return true;
+      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder 未対応の環境です。自動変換へフォールバックします`);
+      return false;
     }
 
     try {
-      this.videoDecoder = new VideoDecoder({
-        output: (frame) => {
-          createImageBitmap(frame).then((bitmap) => {
-            const pts = frame.timestamp / 1000000;
-            const frameIdx = Math.round(pts * this.metadata.fps);
-            this.frameCache.set(frameIdx, bitmap);
-            logDebug('roll', `[ProRes DEBUG] WebCodecs decode 成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height})`);
-            const callback = this.pendingDecodes.get(frameIdx);
-            if (callback) {
-              callback(bitmap);
-              this.pendingDecodes.delete(frameIdx);
-            }
-            frame.close();
-          }).catch(() => frame.close());
-        },
-        error: (err) => {
-          logDebug('roll', `[ProRes DEBUG] WebCodecs デコーダー通知: ${err.message}`, undefined, 'info');
-        },
-      });
-
+      let isDecodeOk = false;
       const codecsToTry = [
         this.metadata.fourcc,
         this.metadata.fourcc.toLowerCase(),
@@ -350,29 +329,100 @@ export class ProResRealtimeDecoder {
       ];
 
       for (const codec of codecsToTry) {
-        const config: VideoDecoderConfig = {
-          codec,
-          codedWidth: this.metadata.width,
-          codedHeight: this.metadata.height,
-          hardwareAcceleration: 'prefer-hardware',
-        };
+        if (typeof VideoDecoder.isConfigSupported === 'function') {
+          try {
+            const support = await VideoDecoder.isConfigSupported({
+              codec,
+              codedWidth: this.metadata.width,
+              codedHeight: this.metadata.height,
+            });
+            if (!support.supported) continue;
+          } catch {}
+        }
 
         try {
-          this.videoDecoder.configure(config);
-          this.isDecoderConfigured = true;
-          logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder.configure(${codec}) 成功 (${this.metadata.width}x${this.metadata.height})`);
-          return true;
-        } catch (confErr: any) {
-          logDebug('roll', `[ProRes DEBUG] WebCodecs configure(${codec}) 試行失敗: ${confErr?.message || confErr}`, undefined, 'info');
+          const testDecoder = new VideoDecoder({
+            output: (frame) => {
+              createImageBitmap(frame).then((bitmap) => {
+                if (bitmap.width > 0 && bitmap.height > 0) {
+                  isDecodeOk = true;
+                }
+                bitmap.close();
+                frame.close();
+              }).catch(() => frame.close());
+            },
+            error: () => {},
+          });
+
+          testDecoder.configure({
+            codec,
+            codedWidth: this.metadata.width,
+            codedHeight: this.metadata.height,
+            hardwareAcceleration: 'prefer-hardware',
+          });
+
+          // サンプル[0] でテストデコードを送信
+          if (this.metadata.samples.length > 0) {
+            const s0 = this.metadata.samples[0];
+            const chunkBuf = await this.file.slice(s0.offset, s0.offset + s0.size).arrayBuffer();
+            const chunk = new EncodedVideoChunk({
+              type: 'key',
+              timestamp: 0,
+              duration: Math.round(s0.duration * 1000000),
+              data: new Uint8Array(chunkBuf),
+            });
+            testDecoder.decode(chunk);
+            await testDecoder.flush().catch(() => {});
+          }
+
+          testDecoder.close();
+
+          if (isDecodeOk) {
+            logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder(${codec}) テストデコード成功！ 0 秒オンデマンド再生を有効化します`);
+            this.setupDecoder(codec);
+            return true;
+          }
+        } catch (err: any) {
+          logDebug('roll', `[ProRes DEBUG] WebCodecs (${codec}) テスト失敗: ${err?.message || err}`, undefined, 'info');
         }
       }
 
-      logDebug('roll', `[ProRes DEBUG] WebCodecs 設定完了。JS オンデマンドデコーダーを併用します (${this.metadata.width}x${this.metadata.height})`);
-      return true;
+      logDebug('roll', `[ProRes DEBUG] このブラウザの WebCodecs は ProRes (${this.metadata.fourcc}) に非対応です。自動変換へ移行します`);
+      return false;
     } catch (e: any) {
-      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder init 例外: ${e?.message || e}。JS デコーダーへ移行します`, undefined, 'warn');
-      return true;
+      logDebug('roll', `[ProRes DEBUG] WebCodecs 検証例外: ${e?.message || e}。自動変換へ移行します`, undefined, 'info');
+      return false;
     }
+  }
+
+  private setupDecoder(codec: string): void {
+    this.videoDecoder = new VideoDecoder({
+      output: (frame) => {
+        createImageBitmap(frame).then((bitmap) => {
+          const pts = frame.timestamp / 1000000;
+          const frameIdx = Math.round(pts * this.metadata.fps);
+          this.frameCache.set(frameIdx, bitmap);
+          logDebug('roll', `[ProRes DEBUG] WebCodecs decode 成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height})`);
+          const callback = this.pendingDecodes.get(frameIdx);
+          if (callback) {
+            callback(bitmap);
+            this.pendingDecodes.delete(frameIdx);
+          }
+          frame.close();
+        }).catch(() => frame.close());
+      },
+      error: (err) => {
+        logDebug('roll', `[ProRes DEBUG] WebCodecs デコーダー通知: ${err.message}`, undefined, 'info');
+      },
+    });
+
+    this.videoDecoder.configure({
+      codec,
+      codedWidth: this.metadata.width,
+      codedHeight: this.metadata.height,
+      hardwareAcceleration: 'prefer-hardware',
+    });
+    this.isDecoderConfigured = true;
   }
 
   /**
