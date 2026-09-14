@@ -390,26 +390,66 @@ async function decodeProResChunkToBitmap(
   try {
     const imgData = new ImageData(width, height);
     const data = imgData.data;
+    const view = new DataView(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength);
 
-    // YUV 422 概算パターン生成 (デフォルト背景と構造解像度)
-    let hasHeader = false;
-    if (chunkData.length >= 16 && ascii(chunkData, 4) === 'icpf') {
-      hasHeader = true;
+    if (chunkData.length < 32 || ascii(chunkData, 4) !== 'icpf') {
+      return await createImageBitmap(imgData);
     }
 
-    const yVal = hasHeader ? 180 : 128;
-    const uVal = 128;
-    const vVal = 128;
+    const hdrSize = view.getUint16(8);
+    if (hdrSize + 8 > chunkData.length) return await createImageBitmap(imgData);
 
-    const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (vVal - 128))));
-    const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (uVal - 128) - 0.714136 * (vVal - 128))));
-    const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (uVal - 128))));
+    const rawPicHdr = chunkData[hdrSize] || 0;
+    const picHdrSize = (rawPicHdr >> 3) & 0x0f;
+    const sliceNum = view.getUint16(hdrSize + 2);
+    if (sliceNum === 0) return await createImageBitmap(imgData);
 
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = r;
-      data[i + 1] = g;
-      data[i + 2] = b;
-      data[i + 3] = 255;
+    const mbHeight = Math.ceil(height / 16);
+    const slicesPerRow = Math.max(1, Math.floor(sliceNum / mbHeight));
+
+    const sliceTableStart = hdrSize + 8;
+    let sliceOffset = hdrSize + (picHdrSize > 0 ? picHdrSize * 8 : 8) + sliceNum * 2;
+
+    for (let s = 0; s < sliceNum && sliceOffset < chunkData.length; s++) {
+      const sliceSize = view.getUint16(sliceTableStart + s * 2);
+      if (sliceSize <= 6 || sliceOffset + sliceSize > chunkData.length) break;
+
+      const sliceHdrSize = (chunkData[sliceOffset] >> 3) & 0x0f;
+      const ySize = view.getUint16(sliceOffset + 2);
+      const cbSize = view.getUint16(sliceOffset + 4);
+
+      const rRow = Math.floor(s / slicesPerRow);
+      const rCol = s % slicesPerRow;
+
+      const startX = Math.min(width, Math.floor(rCol * (width / slicesPerRow)));
+      const endX = Math.min(width, Math.floor((rCol + 1) * (width / slicesPerRow)));
+      const startY = rRow * 16;
+      const endY = Math.min(height, (rRow + 1) * 16);
+
+      const headerOffset = sliceHdrSize > 0 ? sliceHdrSize : 6;
+      const yOffset = sliceOffset + headerOffset;
+      const cbOffset = yOffset + ySize;
+      const crOffset = cbOffset + cbSize;
+
+      const yVal = chunkData[yOffset] || 128;
+      const cbVal = chunkData[cbOffset] || 128;
+      const crVal = chunkData[crOffset] || 128;
+
+      const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (crVal - 128))));
+      const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (cbVal - 128) - 0.714136 * (crVal - 128))));
+      const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (cbVal - 128))));
+
+      for (let y = startY; y < endY; y++) {
+        for (let x = startX; x < endX; x++) {
+          const idx = (y * width + x) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+        }
+      }
+
+      sliceOffset += sliceSize;
     }
 
     return await createImageBitmap(imgData);
