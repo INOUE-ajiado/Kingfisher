@@ -679,8 +679,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               setIsPlaying(false);
               endPairedPlayback();
             }}
-            onSeeked={(e) => paintTime(e.currentTarget.currentTime)}
-            onError={() => { setIsPlaying(false); void reportRollPlaybackFailure(rollId); }}
+            onError={(e) => {
+              setIsPlaying(false);
+              const mediaErr = e.currentTarget.error;
+              const errInfo = mediaErr
+                ? `MEDIA_ERR code=${mediaErr.code} message="${mediaErr.message || 'ブラウザ再生非対応'}"`
+                : '再生失敗 (HTMLMediaElement Error)';
+              logDebug('roll', `${tone.label} の <video> 要素で再生エラー検知: ${errInfo}`, view.fileName, 'warn');
+              void reportRollPlaybackFailure(rollId);
+            }}
           />
         )}
 

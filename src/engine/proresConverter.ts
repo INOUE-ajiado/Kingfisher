@@ -27,26 +27,30 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     const localBaseURL = `${origin}/ffmpeg`;
     const cdnBaseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 
+    logDebug('roll', `[FFmpeg WASM] デコーダコアの読み込みを開始します (Same-Origin: ${localBaseURL})`);
+
     try {
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${localBaseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${localBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
+      const coreURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.js`, 'text/javascript');
+      const wasmURL = await toBlobURL(`${localBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
+      
+      logDebug('roll', '[FFmpeg WASM] コアスクリプト・WASMバイナリのBlob変換完了。モジュールを初期化中...');
+      await ffmpeg.load({ coreURL, wasmURL });
       ffmpegInstance = ffmpeg;
-      logDebug('roll', 'FFmpeg WASM デコーダ (Same-Origin) の読み込みに成功しました');
+      logDebug('roll', '[FFmpeg WASM] デコーダ (Same-Origin) の初期化・読み込みに成功しました');
       return ffmpeg;
-    } catch (localErr) {
-      console.warn('Local ffmpeg core load failed, trying CDN fallback:', localErr);
+    } catch (localErr: any) {
+      logDebug('roll', `[FFmpeg WASM] Same-Origin 読み込み失敗: ${localErr?.message || localErr}`, undefined, 'warn');
+      logDebug('roll', `[FFmpeg WASM] CDN フォールバックを試行中 (${cdnBaseURL})...`);
       try {
-        await ffmpeg.load({
-          coreURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript'),
-          wasmURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        });
+        const coreURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript');
+        const wasmURL = await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm');
+        await ffmpeg.load({ coreURL, wasmURL });
         ffmpegInstance = ffmpeg;
-        logDebug('roll', 'FFmpeg WASM デコーダ (CDN) の読み込みに成功しました');
+        logDebug('roll', '[FFmpeg WASM] デコーダ (CDN) の初期化・読み込みに成功しました');
         return ffmpeg;
-      } catch (err) {
+      } catch (err: any) {
         loadPromise = null;
+        logDebug('roll', `[FFmpeg WASM] 致命的エラー: デコーダの読み込みに失敗しました (${err?.message || err})`, undefined, 'warn');
         console.error('FFmpeg WASM load error:', err);
         throw err;
       }
@@ -72,6 +76,9 @@ export async function convertProResToMp4(
     return conversionCache.get(cacheKey)!;
   }
 
+  const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+  logDebug('roll', `ProRes 自動変換の準備開始: ${file.name} (サイズ: ${fileSizeMB} MB / type: ${file.type || '未指定'})`);
+
   const ffmpeg = await getFFmpeg();
 
   const sanitizeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -88,18 +95,21 @@ export async function convertProResToMp4(
   }
 
   const logListener = ({ message }: { message: string }) => {
-    if (message.includes('Error') || message.includes('error') || message.includes('Stream')) {
-      logDebug('roll', `[FFmpeg] ${message}`);
+    if (message.includes('Error') || message.includes('error') || message.includes('Stream #') || message.includes('codec')) {
+      logDebug('roll', `[FFmpeg Log] ${message}`);
     }
   };
   ffmpeg.on('log', logListener);
 
   try {
-    logDebug('roll', `ProRes 自動変換処理を開始: ${file.name}`);
-    await ffmpeg.writeFile(inName, await fetchFile(file));
+    logDebug('roll', `仮想ファイルシステムへ入力ファイルを書き込み中 (${inName})...`);
+    const fileData = await fetchFile(file);
+    await ffmpeg.writeFile(inName, fileData);
+    logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
 
     // 高速トランスコード: 標準 WASM ビルドに必ず含まれる mpeg4 エンコーダを優先
     try {
+      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v mpeg4 -q:v 2 -movflags faststart ${outName}`);
       await ffmpeg.exec([
         '-i',
         inName,
@@ -111,8 +121,8 @@ export async function convertProResToMp4(
         'faststart',
         outName,
       ]);
-    } catch (mpeg4Err) {
-      logDebug('roll', `mpeg4 変換フォールバック試行: ${mpeg4Err}`, undefined, 'warn');
+    } catch (mpeg4Err: any) {
+      logDebug('roll', `mpeg4 変換失敗 (${mpeg4Err?.message || mpeg4Err})。libx264 フォールバック試行...`, undefined, 'warn');
       await ffmpeg.exec([
         '-i',
         inName,
@@ -130,7 +140,11 @@ export async function convertProResToMp4(
       ]);
     }
 
+    logDebug('roll', `変換出力ファイルを読み込み中 (${outName})...`);
     const data = (await ffmpeg.readFile(outName)) as Uint8Array;
+    const outSizeMB = (data.byteLength / (1024 * 1024)).toFixed(2);
+    logDebug('roll', `変換出力ファイルの取得成功 (生成サイズ: ${outSizeMB} MB)`);
+
     const blob = new Blob([new Uint8Array(data)], { type: 'video/mp4' });
     const objectUrl = URL.createObjectURL(blob);
 
@@ -140,9 +154,10 @@ export async function convertProResToMp4(
 
     const result = { blob, objectUrl };
     conversionCache.set(cacheKey, result);
-    logDebug('roll', `ProRes 自動変換完了: ${file.name}`);
+    logDebug('roll', `ProRes 自動変換が正常に完了しました: ${file.name}`);
     return result;
-  } catch (err) {
+  } catch (err: any) {
+    logDebug('roll', `ProRes 自動変換中にエラーが発生しました: ${err?.message || err}`, undefined, 'warn');
     console.error('ProRes video conversion failed:', err);
     throw err;
   } finally {

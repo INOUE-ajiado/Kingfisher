@@ -385,7 +385,9 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
         }));
         logDebug('roll', `${rollLabel(id)} の ProRes 自動変換が成功し、再生準備完了`);
         return;
-      } catch (err) {
+      } catch (err: any) {
+        const errMsg = err?.message || String(err);
+        logDebug('roll', `${rollLabel(id)} の ProRes 自動変換で例外検知: ${errMsg}`, view.fileName, 'warn');
         console.error('Auto conversion failed:', err);
       }
     }
