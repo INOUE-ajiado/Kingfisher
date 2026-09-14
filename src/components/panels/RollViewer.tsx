@@ -152,7 +152,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     } else {
       handleMouseMove();
     }
-  }, [isFullscreen, handleMouseMove]);
+  }, [isFullscreen, isPlaying, handleMouseMove]);
 
   const toggleFullscreen = useCallback(() => {
     if (!targetRef.current) return;
@@ -613,7 +613,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       onDrop={(e) => void handleDrop(e)}
       className={
         isFullscreen
-          ? 'fixed inset-0 w-screen h-screen z-50 bg-black flex flex-col justify-between overflow-hidden relative select-none'
+          ? `fixed inset-0 w-screen h-screen z-50 bg-black flex flex-col justify-between overflow-hidden relative select-none ${
+              isPlaying && !showControls ? 'cursor-none' : ''
+            }`
           : `flex flex-col bg-white dark:bg-slate-900 ${
               view.isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'
             } ${
@@ -731,7 +733,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       <div
         className={
           isFullscreen
-            ? 'absolute inset-0 z-10 w-full h-full bg-black flex items-center justify-center cursor-pointer'
+            ? `absolute inset-0 z-10 w-full h-full bg-black flex items-center justify-center cursor-pointer ${
+                isPlaying && !showControls ? 'cursor-none' : ''
+              }`
             : 'flex-1 min-h-0 bg-black relative flex items-center justify-center cursor-pointer'
         }
         onDoubleClick={toggleFullscreen}
