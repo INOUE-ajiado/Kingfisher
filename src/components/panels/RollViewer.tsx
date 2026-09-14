@@ -1010,7 +1010,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       {isFullscreen && (
         <div
           onMouseEnter={() => setIsRightSidebarHovered(true)}
-          className="absolute top-0 bottom-0 right-0 w-10 z-40 pointer-events-auto"
+          className="fixed top-0 bottom-0 right-0 w-10 z-40 pointer-events-auto"
         />
       )}
 
@@ -1019,10 +1019,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         <div
           onMouseEnter={() => setIsRightSidebarHovered(true)}
           onMouseLeave={() => setIsRightSidebarHovered(false)}
-          className={`absolute top-0 bottom-0 right-0 z-50 w-96 max-w-[85vw] bg-slate-900/80 dark:bg-slate-950/85 backdrop-blur-xl border-l border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-300 transform flex flex-col text-white ${
+          className={`fixed top-0 bottom-0 right-0 z-50 w-96 max-w-[85vw] bg-slate-900/80 dark:bg-slate-950/85 backdrop-blur-xl border-l border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-300 transform flex flex-col text-white ${
             isRightSidebarHovered
-              ? 'translate-x-0 opacity-100 pointer-events-auto'
-              : 'translate-x-full opacity-0 pointer-events-none'
+              ? 'translate-x-0 opacity-100 pointer-events-auto visible'
+              : 'translate-x-full opacity-0 pointer-events-none invisible'
           }`}
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/10 font-bold text-xs">
