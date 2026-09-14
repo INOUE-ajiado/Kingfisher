@@ -126,6 +126,33 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     minHeight: 260,
   });
 
+  const [showControls, setShowControls] = useState(true);
+  const hideControlsTimerRef = useRef<number | null>(null);
+
+  const handleMouseMove = useCallback(() => {
+    setShowControls(true);
+    if (hideControlsTimerRef.current !== null) {
+      window.clearTimeout(hideControlsTimerRef.current);
+    }
+    if (isFullscreen) {
+      hideControlsTimerRef.current = window.setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      setShowControls(true);
+      if (hideControlsTimerRef.current !== null) {
+        window.clearTimeout(hideControlsTimerRef.current);
+        hideControlsTimerRef.current = null;
+      }
+    } else {
+      handleMouseMove();
+    }
+  }, [isFullscreen, handleMouseMove]);
+
   const toggleFullscreen = useCallback(() => {
     if (!targetRef.current) return;
     if (!document.fullscreenElement) {
@@ -570,28 +597,28 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   return (
     <div
       ref={targetRef}
-      style={windowStyle}
+      style={isFullscreen ? undefined : windowStyle}
       onPointerDownCapture={() => {
         bringToFront();
         setActiveRollId(rollId);
       }}
+      onMouseMove={handleMouseMove}
       onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
       onDragLeave={() => setIsDragOver(false)}
       onDrop={(e) => void handleDrop(e)}
-      /*
-        ⚠️ ドッキング中は 1px 枠・角丸なし・影なし。作業領域はエッジ・トゥ・エッジで、
-        太い枠と角丸のぶんだけ映像が小さくなる (2026-08-31 のユーザー指定)。
-        浮かせたときは背景に溶けないよう従来の見た目を残す。
-      */
-      className={`flex flex-col bg-white dark:bg-slate-900 ${
-        view.isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'
-      } ${
-        isOverDockTarget
-          ? 'border-blue-500 ring-4 ring-blue-500/50'
-          : isDragOver
-          ? 'border-amber-400 ring-4 ring-amber-400/50'
-          : tone.border
-      } ${isActive && partnerOpen ? 'ring-1 ring-inset ring-amber-400/70' : ''} relative`}
+      className={
+        isFullscreen
+          ? 'fixed inset-0 w-screen h-screen z-50 bg-black flex flex-col justify-between overflow-hidden relative select-none'
+          : `flex flex-col bg-white dark:bg-slate-900 ${
+              view.isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'
+            } ${
+              isOverDockTarget
+                ? 'border-blue-500 ring-4 ring-blue-500/50'
+                : isDragOver
+                ? 'border-amber-400 ring-4 ring-amber-400/50'
+                : tone.border
+            } ${isActive && partnerOpen ? 'ring-1 ring-inset ring-amber-400/70' : ''} relative`
+      }
     >
       {isDragOver && (
         <div className="absolute inset-0 bg-indigo-950/90 border-2 border-dashed border-amber-300 rounded flex flex-col items-center justify-center text-amber-300 z-50 pointer-events-none p-4 select-none">
@@ -603,7 +630,13 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
 
       <div
         onPointerDown={handleHeaderPointerDown}
-        className={`h-6 bg-gradient-to-r ${tone.header} text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing shadow-xs`}
+        className={
+          isFullscreen
+            ? `absolute top-0 left-0 right-0 z-30 h-10 bg-gradient-to-b from-black/80 via-black/40 to-transparent text-white flex items-center justify-between px-3 text-[11px] font-bold select-none transition-opacity duration-300 ${
+                showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`
+            : `h-6 bg-gradient-to-r ${tone.header} text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing shadow-xs`
+        }
       >
         <div className="flex items-center gap-1.5 truncate">
           <Film className={`w-3.5 h-3.5 ${tone.accent}`} />
@@ -680,12 +713,19 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       </div>
 
       {/* 映像 */}
-      <div className="flex-1 min-h-0 bg-black relative flex items-center justify-center cursor-pointer" onDoubleClick={toggleFullscreen}>
+      <div
+        className={
+          isFullscreen
+            ? 'absolute inset-0 z-10 w-full h-full bg-black flex items-center justify-center cursor-pointer'
+            : 'flex-1 min-h-0 bg-black relative flex items-center justify-center cursor-pointer'
+        }
+        onDoubleClick={toggleFullscreen}
+      >
         {view.objectUrl && !unsupported && (
           <video
             ref={attachVideo}
             src={view.objectUrl}
-            className="max-w-full max-h-full"
+            className={isFullscreen ? 'w-full h-full object-contain' : 'max-w-full max-h-full'}
             playsInline
             preload="metadata"
             onLoadedMetadata={(e) => {
@@ -778,7 +818,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       </div>
 
       {/* 操作 */}
-      <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 px-2 py-1.5 space-y-1.5">
+      <div
+        className={
+          isFullscreen
+            ? `absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 py-3 space-y-2 text-white transition-opacity duration-300 ${
+                showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+              }`
+            : 'flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 px-2 py-1.5 space-y-1.5'
+        }
+      >
         <input
           ref={seekRef}
           type="range"
