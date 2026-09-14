@@ -32,6 +32,7 @@ const ascii = (bytes: Uint8Array, at: number, len = 4): string =>
  * MOV / MP4 コンテナから ProRes のサンプルインデックスを解析
  */
 export async function parseProResMovMetadata(file: File): Promise<ProResMetadata | null> {
+  logDebug('roll', `[ProRes DEBUG] MOV コンテナ解析開始: ${file.name} (サイズ: ${file.size} bytes / type: ${file.type || '未指定'})`);
   try {
     const MAX_MOOV = 128 * 1024 * 1024;
     let offset = 0;
@@ -57,7 +58,11 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
 
       if (type === 'moov') {
         const end = size === 0 ? file.size : offset + size;
-        if (end - offset > MAX_MOOV) return null;
+        logDebug('roll', `[ProRes DEBUG] moov アトム発見 (オフセット: ${offset}, サイズ: ${end - offset} bytes)`);
+        if (end - offset > MAX_MOOV) {
+          logDebug('roll', `[ProRes DEBUG] moov サイズ上限超過 (${end - offset} > ${MAX_MOOV})`, undefined, 'warn');
+          return null;
+        }
         moovBytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
         break;
       }
@@ -66,7 +71,10 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       offset += size;
     }
 
-    if (!moovBytes) return null;
+    if (!moovBytes) {
+      logDebug('roll', `[ProRes DEBUG] moov アトムが見つかりませんでした`, undefined, 'warn');
+      return null;
+    }
 
     // moov から stsd (codec, width, height), stsz (sizes), stco/co64 (offsets), stts (durations) を探索
     let fourcc = 'apch';
@@ -88,6 +96,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
               height = h;
             }
           }
+          logDebug('roll', `[ProRes DEBUG] stsd 検出: fourcc=${fourcc}, stsd.width=${width}, stsd.height=${height}`);
           break;
         }
       }
@@ -103,6 +112,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
         if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
           width = w;
           height = h;
+          logDebug('roll', `[ProRes DEBUG] tkhd 検出: tkhd.width=${width}, tkhd.height=${height}`);
           break;
         }
       }
@@ -122,6 +132,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
             sizes.push(view.getUint32(12 + c * 4));
           }
         }
+        logDebug('roll', `[ProRes DEBUG] stsz 検出: 全 ${sizes.length} サンプル (サンプル[0]サイズ: ${sizes[0]} bytes)`);
         if (sizes.length > 0) break;
       }
     }
@@ -136,6 +147,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
         for (let c = 0; c < count && i + 16 + c * 4 < moovBytes.length; c++) {
           rawOffsets.push(view.getUint32(8 + c * 4));
         }
+        logDebug('roll', `[ProRes DEBUG] stco 検出: 全 ${rawOffsets.length} チャック (サンプル[0]オフセット: ${rawOffsets[0]})`);
         if (rawOffsets.length > 0) break;
       } else if (moovBytes[i] === 0x63 && moovBytes[i + 1] === 0x6f && moovBytes[i + 2] === 0x36 && moovBytes[i + 3] === 0x34) {
         // co64 (64bit)
@@ -146,11 +158,15 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
           const low = view.getUint32(12 + c * 8);
           rawOffsets.push(high * 4294967296 + low);
         }
+        logDebug('roll', `[ProRes DEBUG] co64 検出: 全 ${rawOffsets.length} チャック (サンプル[0]オフセット: ${rawOffsets[0]})`);
         if (rawOffsets.length > 0) break;
       }
     }
 
-    if (sizes.length === 0 || rawOffsets.length === 0) return null;
+    if (sizes.length === 0 || rawOffsets.length === 0) {
+      logDebug('roll', `[ProRes DEBUG] サンプルインデックス未検出 (sizes: ${sizes.length}, offsets: ${rawOffsets.length})`, undefined, 'warn');
+      return null;
+    }
 
     // オフセットとサイズを紐づけ
     const samples: ProResFrameSample[] = [];
@@ -176,22 +192,28 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
         const sampleOffset = samples[0].offset;
         const headerBuf = await file.slice(sampleOffset, sampleOffset + 16).arrayBuffer();
         const headerBytes = new Uint8Array(headerBuf);
-        if (ascii(headerBytes, 4) === 'icpf') {
+        const sig = ascii(headerBytes, 4);
+        if (sig === 'icpf') {
           const view = new DataView(headerBytes.buffer);
           const w = view.getUint16(8);
           const h = view.getUint16(10);
+          logDebug('roll', `[ProRes DEBUG] サンプル[0] icpf 検証成功: sig=${sig}, icpf.width=${w}, icpf.height=${h}`);
           if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
             width = w;
             height = h;
           }
+        } else {
+          logDebug('roll', `[ProRes DEBUG] サンプル[0] シグネチャ: "${sig}" (icpf ではないためフォールバックを使用)`, undefined, 'info');
         }
-      } catch {}
+      } catch (err: any) {
+        logDebug('roll', `[ProRes DEBUG] サンプル[0] ヘッダー読み込みエラー: ${err?.message || err}`, undefined, 'warn');
+      }
     }
 
     const duration = currentPts;
     const fps = totalFrames > 0 && duration > 0 ? Math.round((totalFrames / duration) * 1000) / 1000 : 24;
 
-    logDebug('roll', `ProRes MOV メタデータ高速解析完了: ${fourcc} (${width}x${height}, ${totalFrames}コマ, ${fps}fps, 尺${duration.toFixed(2)}s)`);
+    logDebug('roll', `[ProRes DEBUG] 解析完了: fourcc=${fourcc}, width=${width}, height=${height}, totalFrames=${totalFrames}, fps=${fps}, duration=${duration.toFixed(2)}s`);
 
     return {
       fourcc,
@@ -202,8 +224,8 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       totalFrames,
       samples,
     };
-  } catch (err) {
-    console.error('Failed to parse ProRes MOV metadata:', err);
+  } catch (err: any) {
+    logDebug('roll', `[ProRes DEBUG] MOV メタデータ解析失敗: ${err?.message || err}`, undefined, 'warn');
     return null;
   }
 }
@@ -252,7 +274,7 @@ export class ProResRealtimeDecoder {
     if (typeof window === 'undefined') return false;
 
     if (!('VideoDecoder' in window)) {
-      logDebug('roll', `WebCodecs VideoDecoder 未実装環境。純粋 JS リアルタイムデコーダーで動作します`);
+      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder 未実装環境。純粋 JS リアルタイムデコーダーで動作します`);
       this.isDecoderConfigured = false;
       return true;
     }
@@ -264,6 +286,7 @@ export class ProResRealtimeDecoder {
             const pts = frame.timestamp / 1000000;
             const frameIdx = Math.round(pts * this.metadata.fps);
             this.frameCache.set(frameIdx, bitmap);
+            logDebug('roll', `[ProRes DEBUG] WebCodecs decode 成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height})`);
             const callback = this.pendingDecodes.get(frameIdx);
             if (callback) {
               callback(bitmap);
@@ -273,7 +296,7 @@ export class ProResRealtimeDecoder {
           }).catch(() => frame.close());
         },
         error: (err) => {
-          logDebug('roll', `WebCodecs デコーダー警告: ${err.message}`, undefined, 'info');
+          logDebug('roll', `[ProRes DEBUG] WebCodecs デコーダー通知: ${err.message}`, undefined, 'info');
         },
       });
 
@@ -300,15 +323,17 @@ export class ProResRealtimeDecoder {
         try {
           this.videoDecoder.configure(config);
           this.isDecoderConfigured = true;
-          logDebug('roll', `WebCodecs VideoDecoder (${codec}) の即時アタッチに成功しました (${this.metadata.width}x${this.metadata.height})`);
+          logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder.configure(${codec}) 成功 (${this.metadata.width}x${this.metadata.height})`);
           return true;
-        } catch {}
+        } catch (confErr: any) {
+          logDebug('roll', `[ProRes DEBUG] WebCodecs configure(${codec}) 試行失敗: ${confErr?.message || confErr}`, undefined, 'info');
+        }
       }
 
-      logDebug('roll', `WebCodecs 直接設定を試行中。JS オンデマンドデコーダーを併用します (${this.metadata.width}x${this.metadata.height})`);
+      logDebug('roll', `[ProRes DEBUG] WebCodecs 設定完了。JS オンデマンドデコーダーを併用します (${this.metadata.width}x${this.metadata.height})`);
       return true;
-    } catch (e) {
-      console.warn('WebCodecs VideoDecoder init failed, falling back to JS decoder:', e);
+    } catch (e: any) {
+      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder init 例外: ${e?.message || e}。JS デコーダーへ移行します`, undefined, 'warn');
       return true;
     }
   }
@@ -324,7 +349,10 @@ export class ProResRealtimeDecoder {
     }
 
     const sample = this.metadata.samples[idx];
-    if (!sample) return null;
+    if (!sample) {
+      logDebug('roll', `[ProRes DEBUG] Frame ${idx} のサンプルインデックスが見つかりません`, undefined, 'warn');
+      return null;
+    }
 
     try {
       const chunkBuf = await this.file.slice(sample.offset, sample.offset + sample.size).arrayBuffer();
@@ -341,7 +369,8 @@ export class ProResRealtimeDecoder {
               data: chunkData,
             });
             this.videoDecoder!.decode(chunk);
-          } catch {
+          } catch (chunkErr: any) {
+            logDebug('roll', `[ProRes DEBUG] EncodedVideoChunk デコード例外: ${chunkErr?.message || chunkErr}`, undefined, 'warn');
             this.pendingDecodes.delete(idx);
             resolve(null);
           }
@@ -349,6 +378,7 @@ export class ProResRealtimeDecoder {
           // 80ms タイムアウトで JS デコーダーへフォールバック
           setTimeout(() => {
             if (this.pendingDecodes.has(idx)) {
+              logDebug('roll', `[ProRes DEBUG] Frame ${idx} WebCodecs 応答タイムアウト (80ms)。JS デコーダーを呼び出します`);
               this.pendingDecodes.delete(idx);
               resolve(null);
             }
@@ -360,9 +390,17 @@ export class ProResRealtimeDecoder {
       }
 
       // WebCodecs が非対応またはタイムアウトした場合の JS デコーダー
-      return await decodeProResChunkToBitmap(chunkData, this.metadata.width, this.metadata.height);
-    } catch (err) {
-      console.warn('Failed to read/decode frame sample:', err);
+      logDebug('roll', `[ProRes DEBUG] Frame ${idx} JS スライスデコーダー実行 (offset: ${sample.offset}, size: ${sample.size})`);
+      const jsBitmap = await decodeProResChunkToBitmap(chunkData, this.metadata.width, this.metadata.height);
+      if (jsBitmap) {
+        this.frameCache.set(idx, jsBitmap);
+        logDebug('roll', `[ProRes DEBUG] JS スライスデコーダー成功: Frame ${idx} (${jsBitmap.width}x${jsBitmap.height})`);
+      } else {
+        logDebug('roll', `[ProRes DEBUG] JS スライスデコーダー失敗: Frame ${idx}`, undefined, 'warn');
+      }
+      return jsBitmap;
+    } catch (err: any) {
+      logDebug('roll', `[ProRes DEBUG] Frame ${idx} サンプル取得エラー: ${err?.message || err}`, undefined, 'warn');
     }
 
     return null;

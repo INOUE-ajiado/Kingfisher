@@ -332,7 +332,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     const frameIdx = Math.floor(time * fps);
 
     decoder.getFrame(frameIdx).then((bitmap: ImageBitmap | null) => {
-      if (!bitmap || !canvasRef.current) return;
+      if (!bitmap || !canvasRef.current) {
+        logDebug('roll', `[ProRes DEBUG] Canvas 描画スキップ: Frame ${frameIdx} (bitmap: ${bitmap ? 'あり' : 'null'}, canvas: ${canvasRef.current ? 'あり' : 'なし'})`, undefined, 'warn');
+        return;
+      }
       const c = canvasRef.current;
       if (c.width !== bitmap.width || c.height !== bitmap.height) {
         c.width = bitmap.width;
@@ -341,9 +344,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       const ctx = c.getContext('2d');
       if (ctx) {
         ctx.drawImage(bitmap, 0, 0);
+        logDebug('roll', `[ProRes DEBUG] Canvas 描画成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height}) -> canvas (${c.width}x${c.height})`);
       }
     }).catch((err: any) => {
-      console.error('Frame decode error:', err);
+      logDebug('roll', `[ProRes DEBUG] Canvas 描画例外: Frame ${frameIdx} - ${err?.message || err}`, undefined, 'warn');
     });
   }, [view.realtimeDecoder, view.fps]);
 
