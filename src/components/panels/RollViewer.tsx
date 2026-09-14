@@ -138,7 +138,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (isFullscreen) {
       hideControlsTimerRef.current = window.setTimeout(() => {
         setShowControls(false);
-      }, 3000);
+      }, 1000);
     }
   }, [isFullscreen]);
 
@@ -614,7 +614,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       className={
         isFullscreen
           ? `fixed inset-0 w-screen h-screen z-50 bg-black flex flex-col justify-between overflow-hidden relative select-none ${
-              isPlaying && !showControls ? 'cursor-none' : ''
+              isPlaying && !showControls ? 'cursor-none [&_*]:!cursor-none' : ''
             }`
           : `flex flex-col bg-white dark:bg-slate-900 ${
               view.isFloating ? 'border-2 rounded shadow-2xl' : 'border flex-1'
@@ -734,7 +734,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         className={
           isFullscreen
             ? `absolute inset-0 z-10 w-full h-full bg-black flex items-center justify-center cursor-pointer ${
-                isPlaying && !showControls ? 'cursor-none' : ''
+                isPlaying && !showControls ? 'cursor-none [&_*]:!cursor-none' : ''
               }`
             : 'flex-1 min-h-0 bg-black relative flex items-center justify-center cursor-pointer'
         }
@@ -744,7 +744,11 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <video
             ref={attachVideo}
             src={view.objectUrl}
-            className={isFullscreen ? 'w-full h-full object-contain' : 'max-w-full max-h-full'}
+            className={
+              isFullscreen
+                ? `w-full h-full object-contain ${isPlaying && !showControls ? 'cursor-none !cursor-none' : ''}`
+                : 'max-w-full max-h-full'
+            }
             playsInline
             preload="metadata"
             onLoadedMetadata={(e) => {
