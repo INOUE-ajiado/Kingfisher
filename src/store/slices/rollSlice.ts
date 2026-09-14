@@ -16,7 +16,7 @@
 import { StateCreator } from 'zustand';
 import { PaintStore, RollSlice, RollState, RollViewState, RollId, ROLL_IDS } from '../types';
 import { DroppedVideo, toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
-import { convertProResToMp4 } from '../../engine/proresConverter';
+import { convertProResToMp4, invalidateProResCache } from '../../engine/proresConverter';
 import { parseProResMovMetadata, ProResRealtimeDecoder } from '../../engine/proresRealtimeDecoder';
 import { logDebug } from '../../engine/debugLog';
 import { getRollVideo } from '../../components/panels/rollVideoRegistry';
@@ -356,6 +356,14 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
   reportRollPlaybackFailure: async (id) => {
     const view = get().roll.views[id];
     if (!view.file) return;
+
+    // 既に変換中・エラー・非対応に遷移している場合は重複発火を防ぐ
+    if (view.status === 'converting' || view.status === 'error' || view.status === 'unsupported') {
+      return;
+    }
+
+    // <video> 要素で失敗した場合、壊れたキャッシュをクリアして再試行
+    invalidateProResCache(view.file);
 
     let codec = null;
     try {

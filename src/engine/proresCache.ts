@@ -53,11 +53,13 @@ export async function getCachedProResVideo(cacheKey: string): Promise<{ blob: Bl
       const req = store.get(cacheKey);
       req.onsuccess = () => {
         const result = req.result as CachedVideoEntry | undefined;
-        if (result && result.blob) {
+        // 破損・不完全キャッシュ (10KB 未満) は無効化して削除
+        if (result && result.blob && result.blob.size >= 10000) {
           const objectUrl = URL.createObjectURL(result.blob);
-          logDebug('roll', `IndexedDB 永続キャッシュから即時復元: ${cacheKey}`);
+          logDebug('roll', `IndexedDB 永続キャッシュから即時復元: ${cacheKey} (${(result.blob.size / 1024).toFixed(1)} KB)`);
           resolve({ blob: result.blob, objectUrl });
         } else {
+          if (result) void removeCachedProResVideo(cacheKey);
           resolve(null);
         }
       };
@@ -66,6 +68,24 @@ export async function getCachedProResVideo(cacheKey: string): Promise<{ blob: Bl
   } catch (err) {
     console.warn('IndexedDB read error:', err);
     return null;
+  }
+}
+
+/**
+ * IndexedDB から特定キーのキャッシュを削除
+ */
+export async function removeCachedProResVideo(cacheKey: string): Promise<void> {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.delete(cacheKey);
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+    });
+  } catch (err) {
+    console.warn('IndexedDB delete error:', err);
   }
 }
 

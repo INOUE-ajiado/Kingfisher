@@ -1,10 +1,29 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { logDebug } from './debugLog';
-import { getProResCacheKey, getCachedProResVideo, saveCachedProResVideo } from './proresCache';
+import { getProResCacheKey, getCachedProResVideo, saveCachedProResVideo, removeCachedProResVideo } from './proresCache';
 
 let ffmpegInstance: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
+
+/** 変換済みファイルのメモリキャッシュ */
+const conversionCache = new Map<string, { blob: Blob; objectUrl: string }>();
+
+/**
+ * 破損・不完全なキャッシュを無効化して削除
+ */
+export function invalidateProResCache(file: File): void {
+  const cacheKey = getProResCacheKey(file);
+  if (conversionCache.has(cacheKey)) {
+    const entry = conversionCache.get(cacheKey);
+    if (entry?.objectUrl) {
+      try { URL.revokeObjectURL(entry.objectUrl); } catch {}
+    }
+    conversionCache.delete(cacheKey);
+    logDebug('roll', `破損メモリキャッシュを破棄: ${file.name}`);
+  }
+  void removeCachedProResVideo(cacheKey);
+}
 
 /**
  * FFmpeg WASM インスタンスの初期化
@@ -65,9 +84,6 @@ export async function getFFmpeg(): Promise<FFmpeg> {
 
   return loadPromise;
 }
-
-/** 変換済みファイルのメモリキャッシュ */
-const conversionCache = new Map<string, { blob: Blob; objectUrl: string }>();
 
 /**
  * ProRes 映像ファイルをブラウザ再生可能な H.264 / WebM へ自動変換する
