@@ -14,7 +14,16 @@ import {
 } from '../../engine/retakeStore';
 import { logDebug } from '../../engine/debugLog';
 
-const DEFAULT_TAGS = ['撮影修正', '色修', '作画修正', '要確認'];
+export const RETAKE_CATEGORIES = [
+  '撮影',
+  '美術',
+  '仕上げ',
+  '動検',
+  '監督',
+  'キャラデ',
+  '作監',
+  '確認',
+] as const;
 
 function formatTimecode(seconds: number, fps: number): { timecode: string; frame: number } {
   if (!Number.isFinite(seconds) || seconds < 0) return { timecode: '00:00:00+00', frame: 0 };
@@ -37,7 +46,7 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
 
   const [items, setItems] = useState<RetakeItem[]>([]);
   const [inputText, setInputText] = useState('');
-  const [selectedTag, setSelectedTag] = useState('撮影修正');
+  const [selectedTag, setSelectedTag] = useState<string>('撮影');
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -194,23 +203,23 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
       {/* 入力エリア */}
       <form onSubmit={handleAddItem} className="py-2 space-y-1.5 border-b border-white/10">
         <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1 overflow-x-auto">
-            {DEFAULT_TAGS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                tabIndex={-1}
-                onPointerDown={(e) => e.currentTarget.blur()}
-                onClick={() => setSelectedTag(t)}
-                className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-colors ${
-                  selectedTag === t
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'bg-white/10 hover:bg-white/20 text-slate-300'
-                }`}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className="text-[10px] text-amber-300 font-bold flex-shrink-0">修正先:</span>
+            <select
+              tabIndex={-1}
+              value={selectedTag}
+              onChange={(e) => {
+                setSelectedTag(e.target.value);
+                e.target.blur();
+              }}
+              className="bg-slate-950/80 border border-white/20 rounded px-1.5 py-0.5 text-amber-300 font-bold text-[10px] focus:outline-none focus:border-amber-400 cursor-pointer"
+            >
+              {RETAKE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat} className="bg-slate-900 text-slate-100">
+                  {cat}
+                </option>
+              ))}
+            </select>
           </div>
           <button
             type="button"
