@@ -74,20 +74,35 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
     let height = 1080;
 
     // 1. stsd 探索
-    for (let i = 0; i + 24 <= moovBytes.length; i++) {
+    for (let i = 0; i + 48 <= moovBytes.length; i++) {
       if (moovBytes[i] === 0x73 && moovBytes[i + 1] === 0x74 && moovBytes[i + 2] === 0x73 && moovBytes[i + 3] === 0x64) {
         const candidate = ascii(moovBytes, i + 16);
         if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate)) {
           fourcc = candidate;
-          const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 24);
-          if (view.byteLength >= 12) {
-            const w = view.getUint16(8);
-            const h = view.getUint16(10);
-            if (w > 0 && h > 0) {
+          const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 16);
+          if (view.byteLength >= 32) {
+            const w = view.getUint16(28);
+            const h = view.getUint16(30);
+            if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
               width = w;
               height = h;
             }
           }
+          break;
+        }
+      }
+    }
+
+    // 2. tkhd 探索 (width / height の検証)
+    for (let i = 0; i + 96 <= moovBytes.length; i++) {
+      if (moovBytes[i] === 0x74 && moovBytes[i + 1] === 0x6b && moovBytes[i + 2] === 0x68 && moovBytes[i + 3] === 0x64) {
+        const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + i + 8);
+        const version = view.getUint8(0);
+        const w = (version === 1 ? view.getUint32(88) : view.getUint32(76)) >> 16;
+        const h = (version === 1 ? view.getUint32(92) : view.getUint32(80)) >> 16;
+        if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
+          width = w;
+          height = h;
           break;
         }
       }
@@ -155,6 +170,24 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       currentPts += defaultFrameDuration;
     }
 
+    // 5. サンプル[0] の icpf (ProRes フレームヘッダー) から解像度を直接検出
+    if (samples.length > 0 && samples[0].size >= 16) {
+      try {
+        const sampleOffset = samples[0].offset;
+        const headerBuf = await file.slice(sampleOffset, sampleOffset + 16).arrayBuffer();
+        const headerBytes = new Uint8Array(headerBuf);
+        if (ascii(headerBytes, 4) === 'icpf') {
+          const view = new DataView(headerBytes.buffer);
+          const w = view.getUint16(8);
+          const h = view.getUint16(10);
+          if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
+            width = w;
+            height = h;
+          }
+        }
+      } catch {}
+    }
+
     const duration = currentPts;
     const fps = totalFrames > 0 && duration > 0 ? Math.round((totalFrames / duration) * 1000) / 1000 : 24;
 
@@ -189,15 +222,34 @@ export class ProResRealtimeDecoder {
   constructor(file: File, metadata: ProResMetadata) {
     this.file = file;
     this.metadata = metadata;
-    this.initWebCodecs();
   }
 
   public get Meta(): ProResMetadata {
     return this.metadata;
   }
 
-  private initWebCodecs() {
-    if (typeof window === 'undefined' || !('VideoDecoder' in window)) return;
+  public get duration(): number {
+    return this.metadata.duration;
+  }
+
+  public get fps(): number {
+    return this.metadata.fps;
+  }
+
+  public get frameCount(): number {
+    return this.metadata.totalFrames;
+  }
+
+  public get width(): number {
+    return this.metadata.width;
+  }
+
+  public get height(): number {
+    return this.metadata.height;
+  }
+
+  public async init(): Promise<boolean> {
+    if (typeof window === 'undefined' || !('VideoDecoder' in window)) return false;
 
     try {
       this.videoDecoder = new VideoDecoder({
@@ -219,23 +271,35 @@ export class ProResRealtimeDecoder {
         },
       });
 
-      const config: VideoDecoderConfig = {
-        codec: this.metadata.fourcc,
-        codedWidth: this.metadata.width,
-        codedHeight: this.metadata.height,
-      };
+      const codecsToTry = [
+        this.metadata.fourcc,
+        this.metadata.fourcc.toLowerCase(),
+        this.metadata.fourcc.toUpperCase(),
+      ];
 
-      VideoDecoder.isConfigSupported(config).then((res) => {
-        if (res.supported && this.videoDecoder) {
-          this.videoDecoder.configure(config);
-          this.isDecoderConfigured = true;
-          logDebug('roll', `WebCodecs VideoDecoder (${this.metadata.fourcc}) の初期化に成功しました`);
-        } else {
-          logDebug('roll', `WebCodecs は ${this.metadata.fourcc} のネイティブデコードに未対応です`, undefined, 'info');
-        }
-      }).catch(() => {});
+      for (const codec of codecsToTry) {
+        const config: VideoDecoderConfig = {
+          codec,
+          codedWidth: this.metadata.width,
+          codedHeight: this.metadata.height,
+        };
+
+        try {
+          const res = await VideoDecoder.isConfigSupported(config);
+          if (res.supported && this.videoDecoder) {
+            this.videoDecoder.configure(config);
+            this.isDecoderConfigured = true;
+            logDebug('roll', `WebCodecs VideoDecoder (${codec}) の初期化に成功しました (${this.metadata.width}x${this.metadata.height})`);
+            return true;
+          }
+        } catch {}
+      }
+
+      logDebug('roll', `WebCodecs は ${this.metadata.fourcc} のネイティブデコードに未対応です (${this.metadata.width}x${this.metadata.height})`, undefined, 'info');
+      return false;
     } catch (e) {
       console.warn('WebCodecs VideoDecoder init failed:', e);
+      return false;
     }
   }
 

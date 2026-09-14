@@ -372,20 +372,23 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       const meta = await parseProResMovMetadata(view.file);
       if (meta) {
         const decoder = new ProResRealtimeDecoder(view.file, meta);
-        set((state) => ({
-          roll: withView(state.roll, id, {
-            ...state.roll.views[id],
-            status: 'ready',
-            isRealtimeProRes: true,
-            realtimeDecoder: decoder,
-            fps: meta.fps,
-            fpsSource: 'auto',
-            codec: c,
-            message: 'ProRes リアルタイムデコード再生中',
-          }),
-        }));
-        logDebug('roll', `${rollLabel(id)} の ProRes 高速解析が完了。0 秒即時再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
-        return;
+        const supported = await decoder.init();
+        if (supported) {
+          set((state) => ({
+            roll: withView(state.roll, id, {
+              ...state.roll.views[id],
+              status: 'ready',
+              isRealtimeProRes: true,
+              realtimeDecoder: decoder,
+              fps: meta.fps,
+              fpsSource: 'auto',
+              codec: c,
+              message: 'ProRes リアルタイムデコード再生中',
+            }),
+          }));
+          logDebug('roll', `${rollLabel(id)} の ProRes 高速解析が完了。0 秒即時再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
+          return;
+        }
       }
 
       // Fallback: トランスコード
