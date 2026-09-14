@@ -93,7 +93,8 @@ export async function convertProResToMp4(
 
   const sanitizeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   const inName = `in_${Date.now()}_${sanitizeName}`;
-  const outName = `out_${Date.now()}.mp4`;
+  let outName = `out_${Date.now()}.webm`;
+  let mimeType = 'video/webm';
 
   let progressListener: ((e: { progress: number; time: number }) => void) | null = null;
   if (onProgress) {
@@ -117,8 +118,82 @@ export async function convertProResToMp4(
     await ffmpeg.writeFile(inName, fileData);
     logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
 
-    // 高速トランスコード: 標準 WASM ビルドに必ず含まれる mpeg4 エンコーダを優先
+    // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ変換
+    let converted = false;
+
+    // 試行1: VP8 (WebM) — modern ブラウザ (Chrome/Safari/Firefox/Edge) 100% 対応
     try {
+      outName = `out_${Date.now()}.webm`;
+      mimeType = 'video/webm';
+      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp8 -b:v 2M ${outName}`);
+      await ffmpeg.exec([
+        '-i',
+        inName,
+        '-c:v',
+        'vp8',
+        '-b:v',
+        '2M',
+        '-an', // 音声ストリームが無い/エラー予防
+        outName,
+      ]);
+      converted = true;
+    } catch (vp8Err: any) {
+      logDebug('roll', `VP8 (WebM) 変換失敗 (${vp8Err?.message || vp8Err})。VP9 試行...`, undefined, 'warn');
+    }
+
+    // 試行2: VP9 (WebM)
+    if (!converted) {
+      try {
+        outName = `out_${Date.now()}.webm`;
+        mimeType = 'video/webm';
+        logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp9 -b:v 2M ${outName}`);
+        await ffmpeg.exec([
+          '-i',
+          inName,
+          '-c:v',
+          'vp9',
+          '-b:v',
+          '2M',
+          '-an',
+          outName,
+        ]);
+        converted = true;
+      } catch (vp9Err: any) {
+        logDebug('roll', `VP9 (WebM) 変換失敗 (${vp9Err?.message || vp9Err})。libx264/mpeg4 試行...`, undefined, 'warn');
+      }
+    }
+
+    // 試行3: libx264 (MP4)
+    if (!converted) {
+      try {
+        outName = `out_${Date.now()}.mp4`;
+        mimeType = 'video/mp4';
+        logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v libx264 -preset ultrafast -crf 22 -pix_fmt yuv420p -movflags faststart ${outName}`);
+        await ffmpeg.exec([
+          '-i',
+          inName,
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-crf',
+          '22',
+          '-pix_fmt',
+          'yuv420p',
+          '-movflags',
+          'faststart',
+          outName,
+        ]);
+        converted = true;
+      } catch (h264Err: any) {
+        logDebug('roll', `libx264 変換失敗 (${h264Err?.message || h264Err})。mpeg4 試行...`, undefined, 'warn');
+      }
+    }
+
+    // 試行4: mpeg4 (MP4) フォールバック
+    if (!converted) {
+      outName = `out_${Date.now()}.mp4`;
+      mimeType = 'video/mp4';
       logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v mpeg4 -q:v 2 -movflags faststart ${outName}`);
       await ffmpeg.exec([
         '-i',
@@ -131,31 +206,14 @@ export async function convertProResToMp4(
         'faststart',
         outName,
       ]);
-    } catch (mpeg4Err: any) {
-      logDebug('roll', `mpeg4 変換失敗 (${mpeg4Err?.message || mpeg4Err})。libx264 フォールバック試行...`, undefined, 'warn');
-      await ffmpeg.exec([
-        '-i',
-        inName,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        '-crf',
-        '22',
-        '-pix_fmt',
-        'yuv420p',
-        '-movflags',
-        'faststart',
-        outName,
-      ]);
     }
 
     logDebug('roll', `変換出力ファイルを読み込み中 (${outName})...`);
     const data = (await ffmpeg.readFile(outName)) as Uint8Array;
     const outSizeMB = (data.byteLength / (1024 * 1024)).toFixed(2);
-    logDebug('roll', `変換出力ファイルの取得成功 (生成サイズ: ${outSizeMB} MB)`);
+    logDebug('roll', `変換出力ファイルの取得成功 (生成サイズ: ${outSizeMB} MB, mime: ${mimeType})`);
 
-    const blob = new Blob([new Uint8Array(data)], { type: 'video/mp4' });
+    const blob = new Blob([new Uint8Array(data)], { type: mimeType });
     const objectUrl = URL.createObjectURL(blob);
 
     // 一時ファイル解放
