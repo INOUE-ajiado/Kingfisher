@@ -125,28 +125,28 @@ export async function convertProResToMp4(
     await ffmpeg.writeFile(inName, fileData);
     logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
 
-    // 先頭プレビュー (即時再生) が要求されている場合、先頭3秒間を超高速エンコードして通知
+    // 先頭プレビュー (即時再生) が要求されている場合、元解像度の高画質先頭プレビューを生成
     if (onFastPreviewReady) {
       try {
         const prevName = `prev_${Date.now()}.webm`;
-        logDebug('roll', `先頭プレビュー (3秒/640x360) を爆速生成中...`);
+        logDebug('roll', `先頭プレビュー (高画質) を生成中...`);
         await ffmpeg.exec([
           '-ss',
           '0',
           '-t',
-          '3',
+          '2',
           '-i',
           inName,
-          '-s',
-          '640x360',
           '-c:v',
           'vp8',
           '-b:v',
-          '800k',
+          '6M',
+          '-crf',
+          '10',
           '-deadline',
           'realtime',
           '-cpu-used',
-          '8',
+          '6',
           '-an',
           prevName,
         ]);
@@ -154,7 +154,7 @@ export async function convertProResToMp4(
         const prevBlob = new Blob([new Uint8Array(prevData)], { type: 'video/webm' });
         const prevUrl = URL.createObjectURL(prevBlob);
         await ffmpeg.deleteFile(prevName).catch(() => {});
-        logDebug('roll', `先頭プレビュー生成完了。即時再生を開始します`);
+        logDebug('roll', `高画質先頭プレビュー生成完了。即時再生を開始します`);
         onFastPreviewReady({ blob: prevBlob, objectUrl: prevUrl });
       } catch (prevErr: any) {
         logDebug('roll', `先頭プレビュー生成スキップ: ${prevErr?.message || prevErr}`, undefined, 'info');
@@ -164,23 +164,25 @@ export async function convertProResToMp4(
     // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ全編変換
     let converted = false;
 
-    // 試行1: VP8 (WebM) — リアルタイム設定で高速全編変換
+    // 試行1: VP8 (WebM) — 元解像度・高ビットレート (8M / crf 10) でクッキリ全編変換
     try {
       outName = `out_${Date.now()}.webm`;
       mimeType = 'video/webm';
-      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp8 -b:v 2M -deadline realtime -cpu-used 5 ${outName}`);
+      logDebug('roll', `[FFmpeg Command] ffmpeg -i ${inName} -c:v vp8 -b:v 8M -crf 10 -deadline realtime -cpu-used 4 ${outName}`);
       await ffmpeg.exec([
         '-i',
         inName,
         '-c:v',
         'vp8',
         '-b:v',
-        '2M',
+        '8M',
+        '-crf',
+        '10',
         '-deadline',
         'realtime',
         '-cpu-used',
-        '5',
-        '-an', // 音声ストリームが無い/エラー予防
+        '4',
+        '-an',
         outName,
       ]);
       converted = true;
