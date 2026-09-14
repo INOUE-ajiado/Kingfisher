@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
@@ -104,6 +104,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const tone = TONE[rollId];
   const partnerOpen = roll.views[otherRollId(rollId)].isOpen;
@@ -124,6 +125,29 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     minWidth: 320,
     minHeight: 260,
   });
+
+  const toggleFullscreen = useCallback(() => {
+    if (!targetRef.current) return;
+    if (!document.fullscreenElement) {
+      targetRef.current.requestFullscreen?.().catch((err) => {
+        console.error('Failed to enter fullscreen:', err);
+      });
+    } else {
+      document.exitFullscreen?.().catch((err) => {
+        console.error('Failed to exit fullscreen:', err);
+      });
+    }
+  }, [targetRef]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const el = targetRef.current;
+      const active = document.fullscreenElement;
+      setIsFullscreen(Boolean(active && (active === el || el?.contains(active))));
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, [targetRef]);
 
   /**
    * 2 面の再生位置を 1 行で。「ロール A c001.mov 1.250s / ロール B r001.mov 1.250s」
@@ -639,6 +663,13 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             {view.isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
           </button>
           <button
+            onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
+            title={isFullscreen ? '全画面表示を解除 (Esc)' : '全画面フルスクリーン表示 (ダブルクリックでも可)'}
+            className="p-0.5 hover:bg-white/25 rounded transition-colors"
+          >
+            {isFullscreen ? <Shrink className="w-3 h-3" /> : <Expand className="w-3 h-3" />}
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); closeRollWindow(rollId); }}
             title={`${tone.label} を閉じる`}
             className="p-0.5 hover:bg-red-600 rounded transition-colors"
@@ -649,7 +680,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       </div>
 
       {/* 映像 */}
-      <div className="flex-1 min-h-0 bg-black relative flex items-center justify-center">
+      <div className="flex-1 min-h-0 bg-black relative flex items-center justify-center cursor-pointer" onDoubleClick={toggleFullscreen}>
         {view.objectUrl && !unsupported && (
           <video
             ref={attachVideo}
