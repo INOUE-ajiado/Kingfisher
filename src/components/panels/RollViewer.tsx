@@ -133,6 +133,64 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const [isRightSidebarHovered, setIsRightSidebarHovered] = useState(false);
   const hideControlsTimerRef = useRef<number | null>(null);
 
+  const RETAKE_PANEL_HEIGHT_KEY = 'kingfisher_retake_panel_height';
+  const DEFAULT_RETAKE_HEIGHT = 320;
+  const MIN_RETAKE_HEIGHT = 120;
+
+  const [retakePanelHeight, setRetakePanelHeight] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(RETAKE_PANEL_HEIGHT_KEY);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= MIN_RETAKE_HEIGHT) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read retake panel height from localStorage', e);
+    }
+    return DEFAULT_RETAKE_HEIGHT;
+  });
+
+  const isResizingRef = useRef(false);
+
+  const handleResizerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startHeight = retakePanelHeight;
+    const target = e.currentTarget;
+    try {
+      target.setPointerCapture(e.pointerId);
+    } catch {}
+    isResizingRef.current = true;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!isResizingRef.current) return;
+      const deltaY = startY - moveEvent.clientY;
+      const maxHeight = Math.floor(window.innerHeight * 0.75);
+      const newHeight = Math.max(MIN_RETAKE_HEIGHT, Math.min(maxHeight, startHeight + deltaY));
+      setRetakePanelHeight(newHeight);
+      try {
+        localStorage.setItem(RETAKE_PANEL_HEIGHT_KEY, String(newHeight));
+      } catch {}
+    };
+
+    const onPointerUp = (upEvent: PointerEvent) => {
+      isResizingRef.current = false;
+      try {
+        target.releasePointerCapture(upEvent.pointerId);
+      } catch {}
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+    };
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  };
+
   const handleMouseMove = useCallback(() => {
     setShowControls(true);
     if (hideControlsTimerRef.current !== null) {
@@ -1019,14 +1077,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       {isFullscreen && (
         <div
           onMouseEnter={() => setIsRightSidebarHovered(true)}
-          onMouseLeave={() => setIsRightSidebarHovered(false)}
+          onMouseLeave={() => {
+            if (!isResizingRef.current) {
+              setIsRightSidebarHovered(false);
+            }
+          }}
           className={`fixed top-0 bottom-0 right-0 z-50 w-96 max-w-[85vw] bg-slate-900/80 dark:bg-slate-950/85 backdrop-blur-xl border-l border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-300 transform flex flex-col text-white ${
-            isRightSidebarHovered
+            isRightSidebarHovered || isResizingRef.current
               ? 'translate-x-0 opacity-100 pointer-events-auto visible'
               : 'translate-x-full opacity-0 pointer-events-none invisible'
           }`}
         >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/10 font-bold text-xs">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/10 font-bold text-xs select-none">
             <div className="flex items-center gap-1.5 text-amber-400">
               <Folder className="w-4 h-4" />
               <span>ファイルツリー (フルスクリーン)</span>
@@ -1043,7 +1105,20 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <div className="flex-1 min-h-0 overflow-auto p-2 text-slate-200">
             <FileBrowser />
           </div>
-          <div className="h-80 min-h-[240px] flex-shrink-0 border-t border-white/10">
+
+          {/* 上下幅調整（リサイズ）スプリッターバー */}
+          <div
+            onPointerDown={handleResizerPointerDown}
+            title="ドラッグしてツリーとリテイクメモの上下幅を調整"
+            className="h-2 cursor-row-resize flex items-center justify-center bg-white/5 hover:bg-amber-400/30 active:bg-amber-400/60 select-none group border-t border-b border-white/10 transition-colors touch-none flex-shrink-0"
+          >
+            <div className="w-8 h-1 rounded-full bg-white/30 group-hover:bg-amber-300 transition-colors" />
+          </div>
+
+          <div
+            style={{ height: `${retakePanelHeight}px` }}
+            className="flex-shrink-0 min-h-[100px] overflow-hidden"
+          >
             <RetakeNotePanel rollId={rollId} />
           </div>
         </div>
