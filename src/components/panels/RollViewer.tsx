@@ -89,6 +89,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     toggleSyncMode,
     syncMode,
     openRollWindow,
+    setRollReady,
   } = usePaintStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -559,8 +560,23 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const togglePlay = (both = false) => {
     const video = videoRef.current;
     if (!video) return;
-    setActiveRollId(rollId);
+
+    const currentView = usePaintStore.getState().roll.views[rollId];
+    if (currentView.status !== 'ready') {
+      logDebug('roll', `${tone.label} は読み込み・解析中 (${currentView.message || currentView.status}) のため再生できません`);
+      return;
+    }
+
     const isSyncOn = usePaintStore.getState().roll.sync;
+    if (both || isSyncOn) {
+      const partnerView = usePaintStore.getState().roll.views[otherRollId(rollId)];
+      if (partnerView && partnerView.isOpen && partnerView.status !== 'ready') {
+        logDebug('roll', `相手のロールが読み込み・解析中のため再生できません (${partnerView.message || partnerView.status})`);
+        return;
+      }
+    }
+
+    setActiveRollId(rollId);
     const partner = (both || isSyncOn) ? getRollVideo(otherRollId(rollId)) : partnerVideo();
 
     if (!video.paused) {
@@ -779,7 +795,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   }, [view.isOpen, rollId]);
 
   const unsupported = view.status === 'unsupported' || view.status === 'error';
-  const disabled = !view.objectUrl || unsupported;
+  const disabled = !view.objectUrl || unsupported || view.status !== 'ready';
   const isActive = roll.activeId === rollId;
 
   return (
@@ -928,19 +944,32 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             ref={attachVideo}
             src={view.objectUrl}
             className={
-              isFullscreen
+              (isFullscreen
                 ? `w-full h-full object-contain ${isPlaying && !showControls ? 'cursor-none !cursor-none' : ''}`
-                : 'max-w-full max-h-full'
+                : 'max-w-full max-h-full') +
+              (view.status !== 'ready' ? ' opacity-0 pointer-events-none invisible absolute' : '')
             }
             playsInline
             preload="metadata"
             onLoadedMetadata={(e) => {
               const v = e.currentTarget;
-              setDuration(Number.isFinite(v.duration) ? v.duration : 0);
+              const dur = Number.isFinite(v.duration) ? v.duration : 0;
+              setDuration(dur);
               v.playbackRate = speed;
               paintTime(v.currentTime);
+              if (dur > 0) {
+                setRollReady(rollId);
+              }
             }}
-            onPlay={() => setIsPlaying(true)}
+            onPlay={(e) => {
+              const currentStatus = usePaintStore.getState().roll.views[rollId].status;
+              if (currentStatus !== 'ready') {
+                e.currentTarget.pause();
+                setIsPlaying(false);
+                return;
+              }
+              setIsPlaying(true);
+            }}
             onPause={() => setIsPlaying(false)}
             onEnded={() => {
               const partner = partnerVideo() ?? (usePaintStore.getState().roll.sync ? getRollVideo(otherRollId(rollId)) : null);
@@ -975,9 +1004,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <canvas
             ref={canvasRef}
             className={
-              isFullscreen
+              (isFullscreen
                 ? `w-full h-full object-contain ${isPlaying && !showControls ? 'cursor-none !cursor-none' : ''}`
-                : 'max-w-full max-h-full'
+                : 'max-w-full max-h-full') +
+              (view.status !== 'ready' ? ' opacity-0 pointer-events-none invisible absolute' : '')
             }
           />
         )}
@@ -995,6 +1025,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             <p className="mt-2 text-[9px] opacity-70">ドラッグ＆ドロップでも開けます</p>
             <p className="mt-1 text-[9px] opacity-70">
               ファイルツリーで映像を選んでも、この面が「選択先」なら開きます
+            </p>
+          </div>
+        )}
+
+        {view.status === 'loading' && (
+          <div className="absolute inset-0 bg-slate-950/98 text-slate-200 p-6 flex flex-col items-center justify-center text-[11px] select-none z-50 pointer-events-auto">
+            <div className="w-10 h-10 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="font-bold text-indigo-300 text-xs mb-1">
+              {view.message || '動画データを読み込み・解析中...'}
+            </p>
+            <p className="text-[10px] text-slate-400 text-center">
+              読み込みが完了するまで操作をお待ちください。完了後に再生可能になります。
             </p>
           </div>
         )}

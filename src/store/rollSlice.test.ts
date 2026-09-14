@@ -87,8 +87,8 @@ describe('ロールの読み込み', () => {
     expect(s().roll.views.rollA.isOpen).toBe(true);
     expect(s().roll.views.rollA.fileName).toBe('A_part_t1.mov');
     expect(s().roll.views.rollA.objectUrl).toBe(created[0]);
-    // まず再生させてみる方針なので、この時点では ready
-    expect(s().roll.views.rollA.status).toBe('ready');
+    // メタデータ読み込み中なので、この時点では loading (onLoadedMetadata 等で ready へ遷移)
+    expect(s().roll.views.rollA.status).toBe('loading');
   });
 
   it('差し替えると前の URL を手放す', () => {

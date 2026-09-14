@@ -900,7 +900,7 @@ export interface LightTableSlice {
 }
 
 /** 撮影上がりロールの読み込み状態 */
-export type RollStatus = 'idle' | 'ready' | 'unsupported' | 'error' | 'converting';
+export type RollStatus = 'idle' | 'ready' | 'loading' | 'unsupported' | 'error' | 'converting';
 
 /** ロールを出せる面。修正前 / 修正後を並べて見比べるために 2 面ある */
 export type RollId = 'rollA' | 'rollB';
@@ -1002,6 +1002,8 @@ export interface RollSlice {
   toggleRollFileSync: () => void
   /** ツリーの連動のずれを 0 に戻し、ロール B を ロール A と同じ位置へ揃える */
   alignRollFiles: () => void
+  setRollReady: (id: RollId) => void
+  setRollLoading: (id: RollId, message?: string) => void
 }
 
 /** 独立ウィンドウとして切り離せるパネルの識別子 */

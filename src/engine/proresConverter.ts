@@ -91,8 +91,7 @@ export async function getFFmpeg(): Promise<FFmpeg> {
  */
 export async function convertProResToMp4(
   file: File,
-  onProgress?: (percent: number) => void,
-  onFastPreviewReady?: (preview: { blob: Blob; objectUrl: string }) => void
+  onProgress?: (percent: number) => void
 ): Promise<{ blob: Blob; objectUrl: string }> {
   const cacheKey = getProResCacheKey(file);
 
@@ -140,42 +139,6 @@ export async function convertProResToMp4(
     const fileData = await fetchFile(file);
     await ffmpeg.writeFile(inName, fileData);
     logDebug('roll', `仮想ファイル書き込み完了。トランスコード実行中...`);
-
-    // 先頭プレビュー (即時再生) が要求されている場合、元解像度の高画質先頭プレビューを生成
-    if (onFastPreviewReady) {
-      try {
-        const prevName = `prev_${Date.now()}.webm`;
-        logDebug('roll', `先頭プレビュー (高画質) を生成中...`);
-        await ffmpeg.exec([
-          '-ss',
-          '0',
-          '-t',
-          '2',
-          '-i',
-          inName,
-          '-c:v',
-          'vp8',
-          '-b:v',
-          '6M',
-          '-crf',
-          '10',
-          '-deadline',
-          'realtime',
-          '-cpu-used',
-          '6',
-          '-an',
-          prevName,
-        ]);
-        const prevData = (await ffmpeg.readFile(prevName)) as Uint8Array;
-        const prevBlob = new Blob([new Uint8Array(prevData)], { type: 'video/webm' });
-        const prevUrl = URL.createObjectURL(prevBlob);
-        await ffmpeg.deleteFile(prevName).catch(() => {});
-        logDebug('roll', `高画質先頭プレビュー生成完了。即時再生を開始します`);
-        onFastPreviewReady({ blob: prevBlob, objectUrl: prevUrl });
-      } catch (prevErr: any) {
-        logDebug('roll', `先頭プレビュー生成スキップ: ${prevErr?.message || prevErr}`, undefined, 'info');
-      }
-    }
 
     // ブラウザ互換性の高い WebM (VP8/VP9) または MP4 へ全編変換
     let converted = false;

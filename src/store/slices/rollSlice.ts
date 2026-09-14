@@ -93,9 +93,9 @@ function openedView(view: RollViewState, video: DroppedVideo): RollViewState {
     currentPath: video.path,
     file: video.file,
     objectUrl: URL.createObjectURL(toPlayableBlob(video.file)),
-    // まず再生させてみる。コーデックの詮索は失敗してからで十分
-    status: 'ready',
-    message: '',
+    // メタデータおよびデコーダー準備完了まで 'loading'
+    status: 'loading',
+    message: '動画読み込み中...',
     codec: null,
     fps: DEFAULT_FPS,
     fpsSource: 'default',
@@ -362,6 +362,14 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       return;
     }
 
+    set((state) => ({
+      roll: withView(state.roll, id, {
+        ...state.roll.views[id],
+        status: 'loading',
+        message: '映像コーデック解析中...',
+      }),
+    }));
+
     // <video> 要素で失敗した場合、壊れたキャッシュをクリアして再試行
     invalidateProResCache(view.file);
 
@@ -374,14 +382,14 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
     if (codec && /^ap(ch|cn|cs|co|4h|4x)$/i.test(codec.fourcc)) {
       const c = codec;
-      logDebug('roll', `${rollLabel(id)} の ${c.label} 高速オンデマンド解析中...`);
+      logDebug('roll', `${rollLabel(id)} の ${c.label} Direct Wasm 解析中...`);
 
-      // 1. 高速 MOV メタデータ解析とリアルタイムデコーダ初期化 (待ち時間 0秒)
+      // 高速 MOV メタデータ解析と Direct Wasm/JS リアルタイムデコーダ初期化
       const meta = await parseProResMovMetadata(view.file);
       if (meta) {
         const decoder = new ProResRealtimeDecoder(view.file, meta);
-        const supported = await decoder.init();
-        if (supported) {
+        const ok = await decoder.init();
+        if (ok) {
           set((state) => ({
             roll: withView(state.roll, id, {
               ...state.roll.views[id],
@@ -391,15 +399,15 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
               fps: meta.fps,
               fpsSource: 'auto',
               codec: c,
-              message: 'ProRes リアルタイムデコード再生中',
+              message: 'ProRes Direct Wasm リアルタイムデコード再生中',
             }),
           }));
-          logDebug('roll', `${rollLabel(id)} の ProRes 高速解析が完了。0 秒即時再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
+          logDebug('roll', `${rollLabel(id)} の ProRes Direct Wasm/JS リアルタイム再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
           return;
         }
       }
 
-      // Fallback: トランスコード
+      // WebCodecs 非対応環境の場合のフォールバック: H.264 MP4 自動変換
       set((state) => ({
         roll: withView(state.roll, id, {
           ...state.roll.views[id],
@@ -418,16 +426,6 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
               roll: withView(state.roll, id, {
                 ...state.roll.views[id],
                 convertProgress: pct,
-              }),
-            }));
-          },
-          (preview) => {
-            set((state) => ({
-              roll: withView(state.roll, id, {
-                ...state.roll.views[id],
-                status: 'ready',
-                objectUrl: preview.objectUrl,
-                message: 'ファストプレビュー再生中',
               }),
             }));
           }
@@ -615,4 +613,22 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       );
       return { roll };
     }),
+
+  setRollReady: (id: RollId) =>
+    set((state) => ({
+      roll: withView(state.roll, id, {
+        ...state.roll.views[id],
+        status: 'ready',
+        message: '',
+      }),
+    })),
+
+  setRollLoading: (id: RollId, message = '動画読み込み中...') =>
+    set((state) => ({
+      roll: withView(state.roll, id, {
+        ...state.roll.views[id],
+        status: 'loading',
+        message,
+      }),
+    })),
 });

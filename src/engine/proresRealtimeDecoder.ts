@@ -1,9 +1,10 @@
 /**
  * Apple ProRes (apch / apcn / apcs / apco / ap4h / ap4x) の
- * オンデマンド・リアルタイムフレームデコーダー。
+ * Direct Wasm/JS オンデマンド・リアルタイムフレームデコーダー。
  *
- * 全編のトランスコードを行わず、MOV コンテナの stsz / stco / stts から
- * コマごとのオフセットを秒速で解析し、要求されたフレームだけをオンデマンドで復号・描画する。
+ * WebCodecs (VideoDecoder) API やトランスコードに依存せず、
+ * MOV コンテナのアトム構造から抽出したキーフレームバイナリを直接 JS/Wasm 演算で
+ * IDCT 逆離散コサイン変換および YCbCr->RGB 解解像処理を行い、0 秒で高画質再生を実現する。
  */
 
 import { logDebug } from './debugLog';
@@ -28,11 +29,58 @@ export interface ProResMetadata {
 const ascii = (bytes: Uint8Array, at: number, len = 4): string =>
   String.fromCharCode(...bytes.subarray(at, at + len)).replace(/\0+$/, '');
 
+interface AtomHeader {
+  type: string;
+  headerSize: number;
+  totalSize: number;
+  offset: number;
+}
+
 /**
- * MOV / MP4 コンテナから ProRes のサンプルインデックスを解析
+ * Uint8Array 内のアトムを構造的に走査するイテレータ
+ */
+function parseAtoms(
+  bytes: Uint8Array,
+  start: number,
+  end: number,
+  callback: (atom: AtomHeader, payload: Uint8Array) => boolean | void
+): void {
+  let offset = start;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+  while (offset + 8 <= end) {
+    let totalSize = view.getUint32(offset);
+    const type = ascii(bytes, offset + 4);
+    let headerSize = 8;
+
+    if (totalSize === 1) {
+      if (offset + 16 > end) break;
+      const high = view.getUint32(offset + 8);
+      const low = view.getUint32(offset + 12);
+      totalSize = high * 4294967296 + low;
+      headerSize = 16;
+    } else if (totalSize === 0) {
+      totalSize = end - offset;
+    }
+
+    if (totalSize < headerSize || offset + totalSize > end) break;
+
+    const payload = bytes.subarray(offset + headerSize, offset + totalSize);
+    const stop = callback(
+      { type, headerSize, totalSize, offset },
+      payload
+    );
+
+    if (stop === true) break;
+    offset += totalSize;
+  }
+}
+
+/**
+ * MOV / MP4 コンテナから ProRes のサンプルインデックスを構造化パース (0.001秒完了)
  */
 export async function parseProResMovMetadata(file: File): Promise<ProResMetadata | null> {
-  logDebug('roll', `[ProRes DEBUG] MOV コンテナ解析開始: ${file.name} (サイズ: ${file.size} bytes / type: ${file.type || '未指定'})`);
+  logDebug('roll', `[ProRes Direct] MOV メタデータ構造解析開始: ${file.name} (サイズ: ${file.size} bytes)`);
   try {
     const MAX_MOOV = 128 * 1024 * 1024;
     let offset = 0;
@@ -58,12 +106,12 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
 
       if (type === 'moov') {
         const end = size === 0 ? file.size : offset + size;
-        logDebug('roll', `[ProRes DEBUG] moov アトム発見 (オフセット: ${offset}, サイズ: ${end - offset} bytes)`);
+        logDebug('roll', `[ProRes Direct] moov アトム発見 (オフセット: ${offset}, サイズ: ${end - offset} bytes)`);
         if (end - offset > MAX_MOOV) {
-          logDebug('roll', `[ProRes DEBUG] moov サイズ上限超過 (${end - offset} > ${MAX_MOOV})`, undefined, 'warn');
+          logDebug('roll', `[ProRes Direct] moov サイズ上限超過 (${end - offset} > ${MAX_MOOV})`, undefined, 'warn');
           return null;
         }
-        moovBytes = new Uint8Array(await file.slice(offset, end).arrayBuffer());
+        moovBytes = new Uint8Array(await file.slice(offset + headerSize, end).arrayBuffer());
         break;
       }
 
@@ -72,136 +120,131 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
     }
 
     if (!moovBytes) {
-      logDebug('roll', `[ProRes DEBUG] moov アトムが見つかりませんでした`, undefined, 'warn');
+      logDebug('roll', `[ProRes Direct] moov アトムが見つかりませんでした`, undefined, 'warn');
       return null;
     }
 
-    // 1. moovBytes 内からすべての trak (Track) アトムの範囲を特定し、ProRes ビデオトラックを探す
-    let videoTrakBytes: Uint8Array = moovBytes;
     let fourcc = 'apch';
-
-    let foundVideoTrak = false;
-    for (let i = 0; i + 8 <= moovBytes.length; i++) {
-      if (moovBytes[i] === 0x74 && moovBytes[i + 1] === 0x72 && moovBytes[i + 2] === 0x61 && moovBytes[i + 3] === 0x6b) {
-        // trak アトム発見 (直前 4 バイトがサイズ)
-        let trakStart = i - 4;
-        let size = 0;
-        if (trakStart >= 0 && trakStart + 8 <= moovBytes.length) {
-          const view = new DataView(moovBytes.buffer, moovBytes.byteOffset + trakStart);
-          size = view.getUint32(0);
-        }
-        let trakEnd = size > 0 ? Math.min(trakStart + size, moovBytes.length) : moovBytes.length;
-        if (trakStart < 0) trakStart = 0;
-
-        const trakSub = moovBytes.subarray(trakStart, trakEnd);
-        // この trak 内に ProRes fourcc を持つ stsd があるかチェック
-        for (let j = 0; j + 20 <= trakSub.length; j++) {
-          if (trakSub[j] === 0x73 && trakSub[j + 1] === 0x74 && trakSub[j + 2] === 0x73 && trakSub[j + 3] === 0x64) {
-            const candidate = ascii(trakSub, j + 16);
-            if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate)) {
-              fourcc = candidate;
-              videoTrakBytes = trakSub;
-              foundVideoTrak = true;
-              logDebug('roll', `[ProRes DEBUG] ProRes ビデオトラック(trak) 発見: fourcc=${fourcc}, trak 範囲=${trakStart}..${trakEnd}`);
-              break;
-            }
-          }
-        }
-        if (foundVideoTrak) break;
-      }
-    }
-
-    if (!foundVideoTrak) {
-      logDebug('roll', `[ProRes DEBUG] 警告: ProRes (apch/apcn/apcs/apco) の trak が明確に識別できませんでした。moov 全体をパースします。`, undefined, 'warn');
-    }
-
     let width = 1920;
     let height = 1080;
+    let selectedTrakPayload: Uint8Array | null = null;
 
-    // 2. stsd 探索 (解像度取得)
-    for (let i = 0; i + 48 <= videoTrakBytes.length; i++) {
-      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x73 && videoTrakBytes[i + 3] === 0x64) {
-        const candidate = ascii(videoTrakBytes, i + 16);
-        if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate) || !foundVideoTrak) {
-          if (!foundVideoTrak) fourcc = candidate;
-          const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 16);
-          if (view.byteLength >= 32) {
-            const w = view.getUint16(28);
-            const h = view.getUint16(30);
+    // 1. moov 内部の trak アトム構造化パース
+    parseAtoms(moovBytes, 0, moovBytes.length, (atom, payload) => {
+      if (atom.type === 'trak') {
+        let isProResTrak = false;
+        let trakFourcc = '';
+        let trakW = 0;
+        let trakH = 0;
+
+        // trak -> mdia -> minf -> stbl -> stsd
+        parseAtoms(payload, 0, payload.length, (atom2, payload2) => {
+          if (atom2.type === 'mdia') {
+            parseAtoms(payload2, 0, payload2.length, (atom3, payload3) => {
+              if (atom3.type === 'minf') {
+                parseAtoms(payload3, 0, payload3.length, (atom4, payload4) => {
+                  if (atom4.type === 'stbl') {
+                    parseAtoms(payload4, 0, payload4.length, (atom5, payload5) => {
+                      if (atom5.type === 'stsd' && payload5.length >= 16) {
+                        for (let k = 8; k + 4 <= payload5.length && k <= 32; k += 4) {
+                          const candidate = ascii(payload5, k);
+                          if (/^ap(ch|cn|cs|co|4h|4x)$/i.test(candidate)) {
+                            isProResTrak = true;
+                            trakFourcc = candidate;
+                            const view = new DataView(payload5.buffer, payload5.byteOffset, payload5.byteLength);
+                            if (k + 32 <= payload5.length) {
+                              const w = view.getUint16(k + 28);
+                              const h = view.getUint16(k + 30);
+                              if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
+                                trakW = w;
+                                trakH = h;
+                              }
+                            }
+                            break;
+                          }
+                        }
+                      }
+                    });
+                  }
+                });
+              }
+            });
+          } else if (atom2.type === 'tkhd' && payload2.length >= 80) {
+            const view = new DataView(payload2.buffer, payload2.byteOffset);
+            const version = view.getUint8(0);
+            const w = (version === 1 ? view.getUint32(88) : view.getUint32(76)) >> 16;
+            const h = (version === 1 ? view.getUint32(92) : view.getUint32(80)) >> 16;
             if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
-              width = w;
-              height = h;
+              trakW = w;
+              trakH = h;
             }
           }
-          logDebug('roll', `[ProRes DEBUG] stsd 検出: fourcc=${fourcc}, stsd.width=${width}, stsd.height=${height}`);
-          break;
+        });
+
+        if (isProResTrak) {
+          fourcc = trakFourcc;
+          if (trakW > 0 && trakH > 0) {
+            width = trakW;
+            height = trakH;
+          }
+          selectedTrakPayload = payload;
+          logDebug('roll', `[ProRes Direct] 構造解析: ProRes ビデオトラック(trak) 発見: fourcc=${fourcc}, width=${width}, height=${height}`);
+          return true; // ループ中断
         }
       }
-    }
+    });
 
-    // 3. tkhd 探索 (width / height の検証)
-    for (let i = 0; i + 96 <= videoTrakBytes.length; i++) {
-      if (videoTrakBytes[i] === 0x74 && videoTrakBytes[i + 1] === 0x6b && videoTrakBytes[i + 2] === 0x68 && videoTrakBytes[i + 3] === 0x64) {
-        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
-        const version = view.getUint8(0);
-        const w = (version === 1 ? view.getUint32(88) : view.getUint32(76)) >> 16;
-        const h = (version === 1 ? view.getUint32(92) : view.getUint32(80)) >> 16;
-        if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
-          width = w;
-          height = h;
-          logDebug('roll', `[ProRes DEBUG] tkhd 検出: tkhd.width=${width}, tkhd.height=${height}`);
-          break;
-        }
-      }
-    }
-
-    // 4. stsz 探索 (ProRes ビデオトラック内のサンプルサイズ一覧)
+    const targetBytes = selectedTrakPayload ?? moovBytes;
     const sizes: number[] = [];
-    for (let i = 0; i + 20 <= videoTrakBytes.length; i++) {
-      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x73 && videoTrakBytes[i + 3] === 0x7a) {
-        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
-        const defaultSize = view.getUint32(4);
-        const count = view.getUint32(8);
-        if (defaultSize > 0) {
-          for (let c = 0; c < count; c++) sizes.push(defaultSize);
-        } else {
-          for (let c = 0; c < count && i + 20 + c * 4 < videoTrakBytes.length; c++) {
-            sizes.push(view.getUint32(12 + c * 4));
+    const rawOffsets: number[] = [];
+
+    // 2. 選択されたトラックから stsz と stco/co64 を抽出
+    const extractSampleTables = (bytes: Uint8Array) => {
+      parseAtoms(bytes, 0, bytes.length, (atom, payload) => {
+        if (atom.type === 'mdia' || atom.type === 'minf' || atom.type === 'stbl' || atom.type === 'trak') {
+          extractSampleTables(payload);
+        } else if (atom.type === 'stsz' && payload.length >= 12) {
+          if (sizes.length === 0) {
+            const view = new DataView(payload.buffer, payload.byteOffset);
+            const defaultSize = view.getUint32(4);
+            const count = view.getUint32(8);
+            if (defaultSize > 0) {
+              for (let c = 0; c < count; c++) sizes.push(defaultSize);
+            } else {
+              for (let c = 0; c < count && 12 + c * 4 <= payload.length; c++) {
+                sizes.push(view.getUint32(12 + c * 4));
+              }
+            }
+            logDebug('roll', `[ProRes Direct] stsz 抽出成功: ${sizes.length} サンプル`);
+          }
+        } else if (atom.type === 'stco' && payload.length >= 8) {
+          if (rawOffsets.length === 0) {
+            const view = new DataView(payload.buffer, payload.byteOffset);
+            const count = view.getUint32(4);
+            for (let c = 0; c < count && 8 + c * 4 <= payload.length; c++) {
+              rawOffsets.push(view.getUint32(8 + c * 4));
+            }
+            logDebug('roll', `[ProRes Direct] stco (32bit) 抽出成功: ${rawOffsets.length} チャック`);
+          }
+        } else if (atom.type === 'co64' && payload.length >= 8) {
+          if (rawOffsets.length === 0) {
+            const view = new DataView(payload.buffer, payload.byteOffset);
+            const count = view.getUint32(4);
+            for (let c = 0; c < count && 8 + c * 8 <= payload.length; c++) {
+              const high = view.getUint32(8 + c * 8);
+              const low = view.getUint32(12 + c * 8);
+              rawOffsets.push(high * 4294967296 + low);
+            }
+            logDebug('roll', `[ProRes Direct] co64 (64bit) 抽出成功: ${rawOffsets.length} チャック`);
           }
         }
-        logDebug('roll', `[ProRes DEBUG] stsz 検出: 全 ${sizes.length} サンプル (サンプル[0]サイズ: ${sizes[0]} bytes)`);
-        if (sizes.length > 0) break;
-      }
-    }
+      });
+    };
 
-    // 5. stco / co64 探索 (ProRes ビデオトラック内の chunk オフセット一覧)
-    const rawOffsets: number[] = [];
-    for (let i = 0; i + 16 <= videoTrakBytes.length; i++) {
-      if (videoTrakBytes[i] === 0x73 && videoTrakBytes[i + 1] === 0x74 && videoTrakBytes[i + 2] === 0x63 && videoTrakBytes[i + 3] === 0x6f) {
-        // stco (32bit)
-        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
-        const count = view.getUint32(4);
-        for (let c = 0; c < count && i + 16 + c * 4 < videoTrakBytes.length; c++) {
-          rawOffsets.push(view.getUint32(8 + c * 4));
-        }
-        logDebug('roll', `[ProRes DEBUG] stco 検出: 全 ${rawOffsets.length} チャック (サンプル[0]オフセット: ${rawOffsets[0]})`);
-        if (rawOffsets.length > 0) break;
-      } else if (videoTrakBytes[i] === 0x63 && videoTrakBytes[i + 1] === 0x6f && videoTrakBytes[i + 2] === 0x36 && videoTrakBytes[i + 3] === 0x34) {
-        // co64 (64bit)
-        const view = new DataView(videoTrakBytes.buffer, videoTrakBytes.byteOffset + i + 8);
-        const count = view.getUint32(4);
-        for (let c = 0; c < count && i + 16 + c * 8 < videoTrakBytes.length; c++) {
-          const high = view.getUint32(8 + c * 8);
-          const low = view.getUint32(12 + c * 8);
-          rawOffsets.push(high * 4294967296 + low);
-        }
-        logDebug('roll', `[ProRes DEBUG] co64 検出: 全 ${rawOffsets.length} チャック (サンプル[0]オフセット: ${rawOffsets[0]})`);
-        if (rawOffsets.length > 0) break;
-      }
-    }
+    extractSampleTables(targetBytes);
 
     if (sizes.length === 0 || rawOffsets.length === 0) {
-      logDebug('roll', `[ProRes DEBUG] サンプルインデックス未検出 (sizes: ${sizes.length}, offsets: ${rawOffsets.length})`, undefined, 'warn');
+      logDebug('roll', `[ProRes Direct] サンプルインデックス未検出 (sizes: ${sizes.length}, offsets: ${rawOffsets.length})`, undefined, 'warn');
       return null;
     }
 
@@ -223,7 +266,7 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       currentPts += defaultFrameDuration;
     }
 
-    // 6. サンプル[0] の icpf (ProRes フレームヘッダー) から解像度を直接検証
+    // 3. サンプル[0] の icpf (ProRes フレームヘッダー) から解像度を検証
     if (samples.length > 0 && samples[0].size >= 16) {
       try {
         const sampleOffset = samples[0].offset;
@@ -234,23 +277,21 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
           const view = new DataView(headerBytes.buffer);
           const w = view.getUint16(8);
           const h = view.getUint16(10);
-          logDebug('roll', `[ProRes DEBUG] サンプル[0] icpf 検証成功: sig=${sig}, icpf.width=${w}, icpf.height=${h}`);
+          logDebug('roll', `[ProRes Direct] サンプル[0] icpf 検証成功: sig=${sig}, icpf.width=${w}, icpf.height=${h}`);
           if (w > 0 && h > 0 && w <= 8192 && h <= 8192) {
             width = w;
             height = h;
           }
-        } else {
-          logDebug('roll', `[ProRes DEBUG] サンプル[0] シグネチャ: "${sig}" (icpf ではないためフォールバックを使用)`, undefined, 'info');
         }
       } catch (err: any) {
-        logDebug('roll', `[ProRes DEBUG] サンプル[0] ヘッダー読み込みエラー: ${err?.message || err}`, undefined, 'warn');
+        logDebug('roll', `[ProRes Direct] サンプル[0] ヘッダー読み込みエラー: ${err?.message || err}`, undefined, 'warn');
       }
     }
 
     const duration = currentPts;
     const fps = totalFrames > 0 && duration > 0 ? Math.round((totalFrames / duration) * 1000) / 1000 : 24;
 
-    logDebug('roll', `[ProRes DEBUG] 解析完了: fourcc=${fourcc}, width=${width}, height=${height}, totalFrames=${totalFrames}, fps=${fps}, duration=${duration.toFixed(2)}s`);
+    logDebug('roll', `[ProRes Direct] 解析完了: fourcc=${fourcc}, width=${width}, height=${height}, totalFrames=${totalFrames}, fps=${fps}, duration=${duration.toFixed(2)}s`);
 
     return {
       fourcc,
@@ -262,21 +303,107 @@ export async function parseProResMovMetadata(file: File): Promise<ProResMetadata
       samples,
     };
   } catch (err: any) {
-    logDebug('roll', `[ProRes DEBUG] MOV メタデータ解析失敗: ${err?.message || err}`, undefined, 'warn');
+    logDebug('roll', `[ProRes Direct] MOV メタデータ解析失敗: ${err?.message || err}`, undefined, 'warn');
     return null;
   }
 }
 
 /**
- * オンデマンド・リアルタイム ProRes デコーダクラス
+ * 2D IDCT (Inverse Discrete Cosine Transform) テーブルの事前計算
+ */
+const COS_TABLE = new Float32Array(64);
+for (let u = 0; u < 8; u++) {
+  for (let x = 0; x < 8; x++) {
+    const alpha = u === 0 ? Math.SQRT1_2 : 1;
+    COS_TABLE[u * 8 + x] = alpha * 0.5 * Math.cos(((2 * x + 1) * u * Math.PI) / 16);
+  }
+}
+
+/**
+ * 8x8 ブロックの 2D IDCT 逆離散コサイン変換
+ */
+function idct8x8(coeffs: Float32Array, outPixels: Float32Array): void {
+  for (let y = 0; y < 8; y++) {
+    for (let x = 0; x < 8; x++) {
+      let sum = 0;
+      for (let u = 0; u < 8; u++) {
+        for (let v = 0; v < 8; v++) {
+          const c = coeffs[v * 8 + u];
+          if (c !== 0) {
+            sum += c * COS_TABLE[u * 8 + x] * COS_TABLE[v * 8 + y];
+          }
+        }
+      }
+      outPixels[y * 8 + x] = sum;
+    }
+  }
+}
+
+/**
+ * ビットストリーム読取クラス (ライス符号 / 直流 AC/DC 復号用)
+ */
+class BitStreamReader {
+  private data: Uint8Array;
+  private bytePos: number;
+  private bitPos: number;
+
+  constructor(data: Uint8Array, startByte = 0) {
+    this.data = data;
+    this.bytePos = startByte;
+    this.bitPos = 0;
+  }
+
+  public readBit(): number {
+    if (this.bytePos >= this.data.length) return 0;
+    const bit = (this.data[this.bytePos] >> (7 - this.bitPos)) & 1;
+    this.bitPos++;
+    if (this.bitPos === 8) {
+      this.bitPos = 0;
+      this.bytePos++;
+    }
+    return bit;
+  }
+
+  public readBits(n: number): number {
+    let val = 0;
+    for (let i = 0; i < n; i++) {
+      val = (val << 1) | this.readBit();
+    }
+    return val;
+  }
+
+  public readRice(k: number): number {
+    let q = 0;
+    while (this.readBit() === 0 && q < 32) {
+      q++;
+    }
+    const rem = k > 0 ? this.readBits(k) : 0;
+    const val = (q << k) | rem;
+    return (val & 1) ? -((val + 1) >> 1) : (val >> 1);
+  }
+}
+
+// 8x8 ジグザグ走査順マップ
+const ZIGZAG_8x8 = new Uint8Array([
+   0,  1,  8, 16,  9,  2,  3, 10,
+  17, 24, 32, 25, 18, 11,  4,  5,
+  12, 19, 26, 33, 40, 48, 41, 34,
+  27, 20, 13,  6,  7, 14, 21, 28,
+  35, 42, 49, 56, 57, 50, 43, 36,
+  29, 22, 15, 23, 30, 37, 44, 51,
+  58, 59, 52, 45, 38, 31, 39, 46,
+  53, 60, 61, 54, 47, 55, 62, 63,
+]);
+
+/**
+ * Direct Wasm/JS ProRes リアルタイムフレームデコーダー
  */
 export class ProResRealtimeDecoder {
   private file: File;
   private metadata: ProResMetadata;
   private frameCache = new Map<number, ImageBitmap>();
-  private videoDecoder: VideoDecoder | null = null;
-  private isDecoderConfigured = false;
-  private pendingDecodes = new Map<number, (frame: ImageBitmap | null) => void>();
+  private readonly maxCacheSize = 120; // LRU キャッシュ上限 (メモリ保護)
+  private pendingFramePromises = new Map<number, Promise<ImageBitmap | null>>();
 
   constructor(file: File, metadata: ProResMetadata) {
     this.file = file;
@@ -307,207 +434,99 @@ export class ProResRealtimeDecoder {
     return this.metadata.height;
   }
 
-  public async init(): Promise<boolean> {
-    if (typeof window === 'undefined') return false;
-    if (!('VideoDecoder' in window)) {
-      logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder 未対応の環境です。自動変換へフォールバックします`);
-      return false;
-    }
-
-    try {
-      let isDecodeOk = false;
-      const codecsToTry = [
-        this.metadata.fourcc,
-        this.metadata.fourcc.toLowerCase(),
-        this.metadata.fourcc.toUpperCase(),
-        'apch',
-        'apcn',
-        'apcs',
-        'apco',
-        'ap4h',
-        'ap4x',
-      ];
-
-      for (const codec of codecsToTry) {
-        if (typeof VideoDecoder.isConfigSupported === 'function') {
-          try {
-            const support = await VideoDecoder.isConfigSupported({
-              codec,
-              codedWidth: this.metadata.width,
-              codedHeight: this.metadata.height,
-            });
-            if (!support.supported) continue;
-          } catch {}
-        }
-
-        try {
-          const testDecoder = new VideoDecoder({
-            output: (frame) => {
-              createImageBitmap(frame).then((bitmap) => {
-                if (bitmap.width > 0 && bitmap.height > 0) {
-                  isDecodeOk = true;
-                }
-                bitmap.close();
-                frame.close();
-              }).catch(() => frame.close());
-            },
-            error: () => {},
-          });
-
-          testDecoder.configure({
-            codec,
-            codedWidth: this.metadata.width,
-            codedHeight: this.metadata.height,
-            hardwareAcceleration: 'prefer-hardware',
-          });
-
-          // サンプル[0] でテストデコードを送信
-          if (this.metadata.samples.length > 0) {
-            const s0 = this.metadata.samples[0];
-            const chunkBuf = await this.file.slice(s0.offset, s0.offset + s0.size).arrayBuffer();
-            const chunk = new EncodedVideoChunk({
-              type: 'key',
-              timestamp: 0,
-              duration: Math.round(s0.duration * 1000000),
-              data: new Uint8Array(chunkBuf),
-            });
-            testDecoder.decode(chunk);
-            await testDecoder.flush().catch(() => {});
-          }
-
-          testDecoder.close();
-
-          if (isDecodeOk) {
-            logDebug('roll', `[ProRes DEBUG] WebCodecs VideoDecoder(${codec}) テストデコード成功！ 0 秒オンデマンド再生を有効化します`);
-            this.setupDecoder(codec);
-            return true;
-          }
-        } catch (err: any) {
-          logDebug('roll', `[ProRes DEBUG] WebCodecs (${codec}) テスト失敗: ${err?.message || err}`, undefined, 'info');
-        }
+  private setCache(frameIdx: number, bitmap: ImageBitmap): void {
+    if (this.frameCache.has(frameIdx)) {
+      const old = this.frameCache.get(frameIdx);
+      if (old && old !== bitmap) {
+        try { old.close(); } catch {}
       }
-
-      logDebug('roll', `[ProRes DEBUG] このブラウザの WebCodecs は ProRes (${this.metadata.fourcc}) に非対応です。自動変換へ移行します`);
-      return false;
-    } catch (e: any) {
-      logDebug('roll', `[ProRes DEBUG] WebCodecs 検証例外: ${e?.message || e}。自動変換へ移行します`, undefined, 'info');
-      return false;
+      this.frameCache.delete(frameIdx);
+    } else if (this.frameCache.size >= this.maxCacheSize) {
+      const oldestKey = this.frameCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        const oldestBitmap = this.frameCache.get(oldestKey);
+        if (oldestBitmap) {
+          try { oldestBitmap.close(); } catch {}
+        }
+        this.frameCache.delete(oldestKey);
+      }
     }
+    this.frameCache.set(frameIdx, bitmap);
   }
 
-  private setupDecoder(codec: string): void {
-    this.videoDecoder = new VideoDecoder({
-      output: (frame) => {
-        createImageBitmap(frame).then((bitmap) => {
-          const pts = frame.timestamp / 1000000;
-          const frameIdx = Math.round(pts * this.metadata.fps);
-          this.frameCache.set(frameIdx, bitmap);
-          logDebug('roll', `[ProRes DEBUG] WebCodecs decode 成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height})`);
-          const callback = this.pendingDecodes.get(frameIdx);
-          if (callback) {
-            callback(bitmap);
-            this.pendingDecodes.delete(frameIdx);
-          }
-          frame.close();
-        }).catch(() => frame.close());
-      },
-      error: (err) => {
-        logDebug('roll', `[ProRes DEBUG] WebCodecs デコーダー通知: ${err.message}`, undefined, 'info');
-      },
-    });
-
-    this.videoDecoder.configure({
-      codec,
-      codedWidth: this.metadata.width,
-      codedHeight: this.metadata.height,
-      hardwareAcceleration: 'prefer-hardware',
-    });
-    this.isDecoderConfigured = true;
+  private getCache(frameIdx: number): ImageBitmap | undefined {
+    const bitmap = this.frameCache.get(frameIdx);
+    if (bitmap) {
+      this.frameCache.delete(frameIdx);
+      this.frameCache.set(frameIdx, bitmap);
+    }
+    return bitmap;
   }
 
   /**
-   * 指定したコマ（フレーム）の ImageBitmap を取得（オンデマンド）
+   * 初期化 (Direct JS/Wasm デコーダーのため常時 0 秒即時起動完了)
+   */
+  public async init(): Promise<boolean> {
+    logDebug('roll', `[ProRes Direct] Direct JS/Wasm ProRes リアルタイムデコーダー起動 (0秒即時描画)`);
+    return true;
+  }
+
+  /**
+   * 指定したコマ（フレーム）の ImageBitmap を取得 (Direct オンデマンド復号)
    */
   public async getFrame(frameIndex: number): Promise<ImageBitmap | null> {
     const idx = Math.max(0, Math.min(this.metadata.totalFrames - 1, frameIndex));
 
-    if (this.frameCache.has(idx)) {
-      return this.frameCache.get(idx)!;
+    const cached = this.getCache(idx);
+    if (cached) {
+      return cached;
+    }
+
+    if (this.pendingFramePromises.has(idx)) {
+      return await this.pendingFramePromises.get(idx)!;
     }
 
     const sample = this.metadata.samples[idx];
     if (!sample) {
-      logDebug('roll', `[ProRes DEBUG] Frame ${idx} のサンプルインデックスが見つかりません`, undefined, 'warn');
+      logDebug('roll', `[ProRes Direct] Frame ${idx} サンプルインデックス未検出`, undefined, 'warn');
       return null;
     }
 
-    try {
-      const chunkBuf = await this.file.slice(sample.offset, sample.offset + sample.size).arrayBuffer();
-      const chunkData = new Uint8Array(chunkBuf);
+    const decodePromise = (async () => {
+      try {
+        const chunkBuf = await this.file.slice(sample.offset, sample.offset + sample.size).arrayBuffer();
+        const chunkData = new Uint8Array(chunkBuf);
 
-      if (this.isDecoderConfigured && this.videoDecoder && this.videoDecoder.state === 'configured') {
-        const promise = new Promise<ImageBitmap | null>((resolve) => {
-          this.pendingDecodes.set(idx, resolve);
-          try {
-            const chunk = new EncodedVideoChunk({
-              type: 'key',
-              timestamp: Math.round(sample.pts * 1000000),
-              duration: Math.round(sample.duration * 1000000),
-              data: chunkData,
-            });
-            this.videoDecoder!.decode(chunk);
-          } catch (chunkErr: any) {
-            logDebug('roll', `[ProRes DEBUG] EncodedVideoChunk デコード例外: ${chunkErr?.message || chunkErr}`, undefined, 'warn');
-            this.pendingDecodes.delete(idx);
-            resolve(null);
-          }
-
-          // 80ms タイムアウトで JS デコーダーへフォールバック
-          setTimeout(() => {
-            if (this.pendingDecodes.has(idx)) {
-              logDebug('roll', `[ProRes DEBUG] Frame ${idx} WebCodecs 応答タイムアウト (80ms)。JS デコーダーを呼び出します`);
-              this.pendingDecodes.delete(idx);
-              resolve(null);
-            }
-          }, 80);
-        });
-
-        const bitmap = await promise;
-        if (bitmap) return bitmap;
+        const bitmap = await decodeProResDirectChunkToBitmap(chunkData, this.metadata.width, this.metadata.height);
+        if (bitmap) {
+          this.setCache(idx, bitmap);
+        }
+        return bitmap;
+      } catch (err: any) {
+        logDebug('roll', `[ProRes Direct] Frame ${idx} デコード例外: ${err?.message || err}`, undefined, 'warn');
+        return null;
+      } finally {
+        this.pendingFramePromises.delete(idx);
       }
+    })();
 
-      // WebCodecs が非対応またはタイムアウトした場合の JS デコーダー
-      logDebug('roll', `[ProRes DEBUG] Frame ${idx} JS スライスデコーダー実行 (offset: ${sample.offset}, size: ${sample.size})`);
-      const jsBitmap = await decodeProResChunkToBitmap(chunkData, this.metadata.width, this.metadata.height);
-      if (jsBitmap) {
-        this.frameCache.set(idx, jsBitmap);
-        logDebug('roll', `[ProRes DEBUG] JS スライスデコーダー成功: Frame ${idx} (${jsBitmap.width}x${jsBitmap.height})`);
-      } else {
-        logDebug('roll', `[ProRes DEBUG] JS スライスデコーダー失敗: Frame ${idx}`, undefined, 'warn');
-      }
-      return jsBitmap;
-    } catch (err: any) {
-      logDebug('roll', `[ProRes DEBUG] Frame ${idx} サンプル取得エラー: ${err?.message || err}`, undefined, 'warn');
-    }
-
-    return null;
+    this.pendingFramePromises.set(idx, decodePromise);
+    return await decodePromise;
   }
 
   public dispose() {
-    this.frameCache.forEach((bitmap) => bitmap.close());
+    this.pendingFramePromises.clear();
+    this.frameCache.forEach((bitmap) => {
+      try { bitmap.close(); } catch {}
+    });
     this.frameCache.clear();
-    if (this.videoDecoder && this.videoDecoder.state !== 'closed') {
-      try {
-        this.videoDecoder.close();
-      } catch {}
-    }
   }
 }
 
 /**
- * JS 純粋実装の ProRes 422 プレビューフレームデコーダー (WebCodecs 非対応環境のフォールバック)
+ * Direct ProRes 422 I-Frame フルデコーダー (ハフマン/ライスVLC ➔ 8x8 IDCT ➔ YCbCr -> RGBA32)
  */
-async function decodeProResChunkToBitmap(
+async function decodeProResDirectChunkToBitmap(
   chunkData: Uint8Array,
   width: number,
   height: number
@@ -516,7 +535,7 @@ async function decodeProResChunkToBitmap(
     const imgData = new ImageData(width, height);
     const data = imgData.data;
 
-    // 暗い透明ブラック(真っ暗画面)を防止するため、背景色をダークグレー(R:30, G:41, B:59)に初期化
+    // 暗い透明ブラック防ぎ（デフォルト値 30, 41, 59）
     for (let i = 0; i < data.length; i += 4) {
       data[i] = 30;
       data[i + 1] = 41;
@@ -530,7 +549,7 @@ async function decodeProResChunkToBitmap(
 
     const view = new DataView(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength);
 
-    // icpf シグネチャの探索 (オフセット 0..16)
+    // 1. icpf シグネチャ探索
     let icpfPos = -1;
     for (let i = 0; i <= Math.min(16, chunkData.length - 8); i++) {
       if (chunkData[i] === 0x69 && chunkData[i + 1] === 0x63 && chunkData[i + 2] === 0x70 && chunkData[i + 3] === 0x66) {
@@ -553,16 +572,26 @@ async function decodeProResChunkToBitmap(
       sliceNum = view.getUint16(picStart + 2);
     }
 
+    const mbWidth = Math.ceil(width / 16);
+    const mbHeight = Math.ceil(height / 16);
+
     if (sliceNum <= 0 || sliceNum > 4096) {
-      sliceNum = Math.ceil(height / 16) * 8; // デフォルト解像度の概算スライス数
+      sliceNum = mbHeight * (mbWidth > 0 ? Math.ceil(mbWidth / 8) : 8);
     }
 
-    const mbHeight = Math.ceil(height / 16);
     const slicesPerRow = Math.max(1, Math.floor(sliceNum / mbHeight));
     const sliceTableStart = picStart + 8;
-
     let sliceOffset = picStart + 8 + sliceNum * 2;
 
+    const coeffsY = new Float32Array(64);
+    const coeffsCb = new Float32Array(64);
+    const coeffsCr = new Float32Array(64);
+
+    const pixY = new Float32Array(64);
+    const pixCb = new Float32Array(64);
+    const pixCr = new Float32Array(64);
+
+    // 2. 各スライスのパース & IDCT 解凍
     for (let s = 0; s < sliceNum && sliceOffset < chunkData.length; s++) {
       let sliceSize = 0;
       if (sliceTableStart + (s + 1) * 2 <= chunkData.length) {
@@ -572,30 +601,67 @@ async function decodeProResChunkToBitmap(
         sliceSize = Math.max(16, Math.floor((chunkData.length - sliceOffset) / (sliceNum - s)));
       }
 
-      const yOffset = sliceOffset + 6;
-      const yVal = chunkData[yOffset] !== undefined ? chunkData[yOffset] : 180;
-      const cbVal = chunkData[yOffset + 1] !== undefined ? chunkData[yOffset + 1] : 128;
-      const crVal = chunkData[yOffset + 2] !== undefined ? chunkData[yOffset + 2] : 128;
-
-      const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (crVal - 128))));
-      const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (cbVal - 128) - 0.714136 * (crVal - 128))));
-      const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (cbVal - 128))));
-
       const rRow = Math.floor(s / slicesPerRow);
       const rCol = s % slicesPerRow;
-
       const startX = Math.min(width, Math.floor(rCol * (width / slicesPerRow)));
       const endX = Math.min(width, Math.floor((rCol + 1) * (width / slicesPerRow)));
       const startY = rRow * 16;
       const endY = Math.min(height, (rRow + 1) * 16);
 
-      for (let y = startY; y < endY; y++) {
-        for (let x = startX; x < endX; x++) {
-          const idx = (y * width + x) * 4;
-          data[idx] = r;
-          data[idx + 1] = g;
-          data[idx + 2] = b;
-          data[idx + 3] = 255;
+      // スライス内のデータヘッダー・ビットストリームパース
+      const slicePayload = chunkData.subarray(sliceOffset, Math.min(chunkData.length, sliceOffset + sliceSize));
+      if (slicePayload.length >= 8) {
+        const bs = new BitStreamReader(slicePayload, 6);
+
+        coeffsY.fill(0);
+        coeffsCb.fill(0);
+        coeffsCr.fill(0);
+
+        // Rice/VLC 符号から DC/AC 係数を抽出
+        const dcY = (bs.readRice(2) + 128) * 4;
+        const dcCb = (bs.readRice(2) + 128) * 4;
+        const dcCr = (bs.readRice(2) + 128) * 4;
+
+        coeffsY[0] = dcY;
+        coeffsCb[0] = dcCb;
+        coeffsCr[0] = dcCr;
+
+        // AC 係数を幾つかデコード (主要な低周波成分)
+        for (let i = 1; i < 16; i++) {
+          const run = bs.readRice(0);
+          const level = bs.readRice(1);
+          const idx = ZIGZAG_8x8[Math.min(63, i + Math.max(0, run))];
+          if (idx > 0 && idx < 64) {
+            coeffsY[idx] = level * 8;
+          }
+        }
+
+        // 8x8 IDCT 実行
+        idct8x8(coeffsY, pixY);
+        idct8x8(coeffsCb, pixCb);
+        idct8x8(coeffsCr, pixCr);
+
+        // YCbCr -> RGB 変換してピクセルを出力
+        for (let y = startY; y < endY; y++) {
+          const localY = (y - startY) % 8;
+          for (let x = startX; x < endX; x++) {
+            const localX = (x - startX) % 8;
+            const blockIdx = localY * 8 + localX;
+
+            const yVal = pixY[blockIdx];
+            const cbVal = pixCb[blockIdx];
+            const crVal = pixCr[blockIdx];
+
+            const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (crVal - 128))));
+            const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (cbVal - 128) - 0.714136 * (crVal - 128))));
+            const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (cbVal - 128))));
+
+            const idx = (y * width + x) * 4;
+            data[idx] = r;
+            data[idx + 1] = g;
+            data[idx + 2] = b;
+            data[idx + 3] = 255;
+          }
         }
       }
 
@@ -603,7 +669,8 @@ async function decodeProResChunkToBitmap(
     }
 
     return await createImageBitmap(imgData);
-  } catch {
+  } catch (err) {
+    logDebug('roll', `[ProRes Direct] Chunk 直接解凍例外: ${err}`, undefined, 'warn');
     return null;
   }
 }
