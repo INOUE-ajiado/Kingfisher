@@ -250,42 +250,26 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
 
       {/* 入力エリア */}
       <form onSubmit={handleAddItem} className="py-2 space-y-1.5 border-b border-white/10">
-        <div className="flex items-center justify-between gap-1">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-[10px] text-amber-300 font-bold flex-shrink-0">修正先:</span>
-            <select
-              tabIndex={-1}
-              value={selectedTag}
-              onChange={(e) => {
-                setSelectedTag(e.target.value);
-                e.target.blur();
-              }}
-              className="bg-slate-950/80 border border-white/20 rounded px-1.5 py-0.5 text-amber-300 font-bold text-[10px] focus:outline-none focus:border-amber-400 cursor-pointer"
-            >
-              {RETAKE_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat} className="bg-slate-900 text-slate-100">
-                  {cat}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            type="button"
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-amber-300 font-bold flex-shrink-0">修正先:</span>
+          <select
             tabIndex={-1}
-            onPointerDown={(e) => e.currentTarget.blur()}
-            onClick={() => {
-              const { timecode } = getCurrentTimecode();
-              setInputText((prev) => (prev ? `[${timecode}] ${prev}` : `[${timecode}] `));
+            value={selectedTag}
+            onChange={(e) => {
+              setSelectedTag(e.target.value);
+              e.target.blur();
             }}
-            title="現在のタイムコードを入力欄に挿入"
-            className="px-1.5 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 flex-shrink-0"
+            className="bg-slate-950/80 border border-white/20 rounded px-1.5 py-0.5 text-amber-300 font-bold text-[10px] focus:outline-none focus:border-amber-400 cursor-pointer"
           >
-            <Clock className="w-3 h-3" />
-            <span className="text-[9px]">コマ刻印</span>
-          </button>
+            {RETAKE_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat} className="bg-slate-900 text-slate-100">
+                {cat}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex items-start gap-1.5">
+        <div className="flex items-stretch gap-1.5">
           <textarea
             rows={3}
             value={inputText}
@@ -300,16 +284,32 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
             placeholder="リテイク指示・修正内容を入力... (Enterで改行 / Shift+Enterで追加)"
             className="flex-1 bg-slate-950/70 border border-white/15 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400 resize-none leading-normal"
           />
-          <button
-            type="submit"
-            tabIndex={-1}
-            onPointerDown={(e) => e.currentTarget.blur()}
-            title="リテイクメモを追加 (Shift+Enter)"
-            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-bold transition-colors flex items-center justify-center gap-1 flex-shrink-0 h-[58px]"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>追加</span>
-          </button>
+          <div className="flex flex-col justify-between gap-1 flex-shrink-0">
+            <button
+              type="button"
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={() => {
+                const { timecode } = getCurrentTimecode();
+                setInputText((prev) => (prev ? `[${timecode}] ${prev}` : `[${timecode}] `));
+              }}
+              title="現在のタイムコードを入力欄に挿入"
+              className="px-2 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center gap-1 transition-colors text-[10px] font-bold h-[28px]"
+            >
+              <Clock className="w-3 h-3" />
+              <span>コマ刻印</span>
+            </button>
+            <button
+              type="submit"
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              title="リテイクメモを追加 (Shift+Enter)"
+              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold transition-colors flex items-center justify-center gap-1 h-[28px]"
+            >
+              <Plus className="w-3 h-3" />
+              <span>追加</span>
+            </button>
+          </div>
         </div>
       </form>
 
@@ -358,21 +358,34 @@ export const RetakeNotePanel: React.FC<RetakeNotePanelProps> = ({ rollId }) => {
                   className="w-full bg-slate-900 border border-white/20 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400 resize-none leading-normal"
                   autoFocus
                 />
-                <div className="flex items-center justify-end gap-1.5">
+                <div className="flex items-center justify-between gap-1">
                   <button
                     type="button"
-                    onClick={() => setEditingItemId(null)}
-                    className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px]"
+                    onClick={() => {
+                      handleDeleteItem(it.id);
+                      setEditingItemId(null);
+                    }}
+                    className="px-2 py-0.5 rounded bg-red-600/80 hover:bg-red-600 text-white text-[10px] flex items-center gap-1 transition-colors"
                   >
-                    キャンセル
+                    <Trash2 className="w-3 h-3" />
+                    <span>削除</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSaveEdit(it.id)}
-                    className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px]"
-                  >
-                    保存 (Shift+Enter)
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingItemId(null)}
+                      className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[10px]"
+                    >
+                      キャンセル
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveEdit(it.id)}
+                      className="px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px]"
+                    >
+                      保存 (Shift+Enter)
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
