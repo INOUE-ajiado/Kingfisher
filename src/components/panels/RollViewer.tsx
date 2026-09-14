@@ -131,6 +131,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const [showControls, setShowControls] = useState(true);
   const [isBottomBarHovered, setIsBottomBarHovered] = useState(false);
   const [isRightSidebarHovered, setIsRightSidebarHovered] = useState(false);
+  const [isRightSidebarFocused, setIsRightSidebarFocused] = useState(false);
   const hideControlsTimerRef = useRef<number | null>(null);
 
   const RETAKE_PANEL_HEIGHT_KEY = 'kingfisher_retake_panel_height';
@@ -1078,12 +1079,19 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         <div
           onMouseEnter={() => setIsRightSidebarHovered(true)}
           onMouseLeave={() => {
-            if (!isResizingRef.current) {
+            if (!isResizingRef.current && !isRightSidebarFocused) {
               setIsRightSidebarHovered(false);
             }
           }}
+          onFocusCapture={() => setIsRightSidebarHovered(true)}
+          onBlurCapture={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setIsRightSidebarFocused(false);
+            }
+          }}
+          onFocus={() => setIsRightSidebarFocused(true)}
           className={`fixed top-0 bottom-0 right-0 z-50 w-96 max-w-[85vw] bg-slate-900/80 dark:bg-slate-950/85 backdrop-blur-xl border-l border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-300 transform flex flex-col text-white ${
-            isRightSidebarHovered || isResizingRef.current
+            isRightSidebarHovered || isResizingRef.current || isRightSidebarFocused
               ? 'translate-x-0 opacity-100 pointer-events-auto visible'
               : 'translate-x-full opacity-0 pointer-events-none invisible'
           }`}
