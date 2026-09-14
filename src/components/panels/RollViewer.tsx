@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { FileBrowser } from './FileBrowser';
+import { RetakeNotePanel } from './RetakeNotePanel';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
@@ -1039,8 +1040,11 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="flex-1 overflow-auto p-2 text-slate-200">
+          <div className="flex-1 min-h-0 overflow-auto p-2 text-slate-200">
             <FileBrowser />
+          </div>
+          <div className="h-80 min-h-[240px] flex-shrink-0 border-t border-white/10">
+            <RetakeNotePanel rollId={rollId} />
           </div>
         </div>
       )}
