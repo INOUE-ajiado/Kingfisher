@@ -23,20 +23,33 @@ export async function getFFmpeg(): Promise<FFmpeg> {
 
   loadPromise = (async () => {
     const ffmpeg = new FFmpeg();
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const localBaseURL = `${origin}/ffmpeg`;
+    const cdnBaseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
 
     try {
       await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        coreURL: await toBlobURL(`${localBaseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${localBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
       });
       ffmpegInstance = ffmpeg;
-      logDebug('roll', 'FFmpeg WASM デコーダの読み込みに成功しました');
+      logDebug('roll', 'FFmpeg WASM デコーダ (Same-Origin) の読み込みに成功しました');
       return ffmpeg;
-    } catch (err) {
-      loadPromise = null;
-      console.error('FFmpeg WASM load error:', err);
-      throw err;
+    } catch (localErr) {
+      console.warn('Local ffmpeg core load failed, trying CDN fallback:', localErr);
+      try {
+        await ffmpeg.load({
+          coreURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.js`, 'text/javascript'),
+          wasmURL: await toBlobURL(`${cdnBaseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        });
+        ffmpegInstance = ffmpeg;
+        logDebug('roll', 'FFmpeg WASM デコーダ (CDN) の読み込みに成功しました');
+        return ffmpeg;
+      } catch (err) {
+        loadPromise = null;
+        console.error('FFmpeg WASM load error:', err);
+        throw err;
+      }
     }
   })();
 
