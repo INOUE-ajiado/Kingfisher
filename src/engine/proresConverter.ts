@@ -87,26 +87,48 @@ export async function convertProResToMp4(
     ffmpeg.on('progress', progressListener);
   }
 
+  const logListener = ({ message }: { message: string }) => {
+    if (message.includes('Error') || message.includes('error') || message.includes('Stream')) {
+      logDebug('roll', `[FFmpeg] ${message}`);
+    }
+  };
+  ffmpeg.on('log', logListener);
+
   try {
     logDebug('roll', `ProRes 自動変換処理を開始: ${file.name}`);
     await ffmpeg.writeFile(inName, await fetchFile(file));
 
-    // 高速トランスコード (-preset ultrafast -crf 22 -pix_fmt yuv420p)
-    await ffmpeg.exec([
-      '-i',
-      inName,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '22',
-      '-pix_fmt',
-      'yuv420p',
-      '-movflags',
-      'faststart',
-      outName,
-    ]);
+    // 高速トランスコード: 標準 WASM ビルドに必ず含まれる mpeg4 エンコーダを優先
+    try {
+      await ffmpeg.exec([
+        '-i',
+        inName,
+        '-c:v',
+        'mpeg4',
+        '-q:v',
+        '2',
+        '-movflags',
+        'faststart',
+        outName,
+      ]);
+    } catch (mpeg4Err) {
+      logDebug('roll', `mpeg4 変換フォールバック試行: ${mpeg4Err}`, undefined, 'warn');
+      await ffmpeg.exec([
+        '-i',
+        inName,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-crf',
+        '22',
+        '-pix_fmt',
+        'yuv420p',
+        '-movflags',
+        'faststart',
+        outName,
+      ]);
+    }
 
     const data = (await ffmpeg.readFile(outName)) as Uint8Array;
     const blob = new Blob([new Uint8Array(data)], { type: 'video/mp4' });
@@ -127,5 +149,6 @@ export async function convertProResToMp4(
     if (progressListener) {
       ffmpeg.off('progress', progressListener);
     }
+    ffmpeg.off('log', logListener);
   }
 }
