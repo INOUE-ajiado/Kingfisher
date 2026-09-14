@@ -701,7 +701,28 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           </div>
         )}
 
-        {unsupported && (
+        {view.status === 'converting' && (
+          <div className="absolute inset-0 bg-slate-900/95 text-slate-200 p-6 flex flex-col items-center justify-center text-[11px] select-none z-40">
+            <div className="w-10 h-10 border-4 border-amber-400 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="font-bold text-amber-300 text-xs mb-1">
+              Apple ProRes ({view.codec?.fourcc || 'apch'}) 映像を自動変換中...
+            </p>
+            <p className="text-[10px] text-slate-400 mb-4 text-center">
+              ブラウザ内で自動デコード・変換を行っています。<br />完了すると自動的に再生が開始されます。
+            </p>
+            <div className="w-48 bg-slate-800 rounded-full h-2.5 overflow-hidden border border-slate-700">
+              <div
+                className="bg-amber-400 h-full transition-all duration-150"
+                style={{ width: `${view.convertProgress || 0}%` }}
+              />
+            </div>
+            <span className="mt-2 text-[10px] font-mono text-slate-300 font-bold">
+              {view.convertProgress || 0}%
+            </span>
+          </div>
+        )}
+
+        {unsupported && view.status !== 'converting' && (
           <div className="absolute inset-0 bg-slate-900/95 text-slate-200 p-4 overflow-auto text-[11px] select-text">
             <div className="flex items-center gap-2 text-amber-400 font-bold mb-2">
               <AlertTriangle className="w-4 h-4 flex-shrink-0" />

@@ -16,6 +16,7 @@
 import { StateCreator } from 'zustand';
 import { PaintStore, RollSlice, RollState, RollViewState, RollId, ROLL_IDS } from '../types';
 import { DroppedVideo, toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
+import { convertProResToMp4 } from '../../engine/proresConverter';
 import { logDebug } from '../../engine/debugLog';
 import { getRollVideo } from '../../components/panels/rollVideoRegistry';
 
@@ -348,6 +349,45 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       codec = await probeVideoCodec(view.file);
     } catch (e) {
       console.error('Failed to probe codec:', e);
+    }
+
+    if (codec && /^ap(ch|cn|cs|co|4h|4x)$/i.test(codec.fourcc)) {
+      const c = codec;
+      logDebug('roll', `${rollLabel(id)} の ${c.label} をブラウザ内自動変換試行中...`);
+      set((state) => ({
+        roll: withView(state.roll, id, {
+          ...state.roll.views[id],
+          status: 'converting',
+          convertProgress: 0,
+          codec: c,
+          message: `${c.label} (${c.fourcc}) をブラウザ再生用に自動変換しています...`,
+        }),
+      }));
+
+      try {
+        const converted = await convertProResToMp4(view.file, (pct) => {
+          set((state) => ({
+            roll: withView(state.roll, id, {
+              ...state.roll.views[id],
+              convertProgress: pct,
+            }),
+          }));
+        });
+
+        set((state) => ({
+          roll: withView(state.roll, id, {
+            ...state.roll.views[id],
+            status: 'ready',
+            objectUrl: converted.objectUrl,
+            message: '',
+            convertProgress: 100,
+          }),
+        }));
+        logDebug('roll', `${rollLabel(id)} の ProRes 自動変換が成功し、再生準備完了`);
+        return;
+      } catch (err) {
+        console.error('Auto conversion failed:', err);
+      }
     }
 
     const message = codec

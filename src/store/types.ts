@@ -900,7 +900,7 @@ export interface LightTableSlice {
 }
 
 /** 撮影上がりロールの読み込み状態 */
-export type RollStatus = 'idle' | 'ready' | 'unsupported' | 'error';
+export type RollStatus = 'idle' | 'ready' | 'unsupported' | 'error' | 'converting';
 
 /** ロールを出せる面。修正前 / 修正後を並べて見比べるために 2 面ある */
 export type RollId = 'rollA' | 'rollB';
@@ -927,6 +927,8 @@ export interface RollViewState {
   /** 今開いているロールの相対パス */
   currentPath: string | null;
   status: RollStatus;
+  /** 自動変換時の進捗 (0-100%) */
+  convertProgress?: number;
   /** 再生できないときにユーザーへ出す説明 */
   message: string;
   codec: VideoCodecInfo | null;
