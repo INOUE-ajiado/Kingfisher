@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { FileBrowser } from './FileBrowser';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
@@ -128,6 +129,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
 
   const [showControls, setShowControls] = useState(true);
   const [isBottomBarHovered, setIsBottomBarHovered] = useState(false);
+  const [isRightSidebarHovered, setIsRightSidebarHovered] = useState(false);
   const hideControlsTimerRef = useRef<number | null>(null);
 
   const handleMouseMove = useCallback(() => {
@@ -1003,6 +1005,45 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           e.target.value = '';
         }}
       />
+
+      {/* フルスクリーン時、画面右端にマウスを近づけた時の検知センサーエリア */}
+      {isFullscreen && (
+        <div
+          onMouseEnter={() => setIsRightSidebarHovered(true)}
+          className="absolute top-0 bottom-0 right-0 w-10 z-40 pointer-events-auto"
+        />
+      )}
+
+      {/* フルスクリーン時、画面右側にすっと出現するリキッドグラス風ファイルツリーサイドバー */}
+      {isFullscreen && (
+        <div
+          onMouseEnter={() => setIsRightSidebarHovered(true)}
+          onMouseLeave={() => setIsRightSidebarHovered(false)}
+          className={`absolute top-0 bottom-0 right-0 z-50 w-96 max-w-[85vw] bg-slate-900/80 dark:bg-slate-950/85 backdrop-blur-xl border-l border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-300 transform flex flex-col text-white ${
+            isRightSidebarHovered
+              ? 'translate-x-0 opacity-100 pointer-events-auto'
+              : 'translate-x-full opacity-0 pointer-events-none'
+          }`}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-white/10 font-bold text-xs">
+            <div className="flex items-center gap-1.5 text-amber-400">
+              <Folder className="w-4 h-4" />
+              <span>ファイルツリー (フルスクリーン)</span>
+            </div>
+            <button
+              tabIndex={-1}
+              onPointerDown={(e) => e.currentTarget.blur()}
+              onClick={() => setIsRightSidebarHovered(false)}
+              className="p-1 hover:bg-white/20 rounded text-slate-300 hover:text-white transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-2 text-slate-200">
+            <FileBrowser />
+          </div>
+        </div>
+      )}
 
       {view.isFloating && <CornerResizeHandles getResizeHandler={getResizeHandler} topOffset={24} />}
     </div>
