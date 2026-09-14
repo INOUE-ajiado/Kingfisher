@@ -127,6 +127,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   });
 
   const [showControls, setShowControls] = useState(true);
+  const [isBottomBarHovered, setIsBottomBarHovered] = useState(false);
   const hideControlsTimerRef = useRef<number | null>(null);
 
   const handleMouseMove = useCallback(() => {
@@ -831,12 +832,24 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         )}
       </div>
 
+      {/* フルスクリーン時、画面下部にマウスを近づけた時の検知センサーエリア */}
+      {isFullscreen && (
+        <div
+          onMouseEnter={() => setIsBottomBarHovered(true)}
+          className="absolute bottom-0 left-0 right-0 h-12 z-20 pointer-events-auto"
+        />
+      )}
+
       {/* 操作 */}
       <div
+        onMouseEnter={() => setIsBottomBarHovered(true)}
+        onMouseLeave={() => setIsBottomBarHovered(false)}
         className={
           isFullscreen
-            ? `absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 py-3 space-y-2 text-white transition-opacity duration-300 ${
-                showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            ? `absolute bottom-0 left-0 right-0 z-30 bg-gradient-to-t from-black/95 via-black/75 to-transparent px-4 py-3 space-y-2 text-white transition-all duration-300 transform ${
+                isBottomBarHovered
+                  ? 'translate-y-0 opacity-100 pointer-events-auto'
+                  : 'translate-y-full opacity-0 pointer-events-none'
               }`
             : 'flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 px-2 py-1.5 space-y-1.5'
         }
