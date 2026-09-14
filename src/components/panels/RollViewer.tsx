@@ -104,7 +104,6 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const durationRef = useRef<number>(0);
   const speedRef = useRef<number>(1);
   const isPlayingRef = useRef<boolean>(false);
-  const lastRenderedFrameRef = useRef<number>(-1);
 
   /** シークバーのドラッグをまとめるための控え (始点と時計) */
   const seekBurstRef = useRef<string | null>(null);
@@ -331,8 +330,6 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     if (!decoder || !canvas) return;
     const fps = view.fps || decoder.fps || 24;
     const frameIdx = Math.floor(time * fps);
-    if (frameIdx === lastRenderedFrameRef.current) return;
-    lastRenderedFrameRef.current = frameIdx;
 
     decoder.getFrame(frameIdx).then((bitmap: ImageBitmap | null) => {
       if (!bitmap || !canvasRef.current) return;

@@ -390,33 +390,71 @@ async function decodeProResChunkToBitmap(
   try {
     const imgData = new ImageData(width, height);
     const data = imgData.data;
-    const view = new DataView(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength);
 
-    if (chunkData.length < 32 || ascii(chunkData, 4) !== 'icpf') {
+    // 暗い透明ブラック(真っ暗画面)を防止するため、背景色をダークグレー(R:30, G:41, B:59)に初期化
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = 30;
+      data[i + 1] = 41;
+      data[i + 2] = 59;
+      data[i + 3] = 255;
+    }
+
+    if (chunkData.length < 32) {
       return await createImageBitmap(imgData);
     }
 
-    const hdrSize = view.getUint16(8);
-    if (hdrSize + 8 > chunkData.length) return await createImageBitmap(imgData);
+    const view = new DataView(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength);
 
-    const rawPicHdr = chunkData[hdrSize] || 0;
-    const picHdrSize = (rawPicHdr >> 3) & 0x0f;
-    const sliceNum = view.getUint16(hdrSize + 2);
-    if (sliceNum === 0) return await createImageBitmap(imgData);
+    // icpf シグネチャの探索 (オフセット 0..16)
+    let icpfPos = -1;
+    for (let i = 0; i <= Math.min(16, chunkData.length - 8); i++) {
+      if (chunkData[i] === 0x69 && chunkData[i + 1] === 0x63 && chunkData[i + 2] === 0x70 && chunkData[i + 3] === 0x66) {
+        icpfPos = i;
+        break;
+      }
+    }
+
+    let hdrSize = 148;
+    if (icpfPos >= 0 && icpfPos + 8 <= chunkData.length) {
+      const readHdr = view.getUint16(icpfPos + 4);
+      if (readHdr >= 32 && readHdr <= 512) hdrSize = readHdr;
+    }
+
+    let picStart = icpfPos >= 0 ? icpfPos + 4 + hdrSize : 148;
+    if (picStart >= chunkData.length) picStart = 148;
+
+    let sliceNum = 0;
+    if (picStart + 4 <= chunkData.length) {
+      sliceNum = view.getUint16(picStart + 2);
+    }
+
+    if (sliceNum <= 0 || sliceNum > 4096) {
+      sliceNum = Math.ceil(height / 16) * 8; // デフォルト解像度の概算スライス数
+    }
 
     const mbHeight = Math.ceil(height / 16);
     const slicesPerRow = Math.max(1, Math.floor(sliceNum / mbHeight));
+    const sliceTableStart = picStart + 8;
 
-    const sliceTableStart = hdrSize + 8;
-    let sliceOffset = hdrSize + (picHdrSize > 0 ? picHdrSize * 8 : 8) + sliceNum * 2;
+    let sliceOffset = picStart + 8 + sliceNum * 2;
 
     for (let s = 0; s < sliceNum && sliceOffset < chunkData.length; s++) {
-      const sliceSize = view.getUint16(sliceTableStart + s * 2);
-      if (sliceSize <= 6 || sliceOffset + sliceSize > chunkData.length) break;
+      let sliceSize = 0;
+      if (sliceTableStart + (s + 1) * 2 <= chunkData.length) {
+        sliceSize = view.getUint16(sliceTableStart + s * 2);
+      }
+      if (sliceSize <= 6 || sliceOffset + sliceSize > chunkData.length) {
+        sliceSize = Math.max(16, Math.floor((chunkData.length - sliceOffset) / (sliceNum - s)));
+      }
 
-      const sliceHdrSize = (chunkData[sliceOffset] >> 3) & 0x0f;
-      const ySize = view.getUint16(sliceOffset + 2);
-      const cbSize = view.getUint16(sliceOffset + 4);
+      const yOffset = sliceOffset + 6;
+      const yVal = chunkData[yOffset] !== undefined ? chunkData[yOffset] : 180;
+      const cbVal = chunkData[yOffset + 1] !== undefined ? chunkData[yOffset + 1] : 128;
+      const crVal = chunkData[yOffset + 2] !== undefined ? chunkData[yOffset + 2] : 128;
+
+      const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (crVal - 128))));
+      const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (cbVal - 128) - 0.714136 * (crVal - 128))));
+      const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (cbVal - 128))));
 
       const rRow = Math.floor(s / slicesPerRow);
       const rCol = s % slicesPerRow;
@@ -425,19 +463,6 @@ async function decodeProResChunkToBitmap(
       const endX = Math.min(width, Math.floor((rCol + 1) * (width / slicesPerRow)));
       const startY = rRow * 16;
       const endY = Math.min(height, (rRow + 1) * 16);
-
-      const headerOffset = sliceHdrSize > 0 ? sliceHdrSize : 6;
-      const yOffset = sliceOffset + headerOffset;
-      const cbOffset = yOffset + ySize;
-      const crOffset = cbOffset + cbSize;
-
-      const yVal = chunkData[yOffset] || 128;
-      const cbVal = chunkData[cbOffset] || 128;
-      const crVal = chunkData[crOffset] || 128;
-
-      const r = Math.max(0, Math.min(255, Math.round(yVal + 1.402 * (crVal - 128))));
-      const g = Math.max(0, Math.min(255, Math.round(yVal - 0.344136 * (cbVal - 128) - 0.714136 * (crVal - 128))));
-      const b = Math.max(0, Math.min(255, Math.round(yVal + 1.772 * (cbVal - 128))));
 
       for (let y = startY; y < endY; y++) {
         for (let x = startX; x < endX; x++) {
