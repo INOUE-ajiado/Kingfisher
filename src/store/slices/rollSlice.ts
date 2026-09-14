@@ -352,10 +352,10 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
     const message = codec
       ? `このロールは ${codec.label} (${codec.fourcc}) で書き出されています。\n` +
-        `ブラウザにこのコーデックのデコーダが無いため、そのままでは再生できません。\n\n` +
+        `お使いのブラウザ / OS 環境で再生できない場合、確認用に H.264 へ変換してから開いてください:\n\n` +
         conversionHint(view.fileName)
       : `このファイルを再生できませんでした。コーデックを判別できていません。\n` +
-        `ProRes・DNxHD・非圧縮などはブラウザでは再生できません。\n\n` +
+        `お使いの環境で再生可能か確認するか、H.264 へ変換してからお試しください。\n\n` +
         conversionHint(view.fileName);
 
     logDebug(

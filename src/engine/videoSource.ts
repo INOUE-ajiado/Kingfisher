@@ -35,17 +35,32 @@ export function isVideoFile(fileName: string): boolean {
  * なる (2026-08-29 に実測)。判定は MIME → 拡張子の順に見る。ドロップされた File は
  * 環境によって type が空のことがある。
  */
+/**
+ * <video> に渡せる Blob を作る。
+ *
+ * ⚠️ new Blob([file]) としないこと。ファイル全体をメモリへ読み込んでしまい、
+ * 数 GB のロールで破綻する。Blob.slice は範囲とタイプを付け替えた「見え方」を
+ * 返すだけで実データはコピーしないので、これを使う。
+ *
+ * ⚠️ macOS (Safari / Chrome) では .mov (video/quicktime) で Apple ProRes (apch / apcn 等) が
+ * ネイティブ再生可能。WebM は video/webm、.mov は video/quicktime、それ以外は video/mp4 を割り当てる。
+ */
 export function toPlayableBlob(file: Blob): Blob {
   const name = (file as File).name ?? '';
   const isWebm = /webm/i.test(file.type) || /\.webm$/i.test(name);
-  return file.slice(0, file.size, isWebm ? 'video/webm' : 'video/mp4');
+  if (isWebm) return file.slice(0, file.size, 'video/webm');
+
+  const isMov = /quicktime/i.test(file.type) || /\.mov$/i.test(name);
+  if (isMov) return file.slice(0, file.size, 'video/quicktime');
+
+  return file.slice(0, file.size, 'video/mp4');
 }
 
 /** stsd から取れる映像フォーマットの 4 文字コードと、その扱い */
 export interface CodecInfo {
   fourcc: string;
   label: string;
-  /** ブラウザで再生できるか。'maybe' は環境 (GPU・OS) に依存する */
+  /** ブラウザで再生できるか。'maybe' は環境 (GPU・OS・macOS Safari等) に依存する */
   playable: 'yes' | 'no' | 'maybe';
 }
 
@@ -57,12 +72,12 @@ const CODECS: Record<string, { label: string; playable: CodecInfo['playable'] }>
   hvc1: { label: 'HEVC (H.265)', playable: 'maybe' },
   hev1: { label: 'HEVC (H.265)', playable: 'maybe' },
   mp4v: { label: 'MPEG-4 Visual', playable: 'maybe' },
-  apco: { label: 'Apple ProRes 422 Proxy', playable: 'no' },
-  apcs: { label: 'Apple ProRes 422 LT', playable: 'no' },
-  apcn: { label: 'Apple ProRes 422', playable: 'no' },
-  apch: { label: 'Apple ProRes 422 HQ', playable: 'no' },
-  ap4h: { label: 'Apple ProRes 4444', playable: 'no' },
-  ap4x: { label: 'Apple ProRes 4444 XQ', playable: 'no' },
+  apco: { label: 'Apple ProRes 422 Proxy', playable: 'maybe' },
+  apcs: { label: 'Apple ProRes 422 LT', playable: 'maybe' },
+  apcn: { label: 'Apple ProRes 422', playable: 'maybe' },
+  apch: { label: 'Apple ProRes 422 HQ', playable: 'maybe' },
+  ap4h: { label: 'Apple ProRes 4444', playable: 'maybe' },
+  ap4x: { label: 'Apple ProRes 4444 XQ', playable: 'maybe' },
   AVdn: { label: 'Avid DNxHD / DNxHR', playable: 'no' },
   jpeg: { label: 'Motion JPEG', playable: 'no' },
   mjpa: { label: 'Motion JPEG A', playable: 'no' },

@@ -59,12 +59,11 @@ describe('動画ファイルの判定', () => {
 });
 
 describe('再生用 Blob への付け替え', () => {
-  it('.mov の MIME を video/mp4 にする', () => {
-    // Chrome の <video> は video/quicktime を受け付けないが、中身が H.264 なら再生できる
+  it('.mov の MIME を video/quicktime に保つ (macOS ProRes等で必要)', () => {
     const file = new Blob([new Uint8Array(1024)], { type: 'video/quicktime' });
     const playable = toPlayableBlob(file);
 
-    expect(playable.type).toBe('video/mp4');
+    expect(playable.type).toBe('video/quicktime');
     expect(playable.size).toBe(file.size);
   });
 
@@ -86,10 +85,10 @@ describe('コーデックの説明', () => {
     expect(describeCodec('avc1')).toEqual({ fourcc: 'avc1', label: 'H.264', playable: 'yes' });
   });
 
-  it('ProRes は再生できないと分かる名前で返す', () => {
-    const info = describeCodec('apcn');
-    expect(info.playable).toBe('no');
-    expect(info.label).toContain('ProRes');
+  it('ProRes は環境依存 (maybe) で返し、正しいラベルを持つ', () => {
+    const info = describeCodec('apch');
+    expect(info.playable).toBe('maybe');
+    expect(info.label).toBe('Apple ProRes 422 HQ');
   });
 
   it('知らない 4 文字コードでも落ちない', () => {
@@ -125,7 +124,7 @@ describe('コーデックの判別 (ファイル全体を読まない)', () => {
       box('moov', box('trak', stsd('ap4h'))),
     ] as unknown as BlobPart[]);
 
-    await expect(probeVideoCodec(file)).resolves.toMatchObject({ fourcc: 'ap4h', playable: 'no' });
+    await expect(probeVideoCodec(file)).resolves.toMatchObject({ fourcc: 'ap4h', playable: 'maybe' });
   });
 
   it('先頭に moov があっても判別できる', async () => {
