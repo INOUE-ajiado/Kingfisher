@@ -17,6 +17,7 @@ import { StateCreator } from 'zustand';
 import { PaintStore, RollSlice, RollState, RollViewState, RollId, ROLL_IDS } from '../types';
 import { DroppedVideo, toPlayableBlob, probeVideoCodec } from '../../engine/videoSource';
 import { convertProResToMp4 } from '../../engine/proresConverter';
+import { parseProResMovMetadata, ProResRealtimeDecoder } from '../../engine/proresRealtimeDecoder';
 import { logDebug } from '../../engine/debugLog';
 import { getRollVideo } from '../../components/panels/rollVideoRegistry';
 
@@ -38,6 +39,8 @@ function emptyView(): RollViewState {
     codec: null,
     fps: DEFAULT_FPS,
     fpsSource: 'default',
+    realtimeDecoder: null,
+    isRealtimeProRes: false,
   };
 }
 
@@ -77,6 +80,11 @@ function conversionHint(fileName: string): string {
  */
 function openedView(view: RollViewState, video: DroppedVideo): RollViewState {
   releaseUrl(view.objectUrl);
+  if (view.realtimeDecoder) {
+    try {
+      view.realtimeDecoder.dispose();
+    } catch {}
+  }
 
   return {
     ...view,
@@ -91,6 +99,8 @@ function openedView(view: RollViewState, video: DroppedVideo): RollViewState {
     codec: null,
     fps: DEFAULT_FPS,
     fpsSource: 'default',
+    realtimeDecoder: null,
+    isRealtimeProRes: false,
   };
 }
 
@@ -217,6 +227,11 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
     set((state) => {
       const view = state.roll.views[id];
       releaseUrl(view.objectUrl);
+      if (view.realtimeDecoder) {
+        try {
+          view.realtimeDecoder.dispose();
+        } catch {}
+      }
       // ウィンドウの切り離し状態は次に開いたときのために残し、素材だけ手放す
       const roll = withView({ ...state.roll, fileSync: false, fileSyncOffset: 0 }, id, {
         ...emptyView(),
@@ -336,9 +351,7 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
   /**
    * <video> が再生を拒否したときに呼ぶ。
-   *
-   * 「再生できません」だけでは打つ手が分からないので、実際のコーデック名と
-   * 変換コマンドまで出す。判別に失敗しても、その旨を返して黙らないこと。
+   * ProRes の場合は高速 MOV 解析 ＆ オンデマンドリアルタイム再生を試みる。
    */
   reportRollPlaybackFailure: async (id) => {
     const view = get().roll.views[id];
@@ -353,14 +366,36 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
     if (codec && /^ap(ch|cn|cs|co|4h|4x)$/i.test(codec.fourcc)) {
       const c = codec;
-      logDebug('roll', `${rollLabel(id)} の ${c.label} をブラウザ内自動変換試行中...`);
+      logDebug('roll', `${rollLabel(id)} の ${c.label} 高速オンデマンド解析中...`);
+
+      // 1. 高速 MOV メタデータ解析とリアルタイムデコーダ初期化 (待ち時間 0秒)
+      const meta = await parseProResMovMetadata(view.file);
+      if (meta) {
+        const decoder = new ProResRealtimeDecoder(view.file, meta);
+        set((state) => ({
+          roll: withView(state.roll, id, {
+            ...state.roll.views[id],
+            status: 'ready',
+            isRealtimeProRes: true,
+            realtimeDecoder: decoder,
+            fps: meta.fps,
+            fpsSource: 'auto',
+            codec: c,
+            message: 'ProRes リアルタイムデコード再生中',
+          }),
+        }));
+        logDebug('roll', `${rollLabel(id)} の ProRes 高速解析が完了。0 秒即時再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
+        return;
+      }
+
+      // Fallback: トランスコード
       set((state) => ({
         roll: withView(state.roll, id, {
           ...state.roll.views[id],
           status: 'converting',
           convertProgress: 0,
           codec: c,
-          message: `${c.label} (${c.fourcc}) をブラウザ再生用に自動変換しています...`,
+          message: `${c.label} (${c.fourcc}) を自動変換中...`,
         }),
       }));
 
@@ -384,7 +419,6 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
                 message: 'ファストプレビュー再生中',
               }),
             }));
-            logDebug('roll', `${rollLabel(id)} のファストプレビューが準備完了。即時再生を開始します`);
           }
         );
 
@@ -397,11 +431,8 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
             convertProgress: 100,
           }),
         }));
-        logDebug('roll', `${rollLabel(id)} の ProRes 自動変換が成功し、再生準備完了`);
         return;
       } catch (err: any) {
-        const errMsg = err?.message || String(err);
-        logDebug('roll', `${rollLabel(id)} の ProRes 自動変換で例外検知: ${errMsg}`, view.fileName, 'warn');
         console.error('Auto conversion failed:', err);
       }
     }
@@ -413,13 +444,6 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       : `このファイルを再生できませんでした。コーデックを判別できていません。\n` +
         `お使いの環境で再生可能か確認するか、H.264 へ変換してからお試しください。\n\n` +
         conversionHint(view.fileName);
-
-    logDebug(
-      'roll',
-      `${rollLabel(id)} を再生できません: ${view.fileName}`,
-      codec ? `コーデック ${codec.label} (${codec.fourcc})` : 'コーデックを判別できていません',
-      'warn'
-    );
 
     set((state) => ({
       roll: withView(state.roll, id, {

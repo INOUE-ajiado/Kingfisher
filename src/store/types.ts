@@ -935,6 +935,9 @@ export interface RollViewState {
   /** コマ送りの基準。実再生から推定し、外れたら手動で指定できる */
   fps: number;
   fpsSource: 'default' | 'auto' | 'manual';
+  /** オンデマンド・リアルタイム ProRes デコーダー */
+  realtimeDecoder?: any | null;
+  isRealtimeProRes?: boolean;
 }
 
 export interface RollState {

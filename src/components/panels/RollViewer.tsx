@@ -92,11 +92,19 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   } = usePaintStore();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const seekRef = useRef<HTMLInputElement | null>(null);
   const timeLabelRef = useRef<HTMLSpanElement | null>(null);
   const frameCallbackRef = useRef<number | null>(null);
   const fpsSamplesRef = useRef<number[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  /** ProRes リアルタイム再生用の参照 */
+  const currentTimeRef = useRef<number>(0);
+  const durationRef = useRef<number>(0);
+  const speedRef = useRef<number>(1);
+  const isPlayingRef = useRef<boolean>(false);
+  const lastRenderedFrameRef = useRef<number>(-1);
 
   /** シークバーのドラッグをまとめるための控え (始点と時計) */
   const seekBurstRef = useRef<string | null>(null);
@@ -312,6 +320,118 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     [rollId]
   );
 
+  /** 参照の同期 */
+  speedRef.current = speed;
+  isPlayingRef.current = isPlaying;
+
+  /** ProRes デコーダからフレームを取得して canvas に描画 */
+  const renderFrameAt = useCallback((time: number) => {
+    const decoder = view.realtimeDecoder;
+    const canvas = canvasRef.current;
+    if (!decoder || !canvas) return;
+    const fps = view.fps || decoder.fps || 24;
+    const frameIdx = Math.floor(time * fps);
+    if (frameIdx === lastRenderedFrameRef.current) return;
+    lastRenderedFrameRef.current = frameIdx;
+
+    decoder.getFrame(frameIdx).then((bitmap: ImageBitmap | null) => {
+      if (!bitmap || !canvasRef.current) return;
+      const c = canvasRef.current;
+      if (c.width !== bitmap.width || c.height !== bitmap.height) {
+        c.width = bitmap.width;
+        c.height = bitmap.height;
+      }
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0);
+      }
+    }).catch((err: any) => {
+      console.error('Frame decode error:', err);
+    });
+  }, [view.realtimeDecoder, view.fps]);
+
+  /** リアルタイム ProRes 再生用のプロキシオブジェクト生成 */
+  const realtimeVideoProxy = useCallback(() => {
+    return {
+      get currentTime() { return currentTimeRef.current; },
+      set currentTime(t: number) {
+        currentTimeRef.current = Math.max(0, Math.min(durationRef.current, t));
+        paintTime(currentTimeRef.current);
+        renderFrameAt(currentTimeRef.current);
+      },
+      get duration() { return durationRef.current; },
+      get paused() { return !isPlayingRef.current; },
+      get ended() { return durationRef.current > 0 && currentTimeRef.current >= durationRef.current; },
+      get playbackRate() { return speedRef.current; },
+      set playbackRate(r: number) { setSpeed(r); },
+      play: () => { setIsPlaying(true); return Promise.resolve(); },
+      pause: () => { setIsPlaying(false); },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+  }, [paintTime, renderFrameAt]);
+
+  /** リアルタイム ProRes モードの初期化とレジストリ登録 */
+  useEffect(() => {
+    if (view.isRealtimeProRes && view.realtimeDecoder) {
+      const proxy = realtimeVideoProxy() as unknown as HTMLVideoElement;
+      videoRef.current = proxy;
+      registerRollVideo(rollId, proxy);
+      setDuration(view.realtimeDecoder.duration);
+      durationRef.current = view.realtimeDecoder.duration;
+      currentTimeRef.current = 0;
+      paintTime(0);
+      renderFrameAt(0);
+      return () => {
+        if (videoRef.current === proxy) {
+          videoRef.current = null;
+          registerRollVideo(rollId, null);
+        }
+      };
+    }
+  }, [view.isRealtimeProRes, view.realtimeDecoder, realtimeVideoProxy, rollId, paintTime, renderFrameAt]);
+
+  /** ProRes リアルタイム再生の requestAnimationFrame ループ */
+  useEffect(() => {
+    if (!isPlaying || !view.isRealtimeProRes || !view.realtimeDecoder) return;
+
+    let animId: number | null = null;
+    let lastTime = performance.now();
+
+    const animFrame = (now: number) => {
+      const deltaSec = ((now - lastTime) / 1000) * speedRef.current;
+      lastTime = now;
+
+      const dur = durationRef.current || view.realtimeDecoder?.duration || 0;
+      const nextTime = currentTimeRef.current + deltaSec;
+
+      if (dur > 0 && nextTime >= dur) {
+        currentTimeRef.current = dur;
+        paintTime(dur);
+        renderFrameAt(dur);
+        setIsPlaying(false);
+        endPairedPlayback();
+        return;
+      }
+
+      currentTimeRef.current = nextTime;
+      paintTime(nextTime);
+
+      if (usePaintStore.getState().roll.activeId === rollId) {
+        syncPartnerTime(nextTime, SYNC_DRIFT_TOLERANCE);
+      }
+
+      renderFrameAt(nextTime);
+      animId = requestAnimationFrame(animFrame);
+    };
+
+    animId = requestAnimationFrame(animFrame);
+
+    return () => {
+      if (animId !== null) cancelAnimationFrame(animId);
+    };
+  }, [isPlaying, view.isRealtimeProRes, view.realtimeDecoder, rollId, paintTime, syncPartnerTime, renderFrameAt]);
+
   /**
    * 再生中だけ requestVideoFrameCallback を回す。
    *
@@ -320,7 +440,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    */
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isPlaying) return;
+    if (!video || !isPlaying || view.isRealtimeProRes) return;
 
     const anyVideo = video as unknown as {
       requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number;
@@ -802,7 +922,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         }
         onDoubleClick={toggleFullscreen}
       >
-        {view.objectUrl && !unsupported && (
+        {view.objectUrl && !unsupported && !view.isRealtimeProRes && (
           <video
             ref={attachVideo}
             src={view.objectUrl}
@@ -844,6 +964,17 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               logDebug('roll', `${tone.label} の <video> 要素で再生エラー検知: ${errInfo}`, view.fileName, 'warn');
               void reportRollPlaybackFailure(rollId);
             }}
+          />
+        )}
+
+        {view.isRealtimeProRes && view.realtimeDecoder && !unsupported && (
+          <canvas
+            ref={canvasRef}
+            className={
+              isFullscreen
+                ? `w-full h-full object-contain ${isPlaying && !showControls ? 'cursor-none !cursor-none' : ''}`
+                : 'max-w-full max-h-full'
+            }
           />
         )}
 
