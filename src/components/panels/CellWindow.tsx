@@ -1229,7 +1229,30 @@ export const CellWindow: React.FC = () => {
     e.preventDefault();
     const live = usePaintStore.getState();
     const currentTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+
+    if (live.inputMode === 'trackpad' && !e.ctrlKey) {
+      // マジックパッド (トラックパッド) モードの 2 本指パン移動
+      const newTransform = {
+        ...currentTransform,
+        offsetX: currentTransform.offsetX - e.deltaX,
+        offsetY: currentTransform.offsetY - e.deltaY,
+      };
+
+      if (syncMode && isSplitView) {
+        setCanvasTransform(newTransform);
+        setSplitCanvasTransform(newTransform);
+      } else {
+        if (isLeftView) setCanvasTransform(newTransform);
+        else setSplitCanvasTransform(newTransform);
+      }
+      return;
+    }
+
+    // マウスモードまたはトラックパッドモードでのピンチズーム (ctrlKey === true)
+    let zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    if (live.inputMode === 'trackpad' && e.ctrlKey) {
+      zoomFactor = Math.pow(0.993, e.deltaY);
+    }
     const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
 
     // 🎯 マウスカーソル座標を中心とするアンカーズームオフセット計算

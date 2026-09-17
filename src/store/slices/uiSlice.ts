@@ -159,6 +159,14 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
       return { panelVisibility: { ...state.panelVisibility, debugLog: open } };
     }),
 
+  /** キャンバス操作モード (マウス / マジックパッド)。最初はマウス */
+  inputMode: 'mouse',
+
+  setInputMode: (mode) => {
+    logDebug('view', `操作モードを変更: ${mode === 'trackpad' ? 'マジックパッド (トラックパッド)' : 'マウス'}`);
+    set({ inputMode: mode });
+  },
+
   /**
    * キーの効き先。最初はセル。
    *

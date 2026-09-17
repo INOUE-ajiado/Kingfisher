@@ -55,6 +55,8 @@ export const MenuBar: React.FC = () => {
     saveActiveCellAs,
     user,
     logout,
+    inputMode,
+    setInputMode,
   } = usePaintStore();
 
   /**
@@ -370,6 +372,19 @@ export const MenuBar: React.FC = () => {
           action: () => window.open('/Kingfisher_Manual.html', '_blank'),
         },
         { label: 'ショートカット一覧', shortcut: '', action: () => setActiveModal('shortcuts') },
+        { type: 'divider' },
+        {
+          label: '操作: マウス操作モード (標準)',
+          shortcut: '',
+          checked: inputMode === 'mouse',
+          action: () => setInputMode('mouse'),
+        },
+        {
+          label: '操作: マジックパッドモード (Mac/トラックパッド)',
+          shortcut: '',
+          checked: inputMode === 'trackpad',
+          action: () => setInputMode('trackpad'),
+        },
         { type: 'divider' },
         { label: 'Kingfisher について', shortcut: '', action: () => setActiveModal('about') },
         ...(user
