@@ -8,7 +8,7 @@ import { logDebug } from '../../engine/debugLog';
 import type { ProResRealtimeDecoder } from '../../engine/proresRealtimeDecoder';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
-import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
+import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS, rewindIfPlaybackFinished } from '../../engine/videoSource';
 import { resolveDropHandles } from '../../engine/fileSystemPath';
 import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
 import {
@@ -608,14 +608,12 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       return;
     }
 
-    if (partner) {
-      if (video.ended && partner.ended) {
-        video.currentTime = 0;
-        partner.currentTime = 0;
-        if (both) beginPairedPlayback(0);
-      } else if (both) {
-        beginPairedPlayback(rollId === 'rollA' ? partner.currentTime - video.currentTime : video.currentTime - partner.currentTime);
-      }
+    // 最後まで流し終わっていたら頭から (ボタンでも Space でも同じ)
+    if (rewindIfPlaybackFinished(partner ? [video, partner] : [video])) {
+      logDebug('roll', `再生し終わっていたので先頭へ戻す — ${tone.label}${partner ? ' / 相手も' : ''}`);
+    }
+    if (partner && both) {
+      beginPairedPlayback(rollId === 'rollA' ? partner.currentTime - video.currentTime : video.currentTime - partner.currentTime);
     }
 
     // 連動中は流し始める前に頭を揃える

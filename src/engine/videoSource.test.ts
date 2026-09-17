@@ -9,6 +9,7 @@ import {
   timeForFrame,
   steppedTime,
   estimateFps,
+  rewindIfPlaybackFinished,
 } from './videoSource';
 
 /** ISO-BMFF の箱を 1 つ組み立てる */
@@ -198,6 +199,57 @@ describe('コマ送りの時刻計算', () => {
   it('fps が 0 でも壊れない', () => {
     expect(frameIndexAt(1, 0)).toBe(0);
     expect(timeForFrame(5, 0)).toBe(0);
+  });
+});
+
+describe('再生し終わった後の再生開始', () => {
+  const clip = (currentTime: number, duration: number, ended = false) => ({ currentTime, duration, ended });
+
+  it('1 面で最後まで流し終わっていたら先頭へ戻す', () => {
+    const v = clip(10, 10, true);
+    expect(rewindIfPlaybackFinished([v])).toBe(true);
+    expect(v.currentTime).toBe(0);
+  });
+
+  it('ended が立たない再生 (ProRes のその場再生) でも終端なら戻す', () => {
+    const v = clip(9.09, 9.09);
+    expect(rewindIfPlaybackFinished([v])).toBe(true);
+    expect(v.currentTime).toBe(0);
+  });
+
+  it('途中で止めていたら戻さない', () => {
+    const v = clip(4, 10);
+    expect(rewindIfPlaybackFinished([v])).toBe(false);
+    expect(v.currentTime).toBe(4);
+  });
+
+  it('2 面とも終わっていたら両方戻す', () => {
+    const a = clip(10, 10, true);
+    const b = clip(8, 8, true);
+    expect(rewindIfPlaybackFinished([a, b])).toBe(true);
+    expect([a.currentTime, b.currentTime]).toEqual([0, 0]);
+  });
+
+  it('片方だけ流し終わり、もう片方が先頭で止まっていても戻す (Space の 2 面同時)', () => {
+    const a = clip(10, 10, true);
+    const b = clip(0.5 / 24, 8); // 0 コマ目の中央
+    expect(rewindIfPlaybackFinished([a, b])).toBe(true);
+    expect(a.currentTime).toBe(0);
+    expect(b.currentTime).toBeCloseTo(0.5 / 24, 6);
+  });
+
+  it('短い方は終端で留めてある (0.05 秒手前) ので、それも終端とみなす', () => {
+    const a = clip(10, 10, true);
+    const b = clip(7.95, 8);
+    expect(rewindIfPlaybackFinished([a, b])).toBe(true);
+    expect([a.currentTime, b.currentTime]).toEqual([0, 0]);
+  });
+
+  it('尺の長い方を途中で止めていたら、短い方は終端のまま続きから流す', () => {
+    const shortOne = clip(8, 8, true);
+    const longOne = clip(9, 10);
+    expect(rewindIfPlaybackFinished([shortOne, longOne])).toBe(false);
+    expect([shortOne.currentTime, longOne.currentTime]).toEqual([8, 9]);
   });
 });
 
