@@ -382,9 +382,9 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
     if (codec && /^ap(ch|cn|cs|co|4h|4x)$/i.test(codec.fourcc)) {
       const c = codec;
-      logDebug('roll', `${rollLabel(id)} の ${c.label} Direct Wasm 解析中...`);
+      logDebug('roll', `${rollLabel(id)} の ${c.label} をその場で復号する準備中...`);
 
-      // 高速 MOV メタデータ解析と Direct Wasm/JS リアルタイムデコーダ初期化
+      // MOV の索引を作り、Worker で 1 コマ目を実際に復号できたらその場再生に切り替える
       const meta = await parseProResMovMetadata(view.file);
       if (meta) {
         const decoder = new ProResRealtimeDecoder(view.file, meta);
@@ -399,15 +399,15 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
               fps: meta.fps,
               fpsSource: 'auto',
               codec: c,
-              message: 'ProRes Direct Wasm リアルタイムデコード再生中',
+              message: '',
             }),
           }));
-          logDebug('roll', `${rollLabel(id)} の ProRes Direct Wasm/JS リアルタイム再生を開始します (${meta.totalFrames}コマ, ${meta.fps}fps)`);
+          logDebug('roll', `${rollLabel(id)} の ${c.label} を変換せずに再生します (${meta.totalFrames}コマ, ${meta.fps.toFixed(3)}fps)`);
           return;
         }
       }
 
-      // WebCodecs 非対応環境の場合のフォールバック: H.264 MP4 自動変換
+      // その場で復号できない (索引が読めない・未対応の形式) ときだけ H.264 へ変換する
       set((state) => ({
         roll: withView(state.roll, id, {
           ...state.roll.views[id],

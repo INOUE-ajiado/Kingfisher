@@ -5,6 +5,7 @@ import { FileBrowser } from './FileBrowser';
 import { RetakeNotePanel } from './RetakeNotePanel';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
+import type { ProResRealtimeDecoder } from '../../engine/proresRealtimeDecoder';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS } from '../../engine/videoSource';
@@ -324,31 +325,45 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   speedRef.current = speed;
   isPlayingRef.current = isPlaying;
 
-  /** ProRes デコーダからフレームを取得して canvas に描画 */
-  const renderFrameAt = useCallback((time: number) => {
-    const decoder = view.realtimeDecoder;
-    const canvas = canvasRef.current;
-    if (!decoder || !canvas) return;
-    const fps = view.fps || decoder.fps || 24;
-    const frameIdx = Math.floor(time * fps);
+  /** 最後に描こうとしたコマと、実際に描いてあるコマ */
+  const wantedFrameRef = useRef<number>(-1);
+  const drawnFrameRef = useRef<number>(-1);
 
-    decoder.getFrame(frameIdx).then((bitmap: ImageBitmap | null) => {
-      if (!bitmap || !canvasRef.current) {
-        logDebug('roll', `[ProRes DEBUG] Canvas 描画スキップ: Frame ${frameIdx} (bitmap: ${bitmap ? 'あり' : 'null'}, canvas: ${canvasRef.current ? 'あり' : 'なし'})`, undefined, 'warn');
-        return;
-      }
+  /**
+   * ProRes デコーダからフレームを取得して canvas に描画する。
+   * ⚠️ 復号は Worker で並行に進むので、返ってくる順番は頼んだ順と限らない。
+   * 最後に頼んだコマ以外は描かない (古いコマで表示が巻き戻るのを防ぐ)。
+   * ⚠️ 再生中は毎フレーム呼ばれる。ここでログを出さないこと。
+   */
+  const renderFrameAt = useCallback((time: number) => {
+    const decoder = view.realtimeDecoder as ProResRealtimeDecoder | null | undefined;
+    if (!decoder || !canvasRef.current) return;
+    const fps = view.fps || decoder.fps || 24;
+    const frameIdx = Math.min(decoder.frameCount - 1, frameIndexAt(time, fps));
+
+    // 止まっている間も少し先を読んでおく (再生開始・コマ送りの 1 コマ目で待たせない)
+    decoder.prefetch(frameIdx + 1, decoder.concurrency * (isPlayingRef.current ? 2 : 1));
+    if (frameIdx === wantedFrameRef.current && drawnFrameRef.current === frameIdx) return;
+    wantedFrameRef.current = frameIdx;
+
+    const draw = (bitmap: ImageBitmap | null) => {
       const c = canvasRef.current;
+      if (!bitmap || !c || wantedFrameRef.current !== frameIdx) return;
       if (c.width !== bitmap.width || c.height !== bitmap.height) {
         c.width = bitmap.width;
         c.height = bitmap.height;
       }
-      const ctx = c.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(bitmap, 0, 0);
-        logDebug('roll', `[ProRes DEBUG] Canvas 描画成功: Frame ${frameIdx} (${bitmap.width}x${bitmap.height}) -> canvas (${c.width}x${c.height})`);
-      }
-    }).catch((err: any) => {
-      logDebug('roll', `[ProRes DEBUG] Canvas 描画例外: Frame ${frameIdx} - ${err?.message || err}`, undefined, 'warn');
+      c.getContext('2d')?.drawImage(bitmap, 0, 0);
+      drawnFrameRef.current = frameIdx;
+    };
+
+    const ready = decoder.peekFrame(frameIdx);
+    if (ready) {
+      draw(ready);
+      return;
+    }
+    decoder.getFrame(frameIdx).then(draw).catch((err: unknown) => {
+      logDebug('roll', `[ProRes] コマ ${frameIdx} を描けませんでした: ${err instanceof Error ? err.message : err}`, undefined, 'warn');
     });
   }, [view.realtimeDecoder, view.fps]);
 
@@ -382,6 +397,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       setDuration(view.realtimeDecoder.duration);
       durationRef.current = view.realtimeDecoder.duration;
       currentTimeRef.current = 0;
+      wantedFrameRef.current = -1;
+      drawnFrameRef.current = -1;
       paintTime(0);
       renderFrameAt(0);
       return () => {
