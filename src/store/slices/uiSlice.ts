@@ -12,6 +12,17 @@ function percent(scale: number): string {
   return `${Math.round(scale * 100)}%`;
 }
 
+const INPUT_MODE_KEY = 'kingfisher_input_mode';
+
+/** 前回選んだ操作モード。読めなければマウス */
+function loadInputMode(): 'mouse' | 'trackpad' {
+  try {
+    return localStorage.getItem(INPUT_MODE_KEY) === 'trackpad' ? 'trackpad' : 'mouse';
+  } catch {
+    return 'mouse';
+  }
+}
+
 export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) => ({
   // 既定はダークモード (2026-08-31 のユーザー指定)。
   // ⚠️ index.html の <html class="dark"> と揃えること。片方だけ変えると、
@@ -159,11 +170,14 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
       return { panelVisibility: { ...state.panelVisibility, debugLog: open } };
     }),
 
-  /** キャンバス操作モード (マウス / マジックパッド)。最初はマウス */
-  inputMode: 'mouse',
+  /** キャンバス操作モード (マウス / マジックパッド)。前回の選択を覚えておく (初回はマウス) */
+  inputMode: loadInputMode(),
 
   setInputMode: (mode) => {
     logDebug('view', `操作モードを変更: ${mode === 'trackpad' ? 'マジックパッド (トラックパッド)' : 'マウス'}`);
+    try {
+      localStorage.setItem(INPUT_MODE_KEY, mode);
+    } catch {}
     set({ inputMode: mode });
   },
 
