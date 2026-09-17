@@ -554,6 +554,13 @@ export interface UiSlice {
   resetCanvasTransform: () => void
   triggerRender: () => void;
   /**
+   * キャンバス操作モード。
+   * 'mouse': マウス操作モード（デフォルト。ホイール回転でズーム）
+   * 'trackpad': マジックパッドモード（Macトラックパッド。2本指スクロールでパン移動、2本指ピンチでズーム）
+   */
+  inputMode: 'mouse' | 'trackpad'
+  setInputMode: (mode: 'mouse' | 'trackpad') => void
+  /**
    * キーの効き先。最後に操作した面で決まる ('cell' = Win A / Win B、'roll' = 撮影ロール)。
    * ⚠️ ↑ ↓ と Space はセルとロールで意味が違う (セル: コマ送り / パン、
    * ロール: 前後のロール / 再生) ので、これで振り分ける。

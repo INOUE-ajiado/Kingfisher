@@ -222,8 +222,22 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
 
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const live = usePaintStore.getState();
     const currentTransform = referenceCanvas.transform;
+
+    if (live.inputMode === 'trackpad' && !e.ctrlKey) {
+      setReferenceTransform({
+        ...currentTransform,
+        offsetX: currentTransform.offsetX - e.deltaX,
+        offsetY: currentTransform.offsetY - e.deltaY,
+      });
+      return;
+    }
+
+    let zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    if (live.inputMode === 'trackpad' && e.ctrlKey) {
+      zoomFactor = Math.pow(0.993, e.deltaY);
+    }
     const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
 
     // 🎯 マウスカーソル座標を中心とするアンカーズームオフセット計算
