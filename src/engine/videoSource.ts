@@ -207,6 +207,41 @@ export function steppedTime(time: number, delta: number, fps: number, duration =
   return timeForFrame(frameIndexAt(time, fps) + delta, fps, duration);
 }
 
+/** 再生位置だけを見る最小の形 (<video> と ProRes のその場再生の代理の両方が満たす) */
+export interface PlaybackPosition {
+  currentTime: number;
+  readonly duration: number;
+  readonly ended: boolean;
+}
+
+/** 終端とみなす幅 (秒)。尺違いの 2 面同時再生で、短い側は終端の 0.05 秒手前で留めてあるため */
+const END_TOLERANCE = 0.1;
+/** 先頭とみなす幅 (秒)。コマ送りはコマの中央を指すので、0 コマ目でも 0 ちょうどにはならない */
+const START_TOLERANCE = 0.05;
+
+function isAtEnd(v: PlaybackPosition): boolean {
+  if (v.ended) return true;
+  return Number.isFinite(v.duration) && v.duration > 0 && v.currentTime >= v.duration - END_TOLERANCE;
+}
+
+/**
+ * 再生を始める前に呼ぶ。最後まで再生し終わっていたら、終端にいる映像を先頭へ戻す。
+ * 戻したら true。
+ *
+ * 「終わった」とみなすのは、どれかが終端にいて、残りも終端か先頭にいるとき。
+ * ⚠️ 2 面のうち片方だけ再生して終わり、もう片方は先頭で止まったまま、という形を含めること。
+ * Space は 2 面同時なので、「両方が終端」だけを条件にすると巻き戻らない (2026-09-18 の報告)。
+ * ⚠️ 片方が途中で止まっている (尺の長い方を途中で一時停止した) ときは戻さない。続きから流す。
+ */
+export function rewindIfPlaybackFinished(videos: PlaybackPosition[]): boolean {
+  if (!videos.some(isAtEnd)) return false;
+  if (!videos.every((v) => isAtEnd(v) || v.currentTime <= START_TOLERANCE)) return false;
+  for (const v of videos) {
+    if (isAtEnd(v)) v.currentTime = 0;
+  }
+  return true;
+}
+
 /**
  * requestVideoFrameCallback で集めた mediaTime の列から fps を推定する。
  *
