@@ -951,7 +951,7 @@ ${padded} 枚は穴を合わせられなかったので、画寸だけ揃えま�
 
   splitFileIndex: 0,
 
-  splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+  splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 },
 
   isWinAVisible: false,
 

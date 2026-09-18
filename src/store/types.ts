@@ -20,6 +20,18 @@ export type { PaneLayout, PaneId, PSDLayerData };
 
 export type { VideoCodecInfo, DroppedVideo };
 
+/**
+ * セル表示の見え方。CSS の transform で translate → scale → rotate の順に掛ける。
+ * ⚠️ rotation は「表示を傾けるだけ」で画像そのものは変わらない (Photoshop の回転ビュー)。
+ * 古い状態には無いことがあるので、読むときは 0 を既定にすること。
+ */
+export interface CanvasTransform {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  rotation?: number;
+}
+
 export type ToolType = 
   | 'pointer' 
   | 'fill' 
@@ -32,7 +44,8 @@ export type ToolType =
   | 'eyedropper' 
   | 'lasso' 
   | 'pan' 
-  | 'zoom';
+  | 'zoom'
+  | 'rotateView';
 
 export interface RGBA {
   r: number;
@@ -547,11 +560,15 @@ export interface UiSlice {
   showRuler: boolean
   toggleShowGrid: () => void
   toggleShowRuler: () => void
-  canvasTransform: { scale: number; offsetX: number; offsetY: number }
-  setCanvasTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void
+  canvasTransform: CanvasTransform
+  setCanvasTransform: (transform: CanvasTransform) => void
   zoomIn: () => void
   zoomOut: () => void
   resetCanvasTransform: () => void
+  /** 表示の角度を delta 度ぶん回す (回転ビュー)。連動中は両面) */
+  rotateCanvasView: (deltaDeg: number) => void
+  /** 表示の角度だけを 0 に戻す (倍率と位置はそのまま) */
+  resetCanvasRotation: () => void
   triggerRender: () => void;
   /**
    * キャンバス操作モード。
@@ -635,12 +652,12 @@ export interface ViewSlice {
   syncMode: boolean
   activeViewIndex: 0 | 1
   splitFileIndex: number
-  splitCanvasTransform: { scale: number; offsetX: number; offsetY: number }
+  splitCanvasTransform: CanvasTransform
   toggleIsSplitView: () => void
   toggleSyncMode: () => void
   setActiveViewIndex: (idx: 0 | 1) => void
   setSplitFileIndex: (index: number, source?: string) => void
-  setSplitCanvasTransform: (transform: { scale: number; offsetX: number; offsetY: number }) => void;
+  setSplitCanvasTransform: (transform: CanvasTransform) => void;
 }
 
 /** カットフォルダ階層・A/B フォルダ・連番ナビゲーション */

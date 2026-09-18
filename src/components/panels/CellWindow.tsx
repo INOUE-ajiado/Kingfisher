@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { angleFromCenter, normalizeAngle, screenToImagePoint, snapAngle } from '../../engine/viewTransform';
 import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
 import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
 import { collectDroppedVideoFiles, commonRootName } from '../../engine/videoSource';
@@ -122,6 +123,13 @@ export const CellWindow: React.FC = () => {
 
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+
+  /**
+   * 回転ビューのドラッグ中の控え。
+   * ⚠️ ストアへ毎フレーム書くのは角度だけ。掴んだ時点の角度と、掴んだ向きをここに置く。
+   */
+  const rotateDragRef = useRef<{ center: { x: number; y: number }; startAngle: number; startRotation: number; isLeftView: boolean } | null>(null);
+  const [isRotatingView, setIsRotatingView] = useState(false);
   const [lassoPoints, setLassoPoints] = useState<{ x: number; y: number }[]>([]);
   const [isLassoing, setIsLassoing] = useState(false);
   /**
@@ -146,11 +154,13 @@ export const CellWindow: React.FC = () => {
    * window 側でも確実に終了させる。
    */
   useEffect(() => {
-    if (!isPanning && !isBrushing) return;
+    if (!isPanning && !isBrushing && !isRotatingView) return;
 
     const endDrag = () => {
       setIsPanning(false);
       setIsBrushing(false);
+      setIsRotatingView(false);
+      rotateDragRef.current = null;
       setLastPos(null);
     };
 
@@ -160,7 +170,7 @@ export const CellWindow: React.FC = () => {
       window.removeEventListener('pointerup', endDrag);
       window.removeEventListener('pointercancel', endDrag);
     };
-  }, [isPanning, isBrushing]);
+  }, [isPanning, isBrushing, isRotatingView]);
 
   /**
    * 投げ縄をキャンバスの外で離したときの取りこぼし対策。
@@ -1003,14 +1013,15 @@ export const CellWindow: React.FC = () => {
   }, [renderCanvasInstance, currentImage, splitImage, isSplitView, renderTrigger]);
 
 
-  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement) => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return {
-      x: Math.floor((e.clientX - rect.left) * scaleX),
-      y: Math.floor((e.clientY - rect.top) * scaleY),
-    };
+  /**
+   * 画面の座標を画像の画素へ直す。
+   * ⚠️ 表示を回している (回転ビュー) と、外接四角形からは倍率も位置も読めない。
+   * 角度を渡して逆回しすること (screenToImagePoint)。
+   */
+  const getCanvasCoords = (e: React.MouseEvent<HTMLCanvasElement>, canvas: HTMLCanvasElement, isLeftView: boolean) => {
+    const live = usePaintStore.getState();
+    const rotation = (isLeftView ? live.canvasTransform : live.splitCanvasTransform).rotation ?? 0;
+    return screenToImagePoint(e.clientX, e.clientY, canvas.getBoundingClientRect(), canvas.width, canvas.height, rotation);
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>, isLeftView: boolean) => {
@@ -1029,6 +1040,20 @@ export const CellWindow: React.FC = () => {
     const live = usePaintStore.getState();
     const currentTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
 
+    // 回転ビュー: 掴んだ向きからの差分だけ表示を回す (画像は変わらない)
+    if (e.button === 0 && activeTool === 'rotateView') {
+      const rect = canvas.getBoundingClientRect();
+      const center = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      rotateDragRef.current = {
+        center,
+        startAngle: angleFromCenter(e.clientX, e.clientY, center),
+        startRotation: currentTransform.rotation ?? 0,
+        isLeftView,
+      };
+      setIsRotatingView(true);
+      return;
+    }
+
     // ⚠️ 左クリック (0) (panツール/Spaceキー押下時), 中ボタン (1), 右ボタン (2) でパン移動
     if (
       e.button === 1 ||
@@ -1040,7 +1065,7 @@ export const CellWindow: React.FC = () => {
       return;
     }
 
-    const { x, y } = getCanvasCoords(e, canvas);
+    const { x, y } = getCanvasCoords(e, canvas, isLeftView);
 
     // 閲覧専用（タイムシートや指示メモなどの JPG/PNG 画像）の場合は塗り・描画操作をガード。
     // 黙って無視すると「ツールが反応しない」ようにしか見えないので理由を表示する。
@@ -1128,6 +1153,25 @@ export const CellWindow: React.FC = () => {
     const targetImg = isLeftView ? currentImage : splitImage;
     const canvas = isLeftView ? leftCanvasRef.current : rightCanvasRef.current;
 
+    const rotateDrag = rotateDragRef.current;
+    if (rotateDrag) {
+      const moved = angleFromCenter(e.clientX, e.clientY, rotateDrag.center) - rotateDrag.startAngle;
+      const raw = rotateDrag.startRotation + moved;
+      const rotation = e.shiftKey ? snapAngle(raw, 15) : normalizeAngle(raw);
+      const live = usePaintStore.getState();
+      const liveTransform = rotateDrag.isLeftView ? live.canvasTransform : live.splitCanvasTransform;
+      const rotated = { ...liveTransform, rotation };
+      if (syncMode && isSplitView) {
+        setCanvasTransform(rotated);
+        setSplitCanvasTransform(rotated);
+      } else if (rotateDrag.isLeftView) {
+        setCanvasTransform(rotated);
+      } else {
+        setSplitCanvasTransform(rotated);
+      }
+      return;
+    }
+
     if (isPanning) {
       // ⚠️ 倍率はストアの最新を使うこと。描画時の値を広げると、
       // 直前のホイール操作で変えた倍率を巻き戻してしまう
@@ -1150,7 +1194,7 @@ export const CellWindow: React.FC = () => {
     }
 
     if (!targetImg || !canvas) return;
-    const { x, y } = getCanvasCoords(e, canvas);
+    const { x, y } = getCanvasCoords(e, canvas, isLeftView);
 
     if (isBrushing && lastPos) {
       drawBrushLine(
@@ -1171,6 +1215,15 @@ export const CellWindow: React.FC = () => {
   };
 
   const handleMouseUp = (isLeftView: boolean) => {
+    if (rotateDragRef.current) {
+      rotateDragRef.current = null;
+      setIsRotatingView(false);
+      const live = usePaintStore.getState();
+      const rotation = (isLeftView ? live.canvasTransform : live.splitCanvasTransform).rotation ?? 0;
+      logDebug('view', `表示の角度を ${Math.round(rotation)}° にした (回転ビュー)`);
+      return;
+    }
+
     if (isPanning) {
       setIsPanning(false);
       return;
@@ -1412,15 +1465,15 @@ export const CellWindow: React.FC = () => {
 
             <div
               className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
-                activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+                activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : activeTool === 'rotateView' ? 'cursor-alias' : 'cursor-crosshair'
               }`}
               onWheel={(e) => handleWheel(e, true)}
             >
               <div
                 style={{
-                  transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale})`,
+                  transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale}) rotate(${canvasTransform.rotation ?? 0}deg)`,
                   transformOrigin: 'center center',
-                  transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                  transition: isPanning || isRotatingView ? 'none' : 'transform 0.05s ease-out',
                 }}
                 className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
               >
@@ -1554,15 +1607,15 @@ export const CellWindow: React.FC = () => {
 
               <div
                 className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
-                  activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'
+                  activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : activeTool === 'rotateView' ? 'cursor-alias' : 'cursor-crosshair'
                 }`}
                 onWheel={(e) => handleWheel(e, false)}
               >
                 <div
                   style={{
-                    transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale})`,
+                    transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale}) rotate(${splitCanvasTransform.rotation ?? 0}deg)`,
                     transformOrigin: 'center center',
-                    transition: isPanning ? 'none' : 'transform 0.05s ease-out',
+                    transition: isPanning || isRotatingView ? 'none' : 'transform 0.05s ease-out',
                   }}
                   className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
                 >

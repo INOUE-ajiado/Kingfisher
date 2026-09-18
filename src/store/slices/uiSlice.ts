@@ -5,6 +5,7 @@
 import { StateCreator } from 'zustand';
 import { PaintStore, UiSlice } from '../types';
 import { logDebug } from '../../engine/debugLog';
+import { normalizeAngle } from '../../engine/viewTransform';
 import { triggerRenderSignal } from '../../engine/renderSignal';
 
 /** 表示倍率を人が読める形に (0.625 -> 63%) */
@@ -100,7 +101,7 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
 
   toggleShowRuler: () => set((state) => ({ showRuler: !state.showRuler })),
 
-  canvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+  canvasTransform: { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 },
 
   setCanvasTransform: (transform) =>
     set((state) => {
@@ -132,16 +133,45 @@ export const createUiSlice: StateCreator<PaintStore, [], [], UiSlice> = (set) =>
       return { canvasTransform: newTransform };
     }),
 
+  /**
+   * 表示を回す (回転ビュー)。線を引きやすい向きにするためのもので、画像は変わらない。
+   * 連動中は両面を同じ角度にする。
+   */
+  rotateCanvasView: (deltaDeg) =>
+    set((state) => {
+      const both = state.syncMode && state.isSplitView;
+      const target = both || state.activeViewIndex === 0 ? state.canvasTransform : state.splitCanvasTransform;
+      const rotation = normalizeAngle((target.rotation ?? 0) + deltaDeg);
+      logDebug('view', `表示の角度 ${Math.round(target.rotation ?? 0)}° → ${Math.round(rotation)}°`);
+      if (both) {
+        return {
+          canvasTransform: { ...state.canvasTransform, rotation },
+          splitCanvasTransform: { ...state.splitCanvasTransform, rotation },
+        };
+      }
+      if (state.activeViewIndex === 0) return { canvasTransform: { ...state.canvasTransform, rotation } };
+      return { splitCanvasTransform: { ...state.splitCanvasTransform, rotation } };
+    }),
+
+  resetCanvasRotation: () =>
+    set((state) => {
+      logDebug('view', `表示の角度を 0° に戻す`);
+      return {
+        canvasTransform: { ...state.canvasTransform, rotation: 0 },
+        splitCanvasTransform: { ...state.splitCanvasTransform, rotation: 0 },
+      };
+    }),
+
   resetCanvasTransform: () =>
     set((state) => {
       logDebug(
         'view',
         `表示倍率 ${percent(state.canvasTransform.scale)} → 100% (等倍に戻す)`,
-        `Win A / Win B の両方を等倍・原点へ`
+        `Win A / Win B の両方を等倍・原点・角度 0 へ`
       );
       return {
-        canvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
-        splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+        canvasTransform: { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 },
+        splitCanvasTransform: { scale: 1, offsetX: 0, offsetY: 0, rotation: 0 },
       };
     }),
 
