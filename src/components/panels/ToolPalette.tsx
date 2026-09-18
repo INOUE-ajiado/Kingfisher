@@ -16,8 +16,7 @@ import {
   ArrowLeftRight,
   RefreshCw,
   Blend,
-  Wrench
-} from 'lucide-react';
+  Wrench, RotateCw } from 'lucide-react';
 
 interface ToolItem {
   id: ToolType;
@@ -151,6 +150,7 @@ export const ToolPalette: React.FC = () => {
     { id: 'eyedropper', label: 'スポイト', icon: <Pipette className="w-3.5 h-3.5" />, shortcut: 'I' },
     { id: 'pan', label: '手のひら (パン)', icon: <Hand className="w-3.5 h-3.5" />, shortcut: 'H' },
     { id: 'zoom', label: 'ズーム', icon: <ZoomIn className="w-3.5 h-3.5" />, shortcut: 'Z' },
+    { id: 'rotateView', label: '回転ビュー (表示を傾ける)', icon: <RotateCw className="w-3.5 h-3.5" />, shortcut: 'R' },
   ];
 
   return (

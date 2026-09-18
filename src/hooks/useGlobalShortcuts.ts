@@ -203,7 +203,7 @@ export const useGlobalShortcuts = () => {
       return;
       }
 
-      // 単音ツールキー切替 (F, G, U, B, P, E, N, I, M, L, W, H, Z)
+      // 単音ツールキー切替 (F, G, U, B, P, E, N, I, M, L, W, H, Z, R)
       if (keyLower === 'f') {
         setActiveTool('fill');
       } else if (keyLower === 'g') {
@@ -224,6 +224,9 @@ export const useGlobalShortcuts = () => {
         setActiveTool('pan');
       } else if (keyLower === 'z') {
         setActiveTool('zoom');
+      } else if (keyLower === 'r') {
+        // 回転ビュー (Photoshop の R と同じ。表示だけを傾ける)
+        setActiveTool('rotateView');
       } else if (keyLower === 'm') {
         setActiveTool('pointer');
       } else if (keyLower === 'l') {
