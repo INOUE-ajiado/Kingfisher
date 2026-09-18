@@ -31,7 +31,7 @@ export const ShortcutsModal: React.FC = () => {
         { key: 'W', desc: 'マジックワンド選択' },
         { key: 'H', desc: '手のひら (パン移動)' },
         { key: 'Z', desc: 'ズーム' },
-        { key: 'R', desc: '回転ビュー (表示を傾ける。ドラッグで回転 / Shift で 15° きざみ)' },
+        { key: 'R', desc: '回転ビュー (ドラッグで傾ける / Shift で 15° きざみ / もう一度 R で元のツールへ)' },
       ],
     },
     {

@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePaintStore } from '../store/usePaintStore';
+import { ToolType } from '../store/types';
 
 /**
  * ⚡ Kingfisher グローバルショートカット・ブラウザ挙動オーバーライドフック
@@ -22,6 +23,12 @@ export const useGlobalShortcuts = () => {
     resetCanvasTransform,
     toggleShowRuler,
   } = usePaintStore();
+
+  /**
+   * 回転ビューへ入る直前に使っていたツール。
+   * ⚠️ R をもう一度押したら塗りへ戻れるようにするためのもの。ストアへ持たせるほどのものではない。
+   */
+  const toolBeforeRotateRef = useRef<ToolType | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -225,8 +232,15 @@ export const useGlobalShortcuts = () => {
       } else if (keyLower === 'z') {
         setActiveTool('zoom');
       } else if (keyLower === 'r') {
-        // 回転ビュー (Photoshop の R と同じ。表示だけを傾ける)
-        setActiveTool('rotateView');
+        // 回転ビュー (Photoshop の R と同じ。表示だけを傾ける)。もう一度押すと元のツールへ戻す
+        const current = usePaintStore.getState().activeTool;
+        if (current === 'rotateView') {
+          setActiveTool(toolBeforeRotateRef.current ?? 'pencil');
+          toolBeforeRotateRef.current = null;
+        } else {
+          toolBeforeRotateRef.current = current;
+          setActiveTool('rotateView');
+        }
       } else if (keyLower === 'm') {
         setActiveTool('pointer');
       } else if (keyLower === 'l') {
