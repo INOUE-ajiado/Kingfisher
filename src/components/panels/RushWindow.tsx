@@ -22,6 +22,8 @@ import {
   Shield,
   UserPlus,
   UserX,
+  Link2,
+  Play,
 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RetakeItem } from '../../engine/retakeStore';
@@ -34,7 +36,12 @@ import {
   subscribeRushRetakes,
   addRushRetakeInDB,
   deleteRushRetakeInDB,
+  attachRushPlaybackInDB,
+  writeRushPlaybackLiveInDB,
+  RushShareEntry,
 } from '../../engine/rushService';
+import { useRushPlaybackBroadcaster, useRushPlaybackFollower } from '../../hooks/useRushPlaybackSync';
+import { RushSharePanel } from './RushSharePanel';
 import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
 import { RushThumbnailBar } from './RushThumbnailBar';
 
@@ -45,6 +52,7 @@ export const RushWindow: React.FC = () => {
   const roomPassword = usePaintStore((s) => s.roomPassword);
   const accessKey = usePaintStore((s) => s.rushAccessKey);
   const videoUrl = usePaintStore((s) => s.videoUrl);
+  const videoName = usePaintStore((s) => s.videoName);
   const thumbnails = usePaintStore((s) => s.rushThumbnails);
   const isMaximized = usePaintStore((s) => s.paneLayout.maximized === 'rush');
   const isLive = usePaintStore((s) => s.isLive);
@@ -79,7 +87,12 @@ export const RushWindow: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 右サイドバータブ
-  const [sideTab, setSideTab] = useState<'retakes' | 'users' | 'archives'>('retakes');
+  const [sideTab, setSideTab] = useState<'retakes' | 'users' | 'share' | 'archives'>('retakes');
+
+  // 再生の同期と外部共有 (ルームの access 文書から)
+  const [playbackId, setPlaybackId] = useState<string | null>(null);
+  const [shares, setShares] = useState<RushShareEntry[]>([]);
+  const attachingPlaybackRef = useRef(false);
 
   // リテイクメモ入力フォーム
   const [inputText, setInputText] = useState('');
@@ -89,6 +102,10 @@ export const RushWindow: React.FC = () => {
   const [operatorEmails, setOperatorEmails] = useState<string[]>([]);
   const [newOpEmail, setNewOpEmail] = useState('');
   const [hostEmail, setHostEmail] = useState('');
+
+  // オペレーターは自分の再生を配り、一般画面はそれに追従する
+  useRushPlaybackBroadcaster({ videoRef, videoUrl, playbackId, enabled: isHost, isLive });
+  const follower = useRushPlaybackFollower({ videoRef, videoUrl, playbackId, enabled: !isHost, fps: 24 });
 
   // ルームの文書 (オペレーター・LIVE) をリアルタイム同期 ＆ 権限判定
   useEffect(() => {
@@ -113,8 +130,23 @@ export const RushWindow: React.FC = () => {
   // 動画の在りか (後から差し替えられても追従する)
   useEffect(() => {
     if (!roomId || !accessKey) return;
+    setPlaybackId(null);
+    setShares([]);
+    attachingPlaybackRef.current = false;
     return subscribeRushAccess(roomId, accessKey, (access) => {
-      if (access) setRushVideo(access.videoUrl, access.videoName, access.thumbnails || []);
+      if (!access) return;
+      setRushVideo(access.videoUrl, access.videoName, access.thumbnails || []);
+      setPlaybackId(access.playbackId ?? null);
+      setShares(access.shares ?? []);
+
+      // 同期の仕組みより前に作られたルームには再生状態の文書が無い。オペレーターが開いたときに作る
+      if (!access.playbackId && usePaintStore.getState().isHost && !attachingPlaybackRef.current) {
+        attachingPlaybackRef.current = true;
+        void attachRushPlaybackInDB(roomId, accessKey).catch((err) => {
+          console.error('Failed to attach rush playback:', err);
+          attachingPlaybackRef.current = false;
+        });
+      }
     });
   }, [roomId, accessKey, setRushVideo]);
 
@@ -174,6 +206,7 @@ export const RushWindow: React.FC = () => {
     setRushLive(nextLive);
     try {
       await updateRushRoomStatusInDB(roomId, { isLive: nextLive });
+      if (playbackId) await writeRushPlaybackLiveInDB(playbackId, nextLive);
     } catch (err) {
       console.error('Failed to update rush live status:', err);
       setRushLive(!nextLive);
@@ -541,7 +574,6 @@ export const RushWindow: React.FC = () => {
               <video
                 ref={videoRef}
                 src={videoUrl}
-                autoPlay
                 muted={isSpeakerMuted}
                 onTimeUpdate={() => {
                   if (videoRef.current) setCurrentTime(videoRef.current.currentTime);
@@ -567,6 +599,32 @@ export const RushWindow: React.FC = () => {
             {isHost && (
               <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded border border-white/10 font-mono text-amber-300 font-bold text-xs tracking-wider">
                 {formatTC(currentTime)} <span className="text-slate-400 font-normal">(f:{currentFrame})</span>
+              </div>
+            )}
+
+            {/* 一般画面用: ブラウザに音声付き再生を止められたら、クリックで始めてもらう */}
+            {!isHost && follower.needsGesture && (
+              <button
+                onClick={follower.unlock}
+                className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 text-white"
+              >
+                <span className="flex items-center gap-2 px-5 py-3 rounded-full bg-amber-500 text-slate-950 font-bold text-sm shadow-2xl">
+                  <Play className="w-5 h-5 fill-current" />
+                  クリックして視聴を開始
+                </span>
+              </button>
+            )}
+
+            {/* 一般画面用: ホストの状態 */}
+            {!isHost && videoUrl && (
+              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-[10px] text-slate-300">
+                {follower.error
+                  ? follower.error
+                  : !playbackId
+                    ? 'ホストの準備を待っています'
+                    : follower.state?.playing
+                      ? 'ホストの再生に合わせています'
+                      : 'ホストが一時停止中'}
               </div>
             )}
 
@@ -638,6 +696,17 @@ export const RushWindow: React.FC = () => {
               >
                 <Users className="w-3.5 h-3.5" />
                 <span>参加者 ({participants.length || 1})</span>
+              </button>
+              <button
+                onClick={() => setSideTab('share')}
+                className={`flex-1 py-2 text-[11px] font-bold flex items-center justify-center gap-1 border-b-2 transition-colors ${
+                  sideTab === 'share'
+                    ? 'border-sky-400 text-sky-300 bg-sky-400/10'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                <span>外部共有</span>
               </button>
               <button
                 onClick={() => setSideTab('archives')}
@@ -809,6 +878,19 @@ export const RushWindow: React.FC = () => {
                   </div>
                 </div>
               </div>
+            )}
+
+            {sideTab === 'share' && roomId && accessKey && (
+              <RushSharePanel
+                roomId={roomId}
+                roomName={roomName}
+                roomAccessKey={accessKey}
+                videoUrl={videoUrl}
+                videoName={videoName}
+                playbackId={playbackId}
+                shares={shares}
+                userEmail={user?.email || ''}
+              />
             )}
 
             {sideTab === 'archives' && (

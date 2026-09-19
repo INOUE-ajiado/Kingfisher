@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.tsx';
 import { logDebug } from './engine/debugLog.ts';
+import { parseShareIdFromPath } from './engine/rushAccess.ts';
 import './index.css';
+
+/**
+ * 社外の人向けの視聴ページ (/watch/{共有ID}) は、ペイントの画面 (App) を読み込まずに描く。
+ * App は社内の Google ログインを前提にしており、読み込むだけで重い。
+ */
+const App = lazy(() => import('./App.tsx'));
+const RushGuestWatch = lazy(() =>
+  import('./components/guest/RushGuestWatch.tsx').then((m) => ({ default: m.RushGuestWatch }))
+);
+const guestShareId = parseShareIdFromPath(window.location.pathname);
 
 /**
  * 握られなかった例外を DEBUG ログへ流す。
@@ -29,6 +39,6 @@ window.addEventListener('error', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <Suspense fallback={null}>{guestShareId ? <RushGuestWatch shareId={guestShareId} /> : <App />}</Suspense>
   </React.StrictMode>,
 );

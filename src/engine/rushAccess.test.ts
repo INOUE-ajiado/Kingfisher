@@ -83,3 +83,53 @@ describe('招待リンク', () => {
     expect(normalizeRoomId('  rush-x1 ')).toBe('RUSH-X1');
   });
 });
+
+describe('外部共有', () => {
+  it('共有 ID は 22 文字の URL に使える文字で、毎回違う', async () => {
+    const { generateShareId } = await import('./rushAccess');
+    const ids = new Set(Array.from({ length: 200 }, () => generateShareId()));
+    expect(ids.size).toBe(200);
+    for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+
+  it('共有 URL から ID を読み戻せる。形の違うパスは受け付けない', async () => {
+    const { buildShareUrl, generateShareId, parseShareIdFromPath } = await import('./rushAccess');
+    const id = generateShareId();
+    expect(parseShareIdFromPath(new URL(buildShareUrl('https://example.com', id)).pathname)).toBe(id);
+    expect(parseShareIdFromPath(`/watch/${id}/`)).toBe(id);
+    expect(parseShareIdFromPath('/watch/short')).toBeNull();
+    expect(parseShareIdFromPath('/')).toBeNull();
+    expect(parseShareIdFromPath(`/watch/${id}/extra`)).toBeNull();
+    expect(parseShareIdFromPath('/watch/../../etc')).toBeNull();
+  });
+
+  it('外部用の鍵はルームの鍵と混ざらない (同じ文字列・同じ合言葉でも別の鍵)', async () => {
+    const { computeShareAccessKey } = await import('./rushAccess');
+    const share = await computeShareAccessKey('RUSH-ABC123', 'secret');
+    const room = await computeRoomAccessKey('RUSH-ABC123', 'secret');
+    expect(share).toMatch(/^[0-9a-f]{64}$/);
+    expect(share).not.toBe(room);
+    expect(await computeShareAccessKey('RUSH-ABC123', 'secreT')).not.toBe(share);
+  });
+
+  it('停止が期限より優先し、期限ちょうどで切れる', async () => {
+    const { shareStatus } = await import('./rushAccess');
+    expect(shareStatus({ revoked: false, expiresAt: 1000 }, 999)).toBe('open');
+    expect(shareStatus({ revoked: false, expiresAt: 1000 }, 1000)).toBe('expired');
+    expect(shareStatus({ revoked: true, expiresAt: 1000 }, 0)).toBe('revoked');
+  });
+
+  it('視聴者名は空白を詰め、空や長すぎる名前は受け付けない', async () => {
+    const { normalizeViewerName, MAX_VIEWER_NAME_LENGTH } = await import('./rushAccess');
+    expect(normalizeViewerName('  山田　 太郎 ')).toBe('山田 太郎');
+    expect(normalizeViewerName('   ')).toBeNull();
+    expect(normalizeViewerName('あ'.repeat(MAX_VIEWER_NAME_LENGTH))).not.toBeNull();
+    expect(normalizeViewerName('あ'.repeat(MAX_VIEWER_NAME_LENGTH + 1))).toBeNull();
+  });
+
+  it('最後の合図から 75 秒で視聴中から外れる', async () => {
+    const { isViewerOnline } = await import('./rushAccess');
+    expect(isViewerOnline(0, 74_999)).toBe(true);
+    expect(isViewerOnline(0, 75_000)).toBe(false);
+  });
+});

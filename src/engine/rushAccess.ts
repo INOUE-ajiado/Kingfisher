@@ -65,3 +65,77 @@ export function readRoomIdFromSearch(search: string): string | null {
   const value = new URLSearchParams(search).get('room');
   return value && value.trim() ? normalizeRoomId(value) : null;
 }
+
+// ─── 外部共有 (社外の人がログインなしで視聴する URL) ───────────────────────────
+
+/**
+ * 外部共有の ID。推測されないよう 128 bit の乱数を base64url にした 22 文字。
+ * URL (/watch/{ID}) を知っていることが入口の条件になる。
+ */
+export function generateShareId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  let binary = '';
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** 再生状態の文書 ID。外部の視聴者も読むので、これも推測できない乱数にする */
+export function generatePlaybackId(): string {
+  return `pb_${generateShareId()}`;
+}
+
+/**
+ * 外部共有の合言葉から access 文書の鍵を作る。
+ * ルームの鍵 (computeRoomAccessKey) とは接頭辞を変え、同じ合言葉でも別の鍵になるようにする。
+ */
+export async function computeShareAccessKey(shareId: string, password: string): Promise<string> {
+  const data = new TextEncoder().encode(`kingfisher-rush-share:${shareId.trim()}:${password}`);
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+export function buildShareUrl(origin: string, shareId: string): string {
+  return `${origin}/watch/${shareId}`;
+}
+
+/** /watch/{ID} から ID を取り出す。当てはまらなければ null */
+export function parseShareIdFromPath(pathname: string): string | null {
+  const m = /^\/watch\/([A-Za-z0-9_-]{16,64})\/?$/.exec(pathname);
+  return m ? m[1] : null;
+}
+
+export const SHARE_EXPIRY_OPTIONS: { label: string; ms: number }[] = [
+  { label: '1 時間', ms: 60 * 60 * 1000 },
+  { label: '24 時間', ms: 24 * 60 * 60 * 1000 },
+  { label: '3 日', ms: 3 * 24 * 60 * 60 * 1000 },
+  { label: '7 日', ms: 7 * 24 * 60 * 60 * 1000 },
+];
+export const DEFAULT_SHARE_EXPIRY_MS = SHARE_EXPIRY_OPTIONS[1].ms;
+/** 規則でも同じ上限を課している (firestore.rules) */
+export const MAX_SHARE_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+
+export type ShareStatus = 'open' | 'revoked' | 'expired';
+
+export function shareStatus(share: { revoked?: boolean; expiresAt: number }, now: number): ShareStatus {
+  if (share.revoked) return 'revoked';
+  if (!(now < share.expiresAt)) return 'expired';
+  return 'open';
+}
+
+export const MAX_VIEWER_NAME_LENGTH = 40;
+
+/** 視聴者名を整える。空・長すぎるときは null */
+export function normalizeViewerName(name: string): string | null {
+  const trimmed = name.replace(/\s+/g, ' ').trim();
+  if (!trimmed || trimmed.length > MAX_VIEWER_NAME_LENGTH) return null;
+  return trimmed;
+}
+
+/** 最後の合図からこれ以上経った視聴者は「離席」とみなす (合図は 30 秒おき) */
+export const VIEWER_ONLINE_WINDOW_MS = 75 * 1000;
+
+export function isViewerOnline(lastSeenAt: number, now: number): boolean {
+  return now - lastSeenAt < VIEWER_ONLINE_WINDOW_MS;
+}
