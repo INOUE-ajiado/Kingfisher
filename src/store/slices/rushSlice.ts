@@ -23,11 +23,20 @@ export interface RushState {
   isRushOpen: boolean;
   roomId: string | null;
   isHost: boolean;
-  isAuthenticated: boolean;
   roomName: string;
-  passwordHash: string;
+  /**
+   * 参加に使った合言葉 (招待文のコピー用)。メモリにだけ持ち、どこにも保存しない。
+   *
+   * ⚠️ 以前はここを isAuthenticated / passwordHash と名付けていた。isAuthenticated は
+   * AuthSlice (Google ログイン) と同じ名前で上書きし合い、退室するとログイン画面が
+   * 全面を塞いでいた。スライスをまたいで同じ名前を使わないこと。
+   */
+  roomPassword: string;
+  /** access 文書の鍵 (ルーム ID + 合言葉のハッシュ)。動画とリテイクの在りか */
+  rushAccessKey: string | null;
   videoUrl: string | null;
   videoName: string | null;
+  rushThumbnails: string[];
   isUploading: boolean;
   uploadProgress: number;
   isLive: boolean;
@@ -45,10 +54,19 @@ export interface RushState {
 export interface RushActions {
   openRushWindow: () => void;
   closeRushWindow: () => void;
-  setRushRoom: (data: { roomId: string; isHost: boolean; roomName: string; videoUrl?: string; videoName?: string; passwordHash?: string }) => void;
+  setRushRoom: (data: {
+    roomId: string;
+    isHost: boolean;
+    roomName: string;
+    password: string;
+    accessKey: string;
+    videoUrl: string | null;
+    videoName: string | null;
+    thumbnails: string[];
+    isLive: boolean;
+  }) => void;
   leaveRushRoom: () => void;
-  setRushAuth: (authenticated: boolean) => void;
-  setRushVideo: (url: string | null, name: string | null) => void;
+  setRushVideo: (url: string | null, name: string | null, thumbnails?: string[]) => void;
   setRushUploading: (uploading: boolean, progress?: number) => void;
   setRushLive: (isLive: boolean) => void;
   setRushRecording: (isRecording: boolean) => void;
@@ -67,11 +85,12 @@ export const initialRushState: RushState = {
   isRushOpen: false,
   roomId: null,
   isHost: false,
-  isAuthenticated: false,
   roomName: '',
-  passwordHash: '',
+  roomPassword: '',
+  rushAccessKey: null,
   videoUrl: null,
   videoName: null,
+  rushThumbnails: [],
   isUploading: false,
   uploadProgress: 0,
   isLive: false,
@@ -105,17 +124,24 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
       },
     })),
 
+  /** ルームに入る。前のルームの動画・リテイク・録画は引き継がない */
   setRushRoom: (data) =>
     set((state) => ({
-      ...state,
+      ...initialRushState,
+      isAuthModalOpen: state.isAuthModalOpen,
+      authModalMode: state.authModalMode,
+      isMicMuted: state.isMicMuted,
+      isSpeakerMuted: state.isSpeakerMuted,
       isRushOpen: true,
       roomId: data.roomId,
       isHost: data.isHost,
       roomName: data.roomName,
-      videoUrl: data.videoUrl ?? state.videoUrl,
-      videoName: data.videoName ?? state.videoName,
-      passwordHash: data.passwordHash ?? state.passwordHash,
-      isAuthenticated: true,
+      roomPassword: data.password,
+      rushAccessKey: data.accessKey,
+      videoUrl: data.videoUrl,
+      videoName: data.videoName,
+      rushThumbnails: data.thumbnails,
+      isLive: data.isLive,
       paneLayout: { ...state.paneLayout, maximized: 'rush' },
     })),
 
@@ -128,9 +154,12 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
       },
     })),
 
-  setRushAuth: (authenticated) => set((state) => ({ ...state, isAuthenticated: authenticated })),
-
-  setRushVideo: (url, name) => set((state) => ({ ...state, videoUrl: url, videoName: name })),
+  setRushVideo: (url, name, thumbnails) =>
+    set((state) => ({
+      videoUrl: url,
+      videoName: name,
+      rushThumbnails: thumbnails ?? state.rushThumbnails,
+    })),
 
   setRushUploading: (uploading, progress = 0) =>
     set((state) => ({ ...state, isUploading: uploading, uploadProgress: progress })),
