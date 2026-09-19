@@ -602,6 +602,7 @@ export const RushWindow: React.FC = () => {
               thumbnails={thumbnails}
               currentTime={currentTime}
               duration={duration}
+              fps={fps}
               onSeek={handleSeek}
               onStepFrame={stepFrame}
               togglePlay={togglePlay}
