@@ -66,6 +66,78 @@ service cloud.firestore {
       }
     }
 
+    // ホストの再生状態。視聴者 (社外の人を含む) が追従する。
+    // ID は推測できない乱数で、ルームの access 文書か外部共有の access 文書からしか辿れない
+    match /rushPlayback/{playbackId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['roomId', 'playing', 'position', 'live', 'updatedAt'])
+        && isOperatorOf(roomOf(request.resource.data.roomId));
+      allow update: if isStaff()
+        && isOperatorOf(roomOf(resource.data.roomId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playing', 'position', 'live', 'updatedAt'])
+        && request.resource.data.playing is bool
+        && request.resource.data.position is number
+        && request.resource.data.live is bool;
+      allow delete: if isStaff() && isOperatorOf(roomOf(resource.data.roomId));
+    }
+
+    // 外部共有 (src/engine/rushShareService.ts)。社外の人はログインしていない (request.auth == null)。
+    //
+    // ⚠️ 一覧 (list) を許さないこと。共有 ID を知っていること = URL を受け取ったこと、が入口の条件。
+    match /rushShares/{shareId} {
+      function shareData() {
+        return get(/databases/$(database)/documents/rushShares/$(shareId)).data;
+      }
+      function shareOpen() {
+        let s = shareData();
+        return s.revoked == false && request.time.toMillis() < s.expiresAt;
+      }
+      function isShareOperator() {
+        return isStaff() && isOperatorOf(roomOf(shareData().roomId));
+      }
+
+      allow get: if true;
+      allow list: if false;
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(['id', 'roomId', 'roomName', 'createdByEmail', 'createdAt', 'expiresAt', 'revoked'])
+        && request.resource.data.id == shareId
+        && request.resource.data.createdByEmail == myEmail()
+        && request.resource.data.revoked == false
+        && request.resource.data.expiresAt is number
+        && request.resource.data.expiresAt <= request.time.toMillis() + 30 * 24 * 60 * 60 * 1000
+        && isOperatorOf(roomOf(request.resource.data.roomId));
+      // 止める (revoked) だけ。期限を延ばすことはさせない
+      allow update: if isStaff()
+        && isOperatorOf(roomOf(resource.data.roomId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked'])
+        && request.resource.data.revoked == true;
+      allow delete: if isStaff() && isOperatorOf(roomOf(resource.data.roomId));
+
+      match /access/{accessKey} {
+        allow get: if shareOpen() || isShareOperator();
+        allow list: if false;
+        allow create, update, delete: if isShareOperator();
+
+        match /viewers/{viewerId} {
+          allow create: if shareOpen()
+            && exists(/databases/$(database)/documents/rushShares/$(shareId)/access/$(accessKey))
+            && request.resource.data.keys().hasOnly(['name', 'joinedAt', 'lastSeenAt'])
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 40
+            && request.resource.data.joinedAt is number
+            && request.resource.data.lastSeenAt is number;
+          allow update: if shareOpen()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
+            && request.resource.data.lastSeenAt is number;
+          // 視聴者どうしで名前が見えないよう、一覧はオペレーターだけ
+          allow read, delete: if isShareOperator();
+        }
+      }
+    }
+
     // 削除の記録。書き込むだけで、画面からは読まない
     match /rushRoomDeleteLogs/{logId} {
       allow create: if isStaff() && request.resource.data.deletedByEmail == myEmail();
