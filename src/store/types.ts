@@ -1097,6 +1097,10 @@ export interface AuthSlice {
   logout: () => Promise<void>;
 }
 
+import type { RushSlice } from './slices/rushSlice';
+
+export type { RushSlice };
+
 export interface PaintStore
   extends UiSlice,
     ViewSlice,
@@ -1108,7 +1112,8 @@ export interface PaintStore
     LightTableSlice,
     RollSlice,
     LayoutSlice,
-    AuthSlice {}
+    AuthSlice,
+    RushSlice {}
 
 export const defaultColors: PaletteItem[] = [
   { id: '1', name: 'Hair', color: { r: 255, g: 215, b: 0, a: 255, hex: '#FFD700' } },

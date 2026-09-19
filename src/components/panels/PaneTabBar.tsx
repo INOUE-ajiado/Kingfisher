@@ -51,6 +51,10 @@ const TONE: Record<PaneId, { active: string; idle: string }> = {
     active: 'bg-violet-600 text-white border-violet-700',
     idle: 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-900',
   },
+  rush: {
+    active: 'bg-amber-600 text-white border-amber-700',
+    idle: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-900',
+  },
 };
 
 /**

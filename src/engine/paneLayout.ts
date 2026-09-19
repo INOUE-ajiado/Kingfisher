@@ -12,9 +12,9 @@
  */
 
 /** 作業領域に置ける面 */
-export type PaneId = 'winA' | 'winB' | 'reference' | 'rollA' | 'rollB';
+export type PaneId = 'winA' | 'winB' | 'reference' | 'rollA' | 'rollB' | 'rush';
 
-export const ALL_PANES: PaneId[] = ['winA', 'winB', 'reference', 'rollA', 'rollB'];
+export const ALL_PANES: PaneId[] = ['winA', 'winB', 'reference', 'rollA', 'rollB', 'rush'];
 
 export const PANE_LABELS: Record<PaneId, string> = {
   winA: 'Win A',
@@ -22,6 +22,7 @@ export const PANE_LABELS: Record<PaneId, string> = {
   reference: '見本',
   rollA: 'ロール A',
   rollB: 'ロール B',
+  rush: 'ラッシュ専用',
 };
 
 /** 横一列に並ぶ枠。中に複数の面を重ねられる */

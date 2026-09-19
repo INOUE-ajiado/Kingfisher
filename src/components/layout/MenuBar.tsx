@@ -323,6 +323,26 @@ export const MenuBar: React.FC = () => {
           action: () => (roll.views.rollB.isOpen ? closeRollWindow('rollB') : openRollWindow('rollB')),
         },
         {
+          label: 'ラッシュ専用ウィンドウを表示 (クラウド・WebRTC配信)',
+          shortcut: '',
+          checked: usePaintStore.getState().isRushOpen,
+          action: () => {
+            const store = usePaintStore.getState();
+            if (store.isRushOpen) {
+              store.closeRushWindow();
+            } else {
+              store.openRushWindow();
+            }
+          },
+        },
+        {
+          label: 'ラッシュ配信ルーム作成・参加 (認証)',
+          shortcut: '',
+          action: () => {
+            usePaintStore.getState().openRushAuthModal('create');
+          },
+        },
+        {
           label: '参照画面: 垂直分割',
           shortcut: '',
           checked: referenceCanvas.isOpen && !referenceCanvas.isFloating && colorSpecLayoutMode === 'split-vertical',

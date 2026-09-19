@@ -21,6 +21,7 @@ import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
 import { RollViewer } from './RollViewer';
+import { RushWindow } from './RushWindow';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
 import { RollId } from '../../store/types';
@@ -1364,6 +1365,8 @@ export const CellWindow: React.FC = () => {
    * 連動やファイル読み込みからも参照されているので、真実の源はあちらのまま。
    * ここで一方向に流し込むことで、既存のメニューやショートカットを書き換えずに済む。
    */
+  const isRushOpen = usePaintStore((s) => s.isRushOpen);
+
   useEffect(() => {
     syncPaneVisibility({
       winA: isWinAVisible,
@@ -1371,6 +1374,7 @@ export const CellWindow: React.FC = () => {
       reference: referenceCanvas.isOpen,
       rollA: roll.views.rollA.isOpen,
       rollB: roll.views.rollB.isOpen,
+      rush: isRushOpen,
     });
   }, [
     isWinAVisible,
@@ -1378,6 +1382,7 @@ export const CellWindow: React.FC = () => {
     referenceCanvas.isOpen,
     roll.views.rollA.isOpen,
     roll.views.rollB.isOpen,
+    isRushOpen,
     syncPaneVisibility,
   ]);
 
@@ -1713,6 +1718,7 @@ export const CellWindow: React.FC = () => {
     if (pane === 'winB') return winBPaneContent;
     if (pane === 'reference') return referencePaneContent;
     if (pane === 'rollA' || pane === 'rollB') return rollPaneContent(pane);
+    if (pane === 'rush') return <RushWindow />;
     return null;
   };
 
@@ -1727,6 +1733,7 @@ export const CellWindow: React.FC = () => {
     else if (pane === 'winB' && isSplitView) toggleIsSplitView();
     else if (pane === 'reference') closeReferenceWindow();
     else if (pane === 'rollA' || pane === 'rollB') closeRollWindow(pane);
+    else if (pane === 'rush') usePaintStore.getState().closeRushWindow();
   };
 
   /** 一面表示中はその枠だけを、幅いっぱいに出す */
@@ -1834,7 +1841,7 @@ export const CellWindow: React.FC = () => {
             />
             <div
               data-slot-id={slot.id}
-              className="flex flex-col min-w-0 overflow-hidden"
+              className="flex flex-col min-w-0 overflow-hidden flex-1 w-full"
               style={{ flexGrow: slot.flexGrow, flexBasis: 0 }}
             >
               <PaneTabBar
@@ -1846,7 +1853,7 @@ export const CellWindow: React.FC = () => {
                 onDropOnSlot={(pane) => stackPaneOnSlot(pane, slot.id)}
                 onDragStateChange={setIsPaneDragging}
               />
-              <div className="flex-1 flex min-h-0">{renderPane(slot.activePane)}</div>
+              <div className="flex-1 flex min-h-0 w-full">{renderPane(slot.activePane)}</div>
             </div>
             {index < slotsToRender.length - 1 && (
               <div

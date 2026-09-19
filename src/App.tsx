@@ -22,6 +22,7 @@ import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
 import { ExportVectorModal } from './components/modals/ExportVectorModal';
 import { ExportTraceModal } from './components/modals/ExportTraceModal';
 import { AuthGuardModal } from './components/modals/AuthGuardModal';
+import { RushAuthModal } from './components/modals/RushAuthModal';
 import { MobileGuard } from './components/common/MobileGuard';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
@@ -37,7 +38,11 @@ export const App: React.FC = () => {
     toggleRightSidebarOpen,
     setUser,
     setAuthChecking,
+    isRushOpen,
+    paneLayout,
   } = usePaintStore();
+
+  const isRushActive = isRushOpen && paneLayout.maximized === 'rush';
 
   // Firebase Authentication リスナーの設定
   useEffect(() => {
@@ -349,7 +354,7 @@ export const App: React.FC = () => {
       {/* 2. Main Workspace Layout (Zero-Margin Edge-to-Edge) */}
       <div className="flex-1 flex p-0 gap-0 overflow-hidden">
         {/* Left: Tool Palette */}
-        {panelVisibility.toolPalette && <ToolPalette />}
+        {!isRushActive && panelVisibility.toolPalette && <ToolPalette />}
 
         {/* Center Main Column */}
         <div className="flex-1 flex flex-col gap-0 overflow-hidden">
@@ -357,11 +362,11 @@ export const App: React.FC = () => {
           <CellWindow />
 
           {/* Bottom: Light Table & Animation Bar */}
-          {panelVisibility.lightTable && <LightTable />}
+          {!isRushActive && panelVisibility.lightTable && <LightTable />}
         </div>
 
           {/* Right Docking Panels Column (Toggleable via Ctrl+Alt / Ctrl+Cmd) */}
-          {isRightSidebarOpen && (
+          {!isRushActive && isRightSidebarOpen && (
             <div
               style={{ width: `${rightSidebarWidth}px` }}
               className="flex flex-col gap-0 overflow-hidden border-l border-slate-300 dark:border-slate-800 relative flex-shrink-0"
@@ -451,10 +456,11 @@ export const App: React.FC = () => {
       <ExportVectorModal />
       <ExportTraceModal />
       <AuthGuardModal />
+      <RushAuthModal />
       <MobileGuard />
 
       {/* 🌟 右サイドパネル非表示時のみ表示される縦全高コンパクト再展開バー (Light/Darkテーマ対応) */}
-      {!isRightSidebarOpen && (
+      {!isRushActive && !isRightSidebarOpen && (
         <button
           onClick={toggleRightSidebarOpen}
           title="右サイドパネルを展開 (Ctrl+Alt / Ctrl+Cmd)"

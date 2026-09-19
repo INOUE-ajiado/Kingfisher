@@ -21,6 +21,7 @@ import { createLightTableSlice } from './slices/lightTableSlice';
 import { createRollSlice } from './slices/rollSlice';
 import { createLayoutSlice } from './slices/layoutSlice';
 import { createAuthSlice } from './slices/authSlice';
+import { createRushSlice } from './slices/rushSlice';
 
 export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createUiSlice(...a),
@@ -34,6 +35,7 @@ export const usePaintStore = create<PaintStore>()((...a) => ({
   ...createRollSlice(...a),
   ...createLayoutSlice(...a),
   ...createAuthSlice(...a),
+  ...createRushSlice(...a),
 }));
 
 /**
