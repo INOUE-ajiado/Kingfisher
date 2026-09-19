@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// ラッシュの動画 (src/engine/rushService.ts の uploadRushVideoToStorage)。
+//
+// ⚠️ list を許さないこと。動画の URL はルームの access 文書 (合言葉で守られている) にだけ置いている。
+// 一覧を許すと、合言葉を知らなくても全ルームの動画へ辿り着ける。
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@ajiado[.]co[.]jp$');
+    }
+
+    match /rushVideos/{roomId}/{fileName} {
+      allow create: if isStaff()
+        && request.resource.size < 2 * 1024 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+      // getDownloadURL がメタデータの読み取りを要する
+      allow get: if isStaff();
+      allow delete: if isStaff();
+      allow list, update: if false;
+    }
+  }
+}

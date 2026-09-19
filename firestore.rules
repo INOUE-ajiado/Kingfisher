@@ -1,0 +1,74 @@
+rules_version = '2';
+
+// ラッシュルーム (src/engine/rushService.ts) の規則。
+//
+// ⚠️ access/{鍵} の一覧 (list) を許さないこと。鍵はルーム ID と合言葉のハッシュで、
+// 鍵を知っていること = 合言葉を知っていること、という前提で守っている。
+// 一覧を許すと、合言葉を知らなくても動画の URL とリテイクへ辿り着ける。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@ajiado[.]co[.]jp$');
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function roomOf(roomId) {
+      return get(/databases/$(database)/documents/rushRooms/$(roomId)).data;
+    }
+
+    function isOperatorOf(room) {
+      return room.hostEmail == myEmail() || myEmail() in room.operatorEmails;
+    }
+
+    match /rushRooms/{roomId} {
+      allow read: if isStaff();
+
+      allow create: if isStaff()
+        && request.resource.data.keys().hasOnly(
+             ['id', 'roomName', 'hostEmail', 'operatorEmails', 'createdAt', 'lastActiveAt', 'isLive'])
+        && request.resource.data.id == roomId
+        && request.resource.data.hostEmail == myEmail()
+        && request.resource.data.operatorEmails is list
+        && request.resource.data.roomName is string
+        && request.resource.data.roomName.size() > 0
+        && request.resource.data.roomName.size() <= 200;
+
+      // オペレーターが変えてよいのは、オペレーターの一覧と LIVE と最終アクティブ時間だけ
+      allow update: if isStaff()
+        && isOperatorOf(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['operatorEmails', 'isLive', 'lastActiveAt'])
+        && request.resource.data.operatorEmails is list
+        && request.resource.data.isLive is bool;
+
+      allow delete: if isStaff() && isOperatorOf(resource.data);
+
+      match /access/{accessKey} {
+        allow get: if isStaff();
+        allow list: if false;
+        allow create: if isStaff() && roomOf(roomId).hostEmail == myEmail();
+        allow update, delete: if isStaff() && isOperatorOf(roomOf(roomId));
+
+        match /retakes/{retakeId} {
+          allow read: if isStaff();
+          allow create, update: if isStaff()
+            && isOperatorOf(roomOf(roomId))
+            && exists(/databases/$(database)/documents/rushRooms/$(roomId)/access/$(accessKey))
+            && request.resource.data.text is string
+            && request.resource.data.text.size() <= 5000;
+          allow delete: if isStaff() && isOperatorOf(roomOf(roomId));
+        }
+      }
+    }
+
+    // 削除の記録。書き込むだけで、画面からは読まない
+    match /rushRoomDeleteLogs/{logId} {
+      allow create: if isStaff() && request.resource.data.deletedByEmail == myEmail();
+    }
+  }
+}

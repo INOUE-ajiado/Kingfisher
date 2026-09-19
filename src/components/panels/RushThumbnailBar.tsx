@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { generateVideoThumbnails } from '../../engine/rushThumbnails';
 
 interface RushThumbnailBarProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoUrl: string | null;
+  /** ルームに保存済みのサムネイル。空なら videoUrl から作ってみる */
+  thumbnails?: string[];
   currentTime: number;
   duration: number;
   onSeek: (newTime: number) => void;
@@ -15,6 +18,7 @@ interface RushThumbnailBarProps {
 
 export const RushThumbnailBar: React.FC<RushThumbnailBarProps> = ({
   videoUrl,
+  thumbnails: storedThumbnails,
   currentTime,
   duration,
   onSeek,
@@ -31,80 +35,33 @@ export const RushThumbnailBar: React.FC<RushThumbnailBarProps> = ({
 
   const timelineRef = useRef<HTMLDivElement | null>(null);
 
-  // サムネイル画像の自動抽出 (Canvas offscreen)
+  // サムネイル。ルームに保存されたもの (アップロード時に手元の動画から作ったもの) を優先し、
+  // 無いときだけ再生中の動画から作ってみる (別オリジンの動画は CORS で作れないことがある)
   useEffect(() => {
+    if (storedThumbnails && storedThumbnails.length > 0) {
+      setThumbnails(storedThumbnails);
+      setIsGenerating(false);
+      return;
+    }
     if (!videoUrl || !duration || duration <= 0) {
       setThumbnails([]);
       return;
     }
 
-    let isMounted = true;
-    const NUM_THUMBNAILS = 14;
-
-    const generateThumbnails = async () => {
-      setIsGenerating(true);
-      const offscreenVideo = document.createElement('video');
-      offscreenVideo.crossOrigin = 'anonymous';
-      offscreenVideo.src = videoUrl;
-      offscreenVideo.muted = true;
-      offscreenVideo.playsInline = true;
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 120;
-      canvas.height = 68;
-      const ctx = canvas.getContext('2d');
-
-      await new Promise<void>((resolve) => {
-        offscreenVideo.onloadedmetadata = () => resolve();
-        offscreenVideo.onerror = () => resolve();
-      });
-
-      if (!isMounted || !offscreenVideo.duration) {
-        setIsGenerating(false);
-        return;
-      }
-
-      const generated: string[] = [];
-      const interval = offscreenVideo.duration / NUM_THUMBNAILS;
-
-      for (let i = 0; i < NUM_THUMBNAILS; i++) {
-        if (!isMounted) break;
-        const targetSec = (i + 0.5) * interval;
-        offscreenVideo.currentTime = targetSec;
-
-        await new Promise<void>((res) => {
-          const handleSeeked = () => {
-            offscreenVideo.removeEventListener('seeked', handleSeeked);
-            res();
-          };
-          offscreenVideo.addEventListener('seeked', handleSeeked);
-          // タイムアウト保護
-          setTimeout(res, 300);
-        });
-
-        if (ctx && isMounted) {
-          try {
-            ctx.drawImage(offscreenVideo, 0, 0, canvas.width, canvas.height);
-            generated.push(canvas.toDataURL('image/jpeg', 0.5));
-          } catch (e) {
-            // CORS等のエラー対策
-            break;
-          }
-        }
-      }
-
-      if (isMounted) {
+    let cancelled = false;
+    setIsGenerating(true);
+    void generateVideoThumbnails(videoUrl, 14, () => cancelled)
+      .catch(() => [] as string[])
+      .then((generated) => {
+        if (cancelled) return;
         setThumbnails(generated);
         setIsGenerating(false);
-      }
-    };
-
-    void generateThumbnails();
+      });
 
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
-  }, [videoUrl, duration]);
+  }, [videoUrl, duration, storedThumbnails]);
 
   // クリック・ドラッグによるシーク位置計算
   const handleSeekFromEvent = useCallback(

@@ -25,17 +25,28 @@ import {
 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RetakeItem } from '../../engine/retakeStore';
-import { db, isAjiadoDomain } from '../../engine/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { updateRushRoomStatusInDB, updateRushRoomOperatorsInDB } from '../../engine/rushService';
+import { isAjiadoDomain } from '../../engine/firebase';
+import {
+  updateRushRoomStatusInDB,
+  updateRushRoomOperatorsInDB,
+  subscribeRushRoom,
+  subscribeRushAccess,
+  subscribeRushRetakes,
+  addRushRetakeInDB,
+  deleteRushRetakeInDB,
+} from '../../engine/rushService';
+import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
 import { RushThumbnailBar } from './RushThumbnailBar';
 
 export const RushWindow: React.FC = () => {
   const roomId = usePaintStore((s) => s.roomId);
   const isHost = usePaintStore((s) => s.isHost);
   const roomName = usePaintStore((s) => s.roomName);
-  const passwordHash = usePaintStore((s) => s.passwordHash);
+  const roomPassword = usePaintStore((s) => s.roomPassword);
+  const accessKey = usePaintStore((s) => s.rushAccessKey);
   const videoUrl = usePaintStore((s) => s.videoUrl);
+  const thumbnails = usePaintStore((s) => s.rushThumbnails);
+  const isMaximized = usePaintStore((s) => s.paneLayout.maximized === 'rush');
   const isLive = usePaintStore((s) => s.isLive);
   const isRecording = usePaintStore((s) => s.isRecording);
   const isMicMuted = usePaintStore((s) => s.isMicMuted);
@@ -51,11 +62,14 @@ export const RushWindow: React.FC = () => {
   const setRushMicMuted = usePaintStore((s) => s.setRushMicMuted);
   const setRushSpeakerMuted = usePaintStore((s) => s.setRushSpeakerMuted);
   const updateRushRetakes = usePaintStore((s) => s.updateRushRetakes);
+  const setRushVideo = usePaintStore((s) => s.setRushVideo);
   const addRushArchive = usePaintStore((s) => s.addRushArchive);
   const openRushAuthModal = usePaintStore((s) => s.openRushAuthModal);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  /** 最後にクリックした場所がこの面の中か (並べて表示しているときのキー操作の宛先) */
+  const isPointerInsideRef = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -76,36 +90,44 @@ export const RushWindow: React.FC = () => {
   const [newOpEmail, setNewOpEmail] = useState('');
   const [hostEmail, setHostEmail] = useState('');
 
-  // Firestore のオペレーター一覧をリアルタイム同期 ＆ 権限判定
+  // ルームの文書 (オペレーター・LIVE) をリアルタイム同期 ＆ 権限判定
   useEffect(() => {
     if (!roomId) return;
-    const roomRef = doc(db, 'rushRooms', roomId);
-    const unsubscribe = onSnapshot(roomRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        const ops: string[] = data.operatorEmails || [];
-        const hEmail: string = (data.hostEmail || '').trim().toLowerCase();
-        setHostEmail(hEmail);
-        setOperatorEmails(ops);
-
-        // 自分（ログインユーザー）がホストまたはオペレーターリストに含まれていれば isHost = true
-        const myEmail = (user?.email || '').trim().toLowerCase();
-        if (myEmail) {
-          const hasOperatorPrivilege =
-            myEmail === hEmail || ops.map((e) => e.trim().toLowerCase()).includes(myEmail);
-          if (hasOperatorPrivilege !== isHost) {
-            usePaintStore.setState({ isHost: hasOperatorPrivilege });
-          }
-        }
+    return subscribeRushRoom(roomId, (room) => {
+      if (!room) {
+        // 他の人がルームを削除した
+        usePaintStore.getState().leaveRushRoom();
+        window.alert('このラッシュルームは削除されました。');
+        return;
       }
+      setHostEmail(normalizeEmail(room.hostEmail));
+      setOperatorEmails(room.operatorEmails || []);
+
+      const store = usePaintStore.getState();
+      const privileged = hasOperatorPrivilege(room, store.user?.email);
+      if (privileged !== store.isHost) usePaintStore.setState({ isHost: privileged });
+      if (!!room.isLive !== store.isLive) store.setRushLive(!!room.isLive);
     });
-    return () => unsubscribe();
-  }, [roomId, user?.email, isHost]);
+  }, [roomId, user?.email]);
+
+  // 動画の在りか (後から差し替えられても追従する)
+  useEffect(() => {
+    if (!roomId || !accessKey) return;
+    return subscribeRushAccess(roomId, accessKey, (access) => {
+      if (access) setRushVideo(access.videoUrl, access.videoName, access.thumbnails || []);
+    });
+  }, [roomId, accessKey, setRushVideo]);
+
+  // リテイク指示 (オペレーター同士で共有し、退室しても残る)
+  useEffect(() => {
+    if (!roomId || !accessKey) return;
+    return subscribeRushRetakes(roomId, accessKey, updateRushRetakes);
+  }, [roomId, accessKey, updateRushRetakes]);
 
   // オペレーター追加
   const handleAddOperator = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = newOpEmail.trim().toLowerCase();
+    const trimmed = normalizeEmail(newOpEmail);
     if (!trimmed || !roomId) return;
 
     if (!isAjiadoDomain(trimmed)) {
@@ -113,23 +135,60 @@ export const RushWindow: React.FC = () => {
       return;
     }
 
-    if (operatorEmails.map((e) => e.toLowerCase()).includes(trimmed)) {
+    if (operatorEmails.map(normalizeEmail).includes(trimmed)) {
       setNewOpEmail('');
       return;
     }
 
-    const newOps = [...operatorEmails, trimmed];
-    setOperatorEmails(newOps);
+    const previous = operatorEmails;
+    setOperatorEmails([...previous, trimmed]);
     setNewOpEmail('');
-    await updateRushRoomOperatorsInDB(roomId, newOps);
+    try {
+      await updateRushRoomOperatorsInDB(roomId, [...previous, trimmed]);
+    } catch (err) {
+      console.error('Failed to add rush operator:', err);
+      setOperatorEmails(previous);
+      alert('オペレーターを追加できませんでした。通信状態と権限を確認してください。');
+    }
   };
 
   // オペレーター権限解除
   const handleRemoveOperator = async (emailToRemove: string) => {
     if (!roomId) return;
-    const newOps = operatorEmails.filter((e) => e.toLowerCase() !== emailToRemove.toLowerCase());
-    setOperatorEmails(newOps);
-    await updateRushRoomOperatorsInDB(roomId, newOps);
+    const previous = operatorEmails;
+    const next = previous.filter((e) => normalizeEmail(e) !== normalizeEmail(emailToRemove));
+    setOperatorEmails(next);
+    try {
+      await updateRushRoomOperatorsInDB(roomId, next);
+    } catch (err) {
+      console.error('Failed to remove rush operator:', err);
+      setOperatorEmails(previous);
+      alert('オペレーター権限を解除できませんでした。通信状態と権限を確認してください。');
+    }
+  };
+
+  // 配信の開始 / 停止 (参加者の LIVE 表示はルームの文書から同期される)
+  const handleToggleLive = async () => {
+    if (!roomId) return;
+    const nextLive = !isLive;
+    setRushLive(nextLive);
+    try {
+      await updateRushRoomStatusInDB(roomId, { isLive: nextLive });
+    } catch (err) {
+      console.error('Failed to update rush live status:', err);
+      setRushLive(!nextLive);
+      alert('配信状態を切り替えられませんでした。通信状態と権限を確認してください。');
+    }
+  };
+
+  // 退室。配信中のオペレーターが抜けるなら LIVE を落としておく (一覧に LIVE が残り続けないように)
+  const handleLeave = () => {
+    if (roomId && isHost && isLive) {
+      void updateRushRoomStatusInDB(roomId, { isLive: false }).catch((err) =>
+        console.error('Failed to clear rush live status on leave:', err)
+      );
+    }
+    leaveRushRoom();
   };
 
   // フルスクリーン状態の変更検知
@@ -163,7 +222,8 @@ export const RushWindow: React.FC = () => {
 
   // 招待情報のコピー
   const handleCopyInvite = async () => {
-    const inviteText = `[Kingfisher ラッシュ案内]\nルーム名: ${roomName}\nルームID: ${roomId}\nパスワード: ${passwordHash}\nURL: ${window.location.origin}/rush?room=${roomId}`;
+    if (!roomId) return;
+    const inviteText = `[Kingfisher ラッシュ案内]\nルーム名: ${roomName}\nルームID: ${roomId}\nパスワード: ${roomPassword}\nURL: ${buildRushInviteUrl(window.location.origin, roomId)}`;
     try {
       await navigator.clipboard.writeText(inviteText);
       setCopiedLink(true);
@@ -210,11 +270,28 @@ export const RushWindow: React.FC = () => {
     }
   };
 
+  // どこをクリックしたかを覚えておく (並べて表示しているとき、キーをこの面へ向けるかの判断)
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      const container = playerContainerRef.current;
+      isPointerInsideRef.current = !!container && e.target instanceof Node && container.contains(e.target);
+    };
+    window.addEventListener('pointerdown', onPointerDown, { capture: true });
+    return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true });
+  }, []);
+
   // キーボードショートカット (オペレーター専用)
+  //
+  // ⚠️ 一面表示のとき、または最後にこの面の中をクリックしたときだけ受け取る。
+  // 以前は常に window で受けていたため、Win A などと並べると Space や ← → が
+  // ペイント側のショートカット (PDF のページ送りなど) と二重に動いていた。
+  // 受け取ったキーは捕捉段階で止め、他のショートカットへ流さない。
   useEffect(() => {
     if (!isHost) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isMaximized && !isPointerInsideRef.current) return;
+
       // フォーム入力中のキーイベントを無視
       const target = e.target as HTMLElement | null;
       if (
@@ -227,28 +304,32 @@ export const RushWindow: React.FC = () => {
         return;
       }
 
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      let handled = true;
       if (e.code === 'Space') {
-        e.preventDefault();
         togglePlay();
       } else if (e.code === 'ArrowLeft') {
-        e.preventDefault();
-        const step = e.shiftKey ? -10 : -1;
-        stepFrame(step);
+        stepFrame(e.shiftKey ? -10 : -1);
       } else if (e.code === 'ArrowRight') {
+        stepFrame(e.shiftKey ? 10 : 1);
+      } else {
+        handled = false;
+      }
+      if (handled) {
         e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        stepFrame(step);
+        e.stopImmediatePropagation();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isHost, isPlaying, duration, currentTime, fps]);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [isHost, isMaximized, isPlaying, duration, currentTime, fps]);
 
   // リテイクメモ追加
-  const handleAddRetake = (e?: React.FormEvent) => {
+  const handleAddRetake = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || !roomId || !accessKey) return;
 
     const tc = formatTC(currentTime);
     const newItem: RetakeItem = {
@@ -259,12 +340,25 @@ export const RushWindow: React.FC = () => {
       text: inputText.trim(),
     };
 
-    updateRushRetakes([...retakeItems, newItem]);
     setInputText('');
+    try {
+      // 画面へは購読経由で即座に反映される (Firestore の書き込みは手元に先に届く)
+      await addRushRetakeInDB(roomId, accessKey, newItem, user?.email || '');
+    } catch (err) {
+      console.error('Failed to add rush retake:', err);
+      setInputText(newItem.text);
+      alert('リテイク指示を保存できませんでした。通信状態と権限を確認してください。');
+    }
   };
 
-  const handleDeleteRetake = (id: string) => {
-    updateRushRetakes(retakeItems.filter((item) => item.id !== id));
+  const handleDeleteRetake = async (id: string) => {
+    if (!roomId || !accessKey) return;
+    try {
+      await deleteRushRetakeInDB(roomId, accessKey, id);
+    } catch (err) {
+      console.error('Failed to delete rush retake:', err);
+      alert('リテイク指示を削除できませんでした。通信状態と権限を確認してください。');
+    }
   };
 
   const handleSeekToRetake = (item: RetakeItem) => {
@@ -369,11 +463,7 @@ export const RushWindow: React.FC = () => {
           {isHost && (
             <>
               <button
-                onClick={() => {
-                  const nextLive = !isLive;
-                  setRushLive(nextLive);
-                  if (roomId) void updateRushRoomStatusInDB(roomId, { isLive: nextLive });
-                }}
+                onClick={() => void handleToggleLive()}
                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 transition-colors ${
                   isLive
                     ? 'bg-red-600/20 text-red-300 border border-red-500/40 hover:bg-red-600/30'
@@ -433,7 +523,7 @@ export const RushWindow: React.FC = () => {
 
           {/* 退室 */}
           <button
-            onClick={leaveRushRoom}
+            onClick={handleLeave}
             title="ルームから退室"
             className="p-1.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 transition-colors"
           >
@@ -509,6 +599,7 @@ export const RushWindow: React.FC = () => {
             <RushThumbnailBar
               videoRef={videoRef}
               videoUrl={videoUrl}
+              thumbnails={thumbnails}
               currentTime={currentTime}
               duration={duration}
               onSeek={handleSeek}
@@ -564,7 +655,7 @@ export const RushWindow: React.FC = () => {
             {sideTab === 'retakes' && (
               <div className="flex-1 flex flex-col p-2 min-h-0">
                 {/* 入力フォーム */}
-                <form onSubmit={handleAddRetake} className="space-y-1.5 pb-2 border-b border-white/10">
+                <form onSubmit={(e) => void handleAddRetake(e)} className="space-y-1.5 pb-2 border-b border-white/10">
                   <div className="flex items-center gap-1">
                     <span className="text-[10px] text-amber-300 font-bold">修正先:</span>
                     <select
@@ -585,7 +676,7 @@ export const RushWindow: React.FC = () => {
                       rows={2}
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
-                      placeholder="リテイク指示を入力 (DB経由でリアルタイム共有)..."
+                      placeholder="リテイク指示を入力 (オペレーター同士でリアルタイム共有)..."
                       className="flex-1 bg-slate-950 border border-white/15 rounded px-2 py-1 text-slate-100 text-[11px] focus:outline-none focus:border-amber-400 resize-none leading-normal"
                     />
                     <button
@@ -620,7 +711,7 @@ export const RushWindow: React.FC = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteRetake(it.id);
+                              void handleDeleteRetake(it.id);
                             }}
                             className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-300"
                           >

@@ -25,8 +25,40 @@ import {
   checkRoomNameExistsInDB,
   deleteRushRoomInDB,
   uploadRushVideoToStorage,
+  verifyRushRoomAccess,
+  clearLegacyRushCache,
+  RushJoinError,
   RushRoomDoc,
+  UploadedRushVideo,
 } from '../../engine/rushService';
+import { hasOperatorPrivilege, normalizeRoomId, readRoomIdFromSearch } from '../../engine/rushAccess';
+import { generateThumbnailsFromFile } from '../../engine/rushThumbnails';
+
+const MIN_PASSWORD_LENGTH = 4;
+
+/** Firestore / Storage の例外を、画面に出せる言葉へ直す */
+function describeCloudError(err: unknown): string {
+  const code = (err as { code?: string } | null)?.code || '';
+  if (code.includes('permission-denied') || code.includes('unauthorized')) {
+    return '権限がありません (@ajiado.co.jp でログインしているか、このルームのオペレーターかを確認してください)';
+  }
+  if (code.includes('unavailable') || code.includes('retry-limit-exceeded')) {
+    return 'クラウドに接続できません。ネットワークを確認してください';
+  }
+  if (code.includes('not-found') || code.includes('failed-precondition')) {
+    return 'クラウド側 (Firestore / Storage) が準備されていません。管理者に連絡してください';
+  }
+  const message = (err as { message?: string } | null)?.message;
+  return message || String(err);
+}
+
+/** URL から ?room= を取り除く (参加し終えたあとに再び開かないように) */
+function clearRoomParamFromUrl(): void {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('room')) return;
+  url.searchParams.delete('room');
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
 
 export const RushAuthModal: React.FC = () => {
   const isAuthModalOpen = usePaintStore((s) => s.isAuthModalOpen);
@@ -45,16 +77,25 @@ export const RushAuthModal: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [isJoining, setIsJoining] = useState(false);
+  const [roomsError, setRoomsError] = useState('');
 
   // 削除モーダルの状態
   const [deletingRoom, setDeletingRoom] = useState<RushRoomDoc | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [deletePassword, setDeletePassword] = useState('');
 
   // 作成済みルーム一覧データ
   const [rooms, setRooms] = useState<RushRoomDoc[]>([]);
 
   const isAjiadoUser = isAjiadoDomain(user?.email);
+
+  // 旧版が localStorage に残した一覧の控え (合言葉が平文) を消す
+  useEffect(() => {
+    clearLegacyRushCache();
+  }, []);
 
   useEffect(() => {
     if (authModalMode === 'create') setMode('create');
@@ -64,18 +105,22 @@ export const RushAuthModal: React.FC = () => {
 
   // Firestore の作成済みルーム一覧を購読
   useEffect(() => {
-    if (!isAuthModalOpen) return;
-    const unsubscribe = subscribeRushRooms(user?.email, (fetchedRooms) => {
-      setRooms(fetchedRooms);
-    });
+    if (!isAuthModalOpen || !isAjiadoUser) return;
+    setRoomsError('');
+    const unsubscribe = subscribeRushRooms(
+      (fetchedRooms) => {
+        setRooms(fetchedRooms);
+        setRoomsError('');
+      },
+      (error) => setRoomsError(`ルーム一覧を読み込めません: ${describeCloudError(error)}`)
+    );
     return () => unsubscribe();
-  }, [isAuthModalOpen, user?.email]);
+  }, [isAuthModalOpen, isAjiadoUser]);
 
   // URLにroomパラメータがあれば自動補完
   useEffect(() => {
     if (typeof window !== 'undefined' && isAuthModalOpen) {
-      const params = new URLSearchParams(window.location.search);
-      const roomParam = params.get('room');
+      const roomParam = readRoomIdFromSearch(window.location.search);
       if (roomParam) {
         setRoomIdInput(roomParam);
         setMode('join');
@@ -99,61 +144,65 @@ export const RushAuthModal: React.FC = () => {
       setErrorMsg('ルーム名を入力してください');
       return;
     }
-    if (!password.trim()) {
-      setErrorMsg('アクセスパスワードを設定してください');
+    if (password.trim().length < MIN_PASSWORD_LENGTH) {
+      setErrorMsg(`アクセスパスワードは ${MIN_PASSWORD_LENGTH} 文字以上で設定してください`);
       return;
     }
 
-    // 1. 同名ルームが存在しないか確認 (ローカル一覧 ＆ DB検索)
-    const duplicateInState = rooms.some((r) => r.roomName.toLowerCase() === trimmedName.toLowerCase());
-    if (duplicateInState) {
-      setErrorMsg(`すでに同名の配信ルーム「${trimmedName}」が存在します。別のルーム名を指定してください。`);
-      return;
-    }
-
-    const isDuplicateInDB = await checkRoomNameExistsInDB(trimmedName);
-    if (isDuplicateInDB) {
-      setErrorMsg(`すでに同名の配信ルーム「${trimmedName}」が存在します。別のルーム名を指定してください。`);
-      return;
-    }
-
-    const newRoomId = `RUSH-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    let finalVideoUrl: string | undefined = undefined;
-    const videoName = selectedFile ? selectedFile.name : undefined;
-
+    setIsUploading(true);
     try {
+      // 1. 同名ルームが存在しないか確認 (ローカル一覧 ＆ DB検索)
+      const duplicateInState = rooms.some((r) => r.roomName.toLowerCase() === trimmedName.toLowerCase());
+      if (duplicateInState || (await checkRoomNameExistsInDB(trimmedName))) {
+        setErrorMsg(`すでに同名の配信ルーム「${trimmedName}」が存在します。別のルーム名を指定してください。`);
+        return;
+      }
+
+      const newRoomId = `RUSH-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      let video: UploadedRushVideo | null = null;
+      let thumbnails: string[] = [];
+
       if (selectedFile) {
-        setIsUploading(true);
         setUploadProgress(0);
-        finalVideoUrl = await uploadRushVideoToStorage(selectedFile, newRoomId, (pct) => {
-          setUploadProgress(pct);
-        });
+        // サムネイルは手元のファイルから作る (クラウド上の動画からは CORS で作れない)
+        const [uploaded, thumbs] = await Promise.all([
+          uploadRushVideoToStorage(selectedFile, newRoomId, (pct) => setUploadProgress(pct)),
+          generateThumbnailsFromFile(selectedFile),
+        ]);
+        video = uploaded;
+        thumbnails = thumbs;
       }
 
       // Firestore にルーム情報を登録
-      await createRushRoomInDB({
+      const accessKey = await createRushRoomInDB({
         roomId: newRoomId,
         roomName: trimmedName,
-        hostEmail: user?.email || 'operator@ajiado.co.jp',
-        passwordHash: password.trim(),
-        videoUrl: finalVideoUrl,
-        videoName,
+        hostEmail: user?.email || '',
+        password: password.trim(),
+        video,
+        thumbnails,
       });
 
       setRushRoom({
         roomId: newRoomId,
         isHost: true,
         roomName: trimmedName,
-        passwordHash: password.trim(),
-        videoUrl: finalVideoUrl,
-        videoName,
+        password: password.trim(),
+        accessKey,
+        videoUrl: video?.url ?? null,
+        videoName: video?.name ?? null,
+        thumbnails,
+        isLive: false,
       });
 
       openRushWindow();
       closeRushAuthModal();
-    } catch (err: any) {
+      setPassword('');
+      setRoomName('');
+      setSelectedFile(null);
+    } catch (err) {
       console.error('Failed to upload video / create room:', err);
-      setErrorMsg(`動画のアップロードまたはルーム作成に失敗しました: ${err?.message || err}`);
+      setErrorMsg(`動画のアップロードまたはルーム作成に失敗しました: ${describeCloudError(err)}`);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -163,29 +212,29 @@ export const RushAuthModal: React.FC = () => {
   // ルーム削除処理
   const handleConfirmDeleteRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deletingRoom || !deleteReason.trim()) return;
+    if (!deletingRoom || !deleteReason.trim() || !deletePassword.trim()) return;
 
     try {
       setIsDeleting(true);
-      await deleteRushRoomInDB(
-        deletingRoom.id,
-        deletingRoom.roomName,
-        deleteReason.trim(),
-        user?.email || 'unknown@ajiado.co.jp'
-      );
+      setDeleteError('');
+      await deleteRushRoomInDB(deletingRoom, deletePassword.trim(), deleteReason.trim(), user?.email || '');
       setDeletingRoom(null);
       setDeleteReason('');
-    } catch (err: any) {
+      setDeletePassword('');
+    } catch (err) {
       console.error(err);
-      setErrorMsg(err.message || 'ルームの削除に失敗しました');
+      setDeleteError(
+        err instanceof RushJoinError ? err.message : `ルームの削除に失敗しました: ${describeCloudError(err)}`
+      );
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // 既存ルームへの参加
-  const handleJoinRoom = (e: React.FormEvent) => {
+  // 既存ルームへの参加 (ルーム ID と合言葉をクラウドで照合する)
+  const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     if (!isAjiadoUser) {
       setErrorMsg('@ajiado.co.jp ドメインのアカウントでログインしてください');
       return;
@@ -199,33 +248,40 @@ export const RushAuthModal: React.FC = () => {
       return;
     }
 
-    // 作成済み一覧の中に該当ルームがあればそのタイトルとオペレーター権限を確認
-    const targetRoom = rooms.find((r) => r.id === roomIdInput.trim().toUpperCase());
-    const finalRoomName = targetRoom ? targetRoom.roomName : `ラッシュルーム (${roomIdInput.trim().toUpperCase()})`;
-    const videoUrl = targetRoom?.videoUrl || undefined;
+    setIsJoining(true);
+    try {
+      const { room, access, accessKey } = await verifyRushRoomAccess(roomIdInput, password.trim());
 
-    const currentUserEmail = (user?.email || '').trim().toLowerCase();
-    const hostEmail = (targetRoom?.hostEmail || '').trim().toLowerCase();
-    const operatorEmails = (targetRoom?.operatorEmails || []).map((e) => e.trim().toLowerCase());
+      // 作成者本人またはオペレーター権限保持者の場合はオペレーター専用画面で開く
+      setRushRoom({
+        roomId: room.id,
+        isHost: hasOperatorPrivilege(room, user?.email),
+        roomName: room.roomName,
+        password: password.trim(),
+        accessKey,
+        videoUrl: access.videoUrl,
+        videoName: access.videoName,
+        thumbnails: access.thumbnails || [],
+        isLive: !!room.isLive,
+      });
 
-    // 作成者本人またはオペレーター権限保持者の場合はオペレーター専用画面で開く
-    const isOperator = !!currentUserEmail && (currentUserEmail === hostEmail || operatorEmails.includes(currentUserEmail));
-
-    setRushRoom({
-      roomId: roomIdInput.trim().toUpperCase(),
-      isHost: isOperator,
-      roomName: finalRoomName,
-      passwordHash: password.trim(),
-      videoUrl,
-    });
-
-    openRushWindow();
-    closeRushAuthModal();
+      clearRoomParamFromUrl();
+      openRushWindow();
+      closeRushAuthModal();
+      setPassword('');
+    } catch (err) {
+      console.error('Failed to join rush room:', err);
+      setErrorMsg(
+        err instanceof RushJoinError ? err.message : `参加できませんでした: ${describeCloudError(err)}`
+      );
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   // ルームカード選択
   const handleSelectRoomCard = (room: RushRoomDoc) => {
-    setRoomIdInput(room.id);
+    setRoomIdInput(normalizeRoomId(room.id));
     setMode('join');
     setErrorMsg('');
   };
@@ -329,6 +385,12 @@ export const RushAuthModal: React.FC = () => {
                   <span className="text-[10px] text-emerald-400 font-mono">@ajiado.co.jp 認証済み</span>
                 </div>
 
+                {roomsError && (
+                  <div className="p-2.5 bg-red-950/60 border border-red-500/50 rounded-lg text-red-300 text-xs font-medium">
+                    {roomsError}
+                  </div>
+                )}
+
                 {rooms.length === 0 ? (
                   <div className="text-center py-10 text-slate-500 space-y-2">
                     <Video className="w-8 h-8 mx-auto opacity-30" />
@@ -378,18 +440,23 @@ export const RushAuthModal: React.FC = () => {
                             <span>参加</span>
                             <ArrowRight className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeletingRoom(room);
-                              setDeleteReason('');
-                            }}
-                            title="このルームを削除"
-                            className="p-1.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 hover:text-white transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {/* 削除できるのは作成者とオペレーターだけ (Firestore の規則でも強制) */}
+                          {hasOperatorPrivilege(room, user?.email) && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingRoom(room);
+                                setDeleteReason('');
+                                setDeletePassword('');
+                                setDeleteError('');
+                              }}
+                              title="このルームを削除"
+                              className="p-1.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/30 text-red-300 hover:text-white transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -419,7 +486,7 @@ export const RushAuthModal: React.FC = () => {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="参加に必要なパスワード"
+                      placeholder={`参加に必要なパスワード (${MIN_PASSWORD_LENGTH} 文字以上)`}
                       className="w-full bg-slate-950 border border-white/15 rounded-lg pl-9 pr-3 py-2 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-400"
                     />
                   </div>
@@ -447,7 +514,7 @@ export const RushAuthModal: React.FC = () => {
                 </div>
 
                 {/* アップロード進捗表示 */}
-                {isUploading && (
+                {isUploading && selectedFile && (
                   <div className="p-3 bg-slate-950 border border-amber-500/30 rounded-lg space-y-2">
                     <div className="flex items-center justify-between text-xs font-bold text-amber-300">
                       <span>クラウドサーバーへ映像をアップロード中...</span>
@@ -469,7 +536,13 @@ export const RushAuthModal: React.FC = () => {
                     className="w-full py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm shadow-lg shadow-amber-500/20"
                   >
                     <ShieldCheck className="w-4 h-4" />
-                    <span>{isUploading ? `アップロード中 (${uploadProgress}%)` : '配信ルームを作成して開始'}</span>
+                    <span>
+                      {isUploading
+                        ? selectedFile
+                          ? `アップロード中 (${uploadProgress}%)`
+                          : '作成中...'
+                        : '配信ルームを作成して開始'}
+                    </span>
                   </button>
                 </div>
               </form>
@@ -505,10 +578,11 @@ export const RushAuthModal: React.FC = () => {
                 <div className="pt-2">
                   <button
                     type="submit"
-                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm shadow-lg shadow-indigo-600/20"
+                    disabled={isJoining}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:text-slate-400 text-white font-bold rounded-lg transition-colors flex items-center justify-center gap-2 text-sm shadow-lg shadow-indigo-600/20"
                   >
                     <Users className="w-4 h-4" />
-                    <span>配信セッションに参加</span>
+                    <span>{isJoining ? '確認中...' : '配信セッションに参加'}</span>
                   </button>
                 </div>
               </form>
@@ -550,6 +624,25 @@ export const RushAuthModal: React.FC = () => {
                 />
               </div>
 
+              <div>
+                <label className="block text-slate-300 font-bold text-xs mb-1">
+                  このルームのパスワード <span className="text-red-400">* 必須</span>
+                </label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="動画とリテイク指示もあわせて削除します"
+                  className="w-full bg-slate-950 border border-white/20 rounded-lg px-2.5 py-2 text-slate-100 text-xs focus:outline-none focus:border-red-400"
+                />
+              </div>
+
+              {deleteError && (
+                <div className="p-2 bg-red-950/60 border border-red-500/50 rounded-lg text-red-300 text-xs font-medium">
+                  {deleteError}
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
                 <button
                   type="button"
@@ -560,7 +653,7 @@ export const RushAuthModal: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={!deleteReason.trim() || isDeleting}
+                  disabled={!deleteReason.trim() || !deletePassword.trim() || isDeleting}
                   className="px-4 py-1.5 rounded bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:hover:bg-red-600 text-white font-bold text-xs transition-colors flex items-center gap-1.5"
                 >
                   <Trash2 className="w-3.5 h-3.5" />

@@ -23,6 +23,7 @@ import { ExportVectorModal } from './components/modals/ExportVectorModal';
 import { ExportTraceModal } from './components/modals/ExportTraceModal';
 import { AuthGuardModal } from './components/modals/AuthGuardModal';
 import { RushAuthModal } from './components/modals/RushAuthModal';
+import { readRoomIdFromSearch } from './engine/rushAccess';
 import { MobileGuard } from './components/common/MobileGuard';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
@@ -40,9 +41,18 @@ export const App: React.FC = () => {
     setAuthChecking,
     isRushOpen,
     paneLayout,
+    isAuthenticated,
+    openRushAuthModal,
   } = usePaintStore();
 
   const isRushActive = isRushOpen && paneLayout.maximized === 'rush';
+
+  // 招待リンク (?room=RUSH-XXXX) で開かれたら、ログイン後に参加画面を開く。
+  // ID は参加画面が URL から読んで埋める。参加し終えると URL から消える。
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (readRoomIdFromSearch(window.location.search)) openRushAuthModal('join');
+  }, [isAuthenticated, openRushAuthModal]);
 
   // Firebase Authentication リスナーの設定
   useEffect(() => {
