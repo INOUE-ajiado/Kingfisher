@@ -37,10 +37,9 @@ import {
   addRushRetakeInDB,
   deleteRushRetakeInDB,
   attachRushPlaybackInDB,
-  writeRushPlaybackLiveInDB,
   RushShareEntry,
 } from '../../engine/rushService';
-import { useRushPlaybackBroadcaster, useRushPlaybackFollower } from '../../hooks/useRushPlaybackSync';
+import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
 import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
 import { RushThumbnailBar } from './RushThumbnailBar';
@@ -103,9 +102,11 @@ export const RushWindow: React.FC = () => {
   const [newOpEmail, setNewOpEmail] = useState('');
   const [hostEmail, setHostEmail] = useState('');
 
-  // オペレーターは自分の再生を配り、一般画面はそれに追従する
-  useRushPlaybackBroadcaster({ videoRef, videoUrl, playbackId, enabled: isHost, isLive });
-  const follower = useRushPlaybackFollower({ videoRef, videoUrl, playbackId, enabled: !isHost, fps: 24 });
+  /**
+   * 再生はルーム全体で 1 つ。オペレーターも含めて全員がこの状態に追従し、
+   * オペレーターの操作は自分の映像ではなく、この状態を書き換える。
+   */
+  const playback = useRushSharedPlayback({ videoRef, videoUrl, playbackId, fps, canControl: isHost });
 
   // ルームの文書 (オペレーター・LIVE) をリアルタイム同期 ＆ 権限判定
   useEffect(() => {
@@ -206,7 +207,7 @@ export const RushWindow: React.FC = () => {
     setRushLive(nextLive);
     try {
       await updateRushRoomStatusInDB(roomId, { isLive: nextLive });
-      if (playbackId) await writeRushPlaybackLiveInDB(playbackId, nextLive);
+      playback.controls.setLive(nextLive);
     } catch (err) {
       console.error('Failed to update rush live status:', err);
       setRushLive(!nextLive);
@@ -278,30 +279,12 @@ export const RushWindow: React.FC = () => {
 
   const currentFrame = Math.floor(currentTime * fps);
 
-  // 再生制御
-  const togglePlay = () => {
-    if (!videoRef.current) return;
-    if (isPlaying) {
-      videoRef.current.pause();
-    } else {
-      void videoRef.current.play();
-    }
-  };
+  // 再生制御。手元の映像を直接動かさず、ルーム全体の再生状態を書き換える
+  const togglePlay = () => playback.controls.toggle();
 
-  const stepFrame = (frames: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.pause();
-    const newTime = Math.max(0, Math.min(duration, currentTime + frames / fps));
-    videoRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
+  const stepFrame = (frames: number) => playback.controls.step(frames);
 
-  const handleSeek = (newTime: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = newTime;
-      setCurrentTime(newTime);
-    }
-  };
+  const handleSeek = (newTime: number) => playback.controls.seek(newTime);
 
   // どこをクリックしたかを覚えておく (並べて表示しているとき、キーをこの面へ向けるかの判断)
   useEffect(() => {
@@ -395,10 +378,7 @@ export const RushWindow: React.FC = () => {
   };
 
   const handleSeekToRetake = (item: RetakeItem) => {
-    if (videoRef.current && fps > 0) {
-      videoRef.current.currentTime = item.frame / fps;
-      setCurrentTime(item.frame / fps);
-    }
+    if (fps > 0) playback.controls.seek((item.frame + 0.5) / fps);
   };
 
   // 録画トグル
@@ -602,10 +582,10 @@ export const RushWindow: React.FC = () => {
               </div>
             )}
 
-            {/* 一般画面用: ブラウザに音声付き再生を止められたら、クリックで始めてもらう */}
-            {!isHost && follower.needsGesture && (
+            {/* ブラウザに音声付き再生を止められたら、クリックで始めてもらう */}
+            {playback.needsGesture && (
               <button
-                onClick={follower.unlock}
+                onClick={playback.unlock}
                 className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 text-white"
               >
                 <span className="flex items-center gap-2 px-5 py-3 rounded-full bg-amber-500 text-slate-950 font-bold text-sm shadow-2xl">
@@ -615,16 +595,20 @@ export const RushWindow: React.FC = () => {
               </button>
             )}
 
-            {/* 一般画面用: ホストの状態 */}
-            {!isHost && videoUrl && (
-              <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-[10px] text-slate-300">
-                {follower.error
-                  ? follower.error
+            {/* 同期の状態 (オペレーターも同じ再生に合わせている) */}
+            {videoUrl && (
+              <div className={`absolute ${isHost ? 'top-10' : 'top-3'} left-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-[10px] text-slate-300`}>
+                {playback.error
+                  ? playback.error
                   : !playbackId
-                    ? 'ホストの準備を待っています'
-                    : follower.state?.playing
-                      ? 'ホストの再生に合わせています'
-                      : 'ホストが一時停止中'}
+                    ? '再生の同期を準備しています'
+                    : isHost
+                      ? playback.state?.playing
+                        ? 'ルーム全員と同じ再生位置です (再生中)'
+                        : 'ルーム全員と同じ再生位置です (停止中)'
+                      : playback.state?.playing
+                        ? 'オペレーターの再生に合わせています'
+                        : 'オペレーターが一時停止中'}
               </div>
             )}
 

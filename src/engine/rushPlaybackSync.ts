@@ -1,10 +1,16 @@
 /**
- * ホストの再生に視聴者を追従させる計算。
+ * ラッシュの再生をひとつに揃えるための計算。
  *
- * ホストは「再生中か・位置・その時点」を Firestore の 1 文書に書く。
- * 視聴者は受け取った時刻から経った分を足して、今いるべき位置を求める。
- * 端末どうしの時計はずれていることがあるので、ホストの時計の値は使わず、
- * 「受け取った瞬間の自分の時計」を基準にする (遅れは通信の分だけ、ふつう 1 秒未満)。
+ * 再生位置は「誰の <video> か」ではなく、Firestore の 1 文書 (rushPlayback) が持つ。
+ * その文書には「再生中か・位置・書いた時点」が入り、見ている人は全員
+ * (社外の視聴者も、社内の一般画面も、オペレーター自身も) そこに追従する。
+ *
+ * ⚠️ オペレーターだけ追従から外さないこと。外すと、オペレーターが 2 人いたときに
+ * それぞれ別のところを再生してしまい、配信が揃わない。
+ * オペレーターの操作は「自分の映像を動かす」のではなく「この文書を書き換える」。
+ *
+ * 端末どうしの時計はずれていることがあるので、書いた側の時計の値は使わず、
+ * 「受け取った瞬間の自分の時計」を基準に経過分を足す (ずれは通信の分だけ、ふつう 1 秒未満)。
  */
 
 export interface PlaybackState {
@@ -32,5 +38,32 @@ export function shouldResync(actual: number, expected: number, playing: boolean,
   return drift > 0.5 / fps;
 }
 
-/** ホストが再生中に位置を書き直す間隔 (視聴者の揺れを抑える) */
-export const HOST_HEARTBEAT_MS = 5000;
+// ─── 操作 → 次の再生状態 (オペレーターが書き込む値) ──────────────────────────
+
+export function clampPosition(position: number, duration: number): number {
+  const max = Number.isFinite(duration) && duration > 0 ? duration : Number.POSITIVE_INFINITY;
+  return Math.min(Math.max(position, 0), max);
+}
+
+/** 再生 / 一時停止の切り替え。終わりに着いていたら頭から再生する */
+export function commandToggle(state: PlaybackState, position: number, duration: number): PlaybackState {
+  if (state.playing) return { ...state, playing: false, position: clampPosition(position, duration) };
+  const atEnd = Number.isFinite(duration) && duration > 0 && position >= duration - 0.05;
+  return { ...state, playing: true, position: atEnd ? 0 : clampPosition(position, duration) };
+}
+
+/** 位置を動かす (再生中かどうかは変えない) */
+export function commandSeek(state: PlaybackState, position: number, duration: number): PlaybackState {
+  return { ...state, position: clampPosition(position, duration) };
+}
+
+/** コマ送り。送ったら止める (1 コマずつ確かめるための操作なので) */
+export function commandStep(
+  state: PlaybackState,
+  position: number,
+  frames: number,
+  fps: number,
+  duration: number
+): PlaybackState {
+  return { ...state, playing: false, position: clampPosition(position + frames / fps, duration) };
+}

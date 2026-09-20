@@ -10,7 +10,7 @@ import {
   subscribeRushShare,
   verifyRushShareAccess,
 } from '../../engine/rushShareService';
-import { useRushPlaybackFollower } from '../../hooks/useRushPlaybackSync';
+import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 
 const FPS = 24;
 const HEARTBEAT_MS = 30 * 1000;
@@ -272,7 +272,7 @@ const WatchScreen: React.FC<{
   const [currentTime, setCurrentTime] = useState(0);
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const follower = useRushPlaybackFollower({ videoRef, videoUrl, playbackId, enabled: true, fps: FPS });
+  const follower = useRushSharedPlayback({ videoRef, videoUrl, playbackId, fps: FPS, canControl: false });
 
   // 停止・期限切れを見張る
   useEffect(() => {

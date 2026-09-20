@@ -375,11 +375,6 @@ export async function writeRushPlaybackInDB(playbackId: string, state: PlaybackS
   });
 }
 
-/** LIVE だけを書き換える (位置や再生中かは、実際に操作したオペレーターが書く) */
-export async function writeRushPlaybackLiveInDB(playbackId: string, live: boolean): Promise<void> {
-  await updateDoc(doc(db, PLAYBACK, playbackId), { live, updatedAt: serverTimestamp() });
-}
-
 /**
  * 再生状態を購読する。受け取った瞬間の手元の時刻も渡す (位置の補間に使う)。
  * 自分が書いた直後の手元の反映 (hasPendingWrites) は、ホスト自身の画面なので無視してよい。

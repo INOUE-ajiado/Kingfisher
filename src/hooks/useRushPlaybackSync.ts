@@ -1,96 +1,57 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { subscribeRushPlayback, writeRushPlaybackInDB } from '../engine/rushService';
 import {
+  commandSeek,
+  commandStep,
+  commandToggle,
   expectedPosition,
-  HOST_HEARTBEAT_MS,
   PlaybackState,
   shouldResync,
 } from '../engine/rushPlaybackSync';
 
-/**
- * ホスト (オペレーター) 側: 手元の <video> の再生・停止・シークを再生状態の文書へ書く。
- *
- * ⚠️ 開いただけでは書かないこと。読み込み直後の「停止・0 秒」を書くと、
- * 他の人が再生している最中にオペレーターが画面を開いただけで全員が止まる。
- * 実際に操作したとき (play / pause / seeked) と、再生中の定期的な位置合わせだけ書く。
- * そのため <video> に autoPlay を付けないこと (自動再生も「操作」として流れてしまう)。
- */
-export function useRushPlaybackBroadcaster(params: {
-  videoRef: React.RefObject<HTMLVideoElement | null>;
-  videoUrl: string | null;
-  playbackId: string | null;
-  enabled: boolean;
-  isLive: boolean;
-}): void {
-  const { videoRef, videoUrl, playbackId, enabled, isLive } = params;
-  const liveRef = useRef(isLive);
-  liveRef.current = isLive;
+export interface RushPlaybackControls {
+  /** 再生 / 一時停止 */
+  toggle: () => void;
+  /** 位置を動かす (再生中かどうかは変えない) */
+  seek: (position: number) => void;
+  /** コマ送り (送ったら止まる) */
+  step: (frames: number) => void;
+  /** 配信中 (LIVE) の切り替え */
+  setLive: (live: boolean) => void;
+}
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!enabled || !playbackId || !video) return;
-
-    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastWrite = 0;
-    const write = () => {
-      lastWrite = Date.now();
-      void writeRushPlaybackInDB(playbackId, {
-        playing: !video.paused && !video.ended,
-        position: video.currentTime,
-        live: liveRef.current,
-      }).catch((err) => console.error('Failed to write rush playback:', err));
-    };
-    // スクラブ中は seeked が連続するので、150ms に 1 回へ間引く (最後の 1 回は必ず書く)
-    const writeThrottled = () => {
-      const wait = 150 - (Date.now() - lastWrite);
-      if (wait <= 0) {
-        write();
-        return;
-      }
-      if (throttleTimer) clearTimeout(throttleTimer);
-      throttleTimer = setTimeout(write, wait);
-    };
-
-    const onPlay = () => write();
-    const onPause = () => write();
-    const onSeeked = () => writeThrottled();
-    video.addEventListener('play', onPlay);
-    video.addEventListener('pause', onPause);
-    video.addEventListener('seeked', onSeeked);
-
-    const heartbeat = setInterval(() => {
-      if (!video.paused && !video.ended) write();
-    }, HOST_HEARTBEAT_MS);
-
-    return () => {
-      video.removeEventListener('play', onPlay);
-      video.removeEventListener('pause', onPause);
-      video.removeEventListener('seeked', onSeeked);
-      clearInterval(heartbeat);
-      if (throttleTimer) clearTimeout(throttleTimer);
-    };
-  }, [videoRef, videoUrl, playbackId, enabled]);
+export interface RushSharedPlayback {
+  state: PlaybackState | null;
+  needsGesture: boolean;
+  unlock: () => void;
+  error: string | null;
+  controls: RushPlaybackControls;
 }
 
 /**
- * 視聴者側: 再生状態の文書に <video> を追従させる。
+ * ラッシュの再生を全員で揃える。
  *
- * ブラウザは操作なしの音声付き再生を止めることがある。止められたら needsGesture が立つので、
- * 画面にボタンを出して unlock() を呼ぶ (クリックの中で play するため許される)。
+ * 見ている人は全員 (社外の視聴者・社内の一般画面・オペレーター自身) この状態に追従する。
+ * canControl が true の人 (オペレーター) だけが controls で状態を書き換えられる。
+ *
+ * ⚠️ オペレーターも追従側に含めること。自分の <video> を直接動かして済ませると、
+ * オペレーターが 2 人いたときに別々のところを再生してしまう。
+ * ⚠️ <video> に autoPlay を付けないこと。開いただけで再生が始まり、全員の再生に割り込む。
  */
-export function useRushPlaybackFollower(params: {
+export function useRushSharedPlayback(params: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   videoUrl: string | null;
   playbackId: string | null;
-  enabled: boolean;
   fps: number;
-}): { state: PlaybackState | null; needsGesture: boolean; unlock: () => void; error: string | null } {
-  const { videoRef, videoUrl, playbackId, enabled, fps } = params;
+  canControl: boolean;
+}): RushSharedPlayback {
+  const { videoRef, videoUrl, playbackId, fps, canControl } = params;
   const [state, setState] = useState<PlaybackState | null>(null);
   const [needsGesture, setNeedsGesture] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestRef = useRef<{ state: PlaybackState; receivedAt: number } | null>(null);
 
+  /** 手元の <video> を、いるべき位置・再生状態へ合わせる */
   const apply = useCallback(() => {
     const video = videoRef.current;
     const latest = latestRef.current;
@@ -112,8 +73,23 @@ export function useRushPlaybackFollower(params: {
     }
   }, [videoRef, fps]);
 
+  /** 手元に先に反映してから書く (押した感じを待たせない)。書けたら全員へ届く */
+  const publish = useCallback(
+    (next: PlaybackState) => {
+      latestRef.current = { state: next, receivedAt: Date.now() };
+      setState(next);
+      apply();
+      if (!playbackId) return;
+      void writeRushPlaybackInDB(playbackId, next).catch((err) => {
+        console.error('Failed to write rush playback:', err);
+        setError('再生状態を配れませんでした。通信状態と権限を確認してください。');
+      });
+    },
+    [apply, playbackId]
+  );
+
   useEffect(() => {
-    if (!enabled || !playbackId) return;
+    if (!playbackId) return;
     setError(null);
     return subscribeRushPlayback(
       playbackId,
@@ -124,11 +100,11 @@ export function useRushPlaybackFollower(params: {
       },
       () => setError('再生状態を受け取れません。通信状態を確認してください。')
     );
-  }, [enabled, playbackId, apply]);
+  }, [playbackId, apply]);
 
   // 通信の揺れや読み込みの遅れで外れた分を、1 秒おきに直す
   useEffect(() => {
-    if (!enabled || !playbackId) return;
+    if (!playbackId) return;
     const timer = setInterval(apply, 1000);
     const video = videoRef.current;
     video?.addEventListener('loadedmetadata', apply);
@@ -136,7 +112,56 @@ export function useRushPlaybackFollower(params: {
       clearInterval(timer);
       video?.removeEventListener('loadedmetadata', apply);
     };
-  }, [enabled, playbackId, apply, videoRef, videoUrl]);
+  }, [playbackId, apply, videoRef, videoUrl]);
+
+  const currentFor = useCallback(
+    (): { state: PlaybackState; position: number; duration: number } => {
+      const video = videoRef.current;
+      const base = latestRef.current?.state ?? { playing: false, position: 0, live: false };
+      const duration = video?.duration ?? Number.NaN;
+      // 今の位置は手元の <video> を正とする (操作した人の画面が基準)
+      const position = video ? video.currentTime : base.position;
+      return { state: base, position, duration };
+    },
+    [videoRef]
+  );
+
+  const controls: RushPlaybackControls = {
+    toggle: useCallback(() => {
+      if (!canControl) return;
+      const { state: s, position, duration } = currentFor();
+      publish(commandToggle(s, position, duration));
+    }, [canControl, currentFor, publish]),
+
+    seek: useCallback(
+      (position: number) => {
+        if (!canControl) return;
+        const { state: s, duration } = currentFor();
+        publish(commandSeek(s, position, duration));
+      },
+      [canControl, currentFor, publish]
+    ),
+
+    step: useCallback(
+      (frames: number) => {
+        if (!canControl) return;
+        const { state: s, position, duration } = currentFor();
+        publish(commandStep(s, position, frames, fps, duration));
+      },
+      [canControl, currentFor, publish, fps]
+    ),
+
+    setLive: useCallback(
+      (live: boolean) => {
+        if (!canControl) return;
+        // ⚠️ 位置は必ず今の値で書き直すこと。古い位置のまま書くと、受け取った側は
+        // そこから経過分を足し直すので、全員の再生が巻き戻る
+        const { state: s, position } = currentFor();
+        publish({ ...s, live, position });
+      },
+      [canControl, currentFor, publish]
+    ),
+  };
 
   const unlock = useCallback(() => {
     const video = videoRef.current;
@@ -151,5 +176,5 @@ export function useRushPlaybackFollower(params: {
     );
   }, [videoRef, apply]);
 
-  return { state, needsGesture, unlock, error };
+  return { state, needsGesture, unlock, error, controls };
 }
