@@ -3,9 +3,11 @@ import { Link2, Copy, Check, Ban, Trash2, Users, KeyRound, Clock, Shuffle } from
 import {
   buildShareUrl,
   DEFAULT_SHARE_EXPIRY_MS,
+  isValidSharePassword,
   isViewerOnline,
+  MIN_SHARE_PASSWORD_LENGTH,
   SHARE_EXPIRY_OPTIONS,
-  shareStatus,
+  shareStatusFromDoc,
   ShareStatus,
 } from '../../engine/rushAccess';
 import { RushShareEntry } from '../../engine/rushService';
@@ -18,8 +20,6 @@ import {
   subscribeRushShare,
   subscribeRushShareViewers,
 } from '../../engine/rushShareService';
-
-const MIN_GUEST_PASSWORD_LENGTH = 4;
 
 interface RushSharePanelProps {
   roomId: string;
@@ -87,8 +87,8 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (password.trim().length < MIN_GUEST_PASSWORD_LENGTH) {
-      setError(`パスワードは ${MIN_GUEST_PASSWORD_LENGTH} 文字以上にしてください`);
+    if (!isValidSharePassword(password)) {
+      setError(`パスワードは ${MIN_SHARE_PASSWORD_LENGTH} 文字以上にしてください (URL を持つ人は何度でも試せます)`);
       return;
     }
     if (!playbackId) {
@@ -117,10 +117,9 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
     }
   };
 
-  const statusOf = (entry: RushShareEntry): ShareStatus => {
-    const doc = statuses[entry.shareId];
-    return shareStatus({ revoked: doc?.revoked ?? false, expiresAt: entry.expiresAt }, now);
-  };
+  // 文書ごと消えている共有 (null) は「終了」扱いにする
+  const statusOf = (entry: RushShareEntry): ShareStatus =>
+    shareStatusFromDoc(statuses[entry.shareId], entry.expiresAt, now);
 
   const closedEntries = shares.filter((s) => statusOf(s) !== 'open');
   const sorted = [...shares].sort((a, b) => b.createdAt - a.createdAt);

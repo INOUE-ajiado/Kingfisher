@@ -98,12 +98,13 @@ service cloud.firestore {
         return isStaff() && isOperatorOf(roomOf(shareData().roomId));
       }
 
+      // ⚠️ URL を知っていれば誰でも読める。入力画面に出すもの以外を置かせないこと
+      //    (発行した人のメールアドレスは合言葉の内側の access 文書に置く)
       allow get: if true;
       allow list: if false;
       allow create: if isStaff()
-        && request.resource.data.keys().hasOnly(['id', 'roomId', 'roomName', 'createdByEmail', 'createdAt', 'expiresAt', 'revoked'])
+        && request.resource.data.keys().hasOnly(['id', 'roomId', 'roomName', 'createdAt', 'expiresAt', 'revoked'])
         && request.resource.data.id == shareId
-        && request.resource.data.createdByEmail == myEmail()
         && request.resource.data.revoked == false
         && request.resource.data.expiresAt is number
         && request.resource.data.expiresAt <= request.time.toMillis() + 30 * 24 * 60 * 60 * 1000

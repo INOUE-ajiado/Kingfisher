@@ -22,6 +22,7 @@ import {
   normalizeRoomId,
 } from './rushAccess';
 import { PlaybackState } from './rushPlaybackSync';
+import { deleteRushShareInDB } from './rushShareService';
 
 /**
  * ラッシュルームのクラウド側。
@@ -125,6 +126,9 @@ export async function uploadRushVideoToStorage(
   const storageRef = ref(storage, path);
   const uploadTask = uploadBytesResumable(storageRef, file, {
     contentType: guessVideoContentType(file.name, file.type),
+    // ⚠️ これが無いと毎回取り直しになる。タイムラインのコマ切り出しは裏でもう一度
+    // 同じ動画を読むので、200MB の動画なら転送量がそのまま倍になる
+    cacheControl: 'private, max-age=3600',
   });
 
   return new Promise((resolve, reject) => {
@@ -417,12 +421,23 @@ export async function deleteRushRoomInDB(
 
   const { access, accessKey } = await verifyRushRoomAccess(room.id, password);
 
-  // 0. 外部共有を止める (ルームが消えたあとも URL から入れてしまわないように)
+  // 0. 外部共有を止めて消す (ルームが消えたあとも URL から入れてしまわないように)。
+  //    規則が「このルームのオペレーターか」をルームの文書で見るので、ルームより先に消す
   for (const share of access.shares || []) {
     try {
       await updateDoc(doc(db, SHARES, share.shareId), { revoked: true });
+      await deleteRushShareInDB(share.shareId, share.accessKey);
     } catch (err) {
-      console.warn('Failed to revoke rush share:', err);
+      console.warn('Failed to delete rush share:', err);
+    }
+  }
+
+  // 0b. 再生状態の文書
+  if (access.playbackId) {
+    try {
+      await deleteDoc(doc(db, PLAYBACK, access.playbackId));
+    } catch (err) {
+      console.warn('Failed to delete rush playback:', err);
     }
   }
 
