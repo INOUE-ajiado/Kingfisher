@@ -133,3 +133,24 @@ describe('外部共有', () => {
     expect(isViewerOnline(0, 75_000)).toBe(false);
   });
 });
+
+describe('外部共有の安全側の既定', () => {
+  it('短いパスワードは受け付けない (URL を持つ人は何度でも試せるため)', async () => {
+    const { isValidSharePassword, MIN_SHARE_PASSWORD_LENGTH } = await import('./rushAccess');
+    expect(MIN_SHARE_PASSWORD_LENGTH).toBeGreaterThanOrEqual(8);
+    expect(isValidSharePassword('abc')).toBe(false);
+    expect(isValidSharePassword('abcdefg')).toBe(false);
+    expect(isValidSharePassword('  abcdefg  ')).toBe(false);
+    expect(isValidSharePassword('abcdefgh')).toBe(true);
+  });
+
+  it('共有の文書が消えていたら「終了」として扱う', async () => {
+    const { shareStatusFromDoc } = await import('./rushAccess');
+    const future = Date.now() + 60_000;
+    expect(shareStatusFromDoc(null, future, Date.now())).toBe('revoked');
+    expect(shareStatusFromDoc(undefined, future, Date.now())).toBe('open');
+    expect(shareStatusFromDoc(undefined, Date.now() - 1, Date.now())).toBe('expired');
+    expect(shareStatusFromDoc({ revoked: true, expiresAt: future }, future, Date.now())).toBe('revoked');
+    expect(shareStatusFromDoc({ revoked: false, expiresAt: future }, 0, Date.now())).toBe('open');
+  });
+});

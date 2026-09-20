@@ -1,4 +1,4 @@
-import { arrayUnion, collection, doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import {
   computeShareAccessKey,
@@ -8,7 +8,8 @@ import {
   normalizeRoomId,
   shareStatus,
 } from './rushAccess';
-import { RushShareEntry } from './rushService';
+// 型だけの読み込み (rushService からもこの file を読むため、実体の循環を作らない)
+import type { RushShareEntry } from './rushService';
 
 /**
  * 外部共有 (社外の人がログインなしで視聴する URL)。
@@ -19,6 +20,9 @@ import { RushShareEntry } from './rushService';
  *   rushShares/{共有ID}/access/{鍵}/viewers/{視聴者ID}    視聴者の名前と最後の合図 (オペレーターだけが一覧できる)
  *
  * ⚠️ 外部用パスワードはルームの合言葉とは別にする。社内のルームの合言葉を社外へ渡さないため。
+ * ⚠️ 共有の見出し (rushShares/{共有ID}) は URL さえ知っていれば誰でも読める。
+ * 入力画面に出すもの (作品名・期限) 以外を置かないこと。発行した人のメールアドレスは
+ * 合言葉の内側 (access 文書) に置く。
  * ⚠️ 期限切れ・無効化は規則でも止める (access 文書と視聴者の登録)。
  * ただし一度受け取った動画の URL までは取り消せない (Storage のダウンロード URL は期限を持たない)。
  */
@@ -32,7 +36,6 @@ export interface RushShareDoc {
   id: string;
   roomId: string;
   roomName: string;
-  createdByEmail: string;
   createdAt: number;
   expiresAt: number;
   revoked: boolean;
@@ -42,6 +45,8 @@ export interface RushShareAccessDoc {
   videoUrl: string | null;
   videoName: string | null;
   playbackId: string | null;
+  /** 発行した人。合言葉を知っている側だけが読める */
+  createdByEmail: string;
   updatedAt: number;
 }
 
@@ -86,7 +91,6 @@ export async function createRushShareInDB(params: {
     id: shareId,
     roomId,
     roomName: params.roomName,
-    createdByEmail,
     createdAt: now,
     expiresAt,
     revoked: false,
@@ -98,9 +102,9 @@ export async function createRushShareInDB(params: {
     videoUrl: params.videoUrl,
     videoName: params.videoName,
     playbackId: params.playbackId,
+    createdByEmail,
     updatedAt: now,
   };
-  await setDoc(doc(db, SHARES, shareId, ACCESS, accessKey), access);
 
   const entry: RushShareEntry = {
     shareId,
@@ -110,11 +114,43 @@ export async function createRushShareInDB(params: {
     createdAt: now,
     createdByEmail,
   };
-  await updateDoc(doc(db, ROOMS, roomId, ACCESS, params.roomAccessKey), {
-    shares: arrayUnion(entry),
-    updatedAt: now,
-  });
+
+  try {
+    await setDoc(doc(db, SHARES, shareId, ACCESS, accessKey), access);
+    // ⚠️ ルームの控えまで書けて初めて「発行できた」。ここで失敗したまま放っておくと、
+    // URL は生きているのに一覧に出ず、画面から停止できない共有が残る
+    await updateDoc(doc(db, ROOMS, roomId, ACCESS, params.roomAccessKey), {
+      shares: arrayUnion(entry),
+      updatedAt: now,
+    });
+  } catch (err) {
+    await discardRushShare(shareId, accessKey);
+    throw err;
+  }
   return entry;
+}
+
+/** 作りかけの共有を取り消す (止めたうえで、書けたものは消す) */
+async function discardRushShare(shareId: string, accessKey: string): Promise<void> {
+  try {
+    await updateDoc(doc(db, SHARES, shareId), { revoked: true });
+  } catch (err) {
+    console.warn('Failed to revoke half-created rush share:', err);
+  }
+  try {
+    await deleteDoc(doc(db, SHARES, shareId, ACCESS, accessKey));
+    await deleteDoc(doc(db, SHARES, shareId));
+  } catch (err) {
+    console.warn('Failed to delete half-created rush share:', err);
+  }
+}
+
+/** 共有と、その下の視聴者の記録まで消す (ルームを削除するとき) */
+export async function deleteRushShareInDB(shareId: string, accessKey: string): Promise<void> {
+  const viewers = await getDocs(collection(db, SHARES, shareId, ACCESS, accessKey, VIEWERS));
+  await Promise.all(viewers.docs.map((d) => deleteDoc(d.ref)));
+  await deleteDoc(doc(db, SHARES, shareId, ACCESS, accessKey));
+  await deleteDoc(doc(db, SHARES, shareId));
 }
 
 /** 外部共有を止める。URL を開いている人の画面も、共有の文書の変化を見て止まる */

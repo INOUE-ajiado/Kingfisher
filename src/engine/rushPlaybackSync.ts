@@ -67,3 +67,66 @@ export function commandStep(
 ): PlaybackState {
   return { ...state, playing: false, position: clampPosition(position + frames / fps, duration) };
 }
+
+// ─── 書き込みの間引き ─────────────────────────────────────────────────────────
+
+/**
+ * 再生状態を書き込む間隔の下限 (ms)。
+ *
+ * ⚠️ 操作のたびにそのまま書かないこと。タイムラインのドラッグは 1 秒に数十回シークするので、
+ * そのまま書くと Firestore の 1 文書あたりの目安 (毎秒 1 回) を大きく超えて競合し、
+ * かえって同期が乱れる。参加者全員に通知が飛ぶので読み取りの費用も増える。
+ */
+export const PLAYBACK_WRITE_INTERVAL_MS = 200;
+
+export interface ThrottledWriter {
+  /** 書きたい状態を渡す。間隔が空いていればすぐ、詰まっていれば最後の 1 つだけ後で書く */
+  push: (state: PlaybackState) => void;
+  /** 溜まっているものを今すぐ書く (画面を閉じるときなど) */
+  flush: () => void;
+  cancel: () => void;
+}
+
+/**
+ * 最後の 1 つを必ず書く間引き。
+ * 途中の値は捨ててよい (再生状態は「今こうなっている」だけを表すため)。
+ */
+export function createThrottledWriter(
+  write: (state: PlaybackState) => void,
+  intervalMs: number = PLAYBACK_WRITE_INTERVAL_MS,
+  now: () => number = Date.now
+): ThrottledWriter {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: PlaybackState | null = null;
+  let lastWriteAt = -Infinity;
+
+  const flush = () => {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (!pending) return;
+    const state = pending;
+    pending = null;
+    lastWriteAt = now();
+    write(state);
+  };
+
+  return {
+    push: (state) => {
+      pending = state;
+      const wait = intervalMs - (now() - lastWriteAt);
+      if (wait <= 0) {
+        flush();
+        return;
+      }
+      if (!timer) timer = setTimeout(flush, wait);
+    },
+    flush,
+    cancel: () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
+    },
+  };
+}

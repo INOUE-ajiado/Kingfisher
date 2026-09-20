@@ -139,3 +139,29 @@ export const VIEWER_ONLINE_WINDOW_MS = 75 * 1000;
 export function isViewerOnline(lastSeenAt: number, now: number): boolean {
   return now - lastSeenAt < VIEWER_ONLINE_WINDOW_MS;
 }
+
+/**
+ * 外部共有のパスワードの最小の長さ。
+ *
+ * ⚠️ 短くしないこと。共有の URL を持っている人は、合言葉を何度でも試せる (回数制限は無い)。
+ * 8 文字あれば、自動生成の文字種 (31 種) でも総当たりは現実的でなくなる。
+ */
+export const MIN_SHARE_PASSWORD_LENGTH = 8;
+
+export function isValidSharePassword(password: string): boolean {
+  return password.trim().length >= MIN_SHARE_PASSWORD_LENGTH;
+}
+
+/**
+ * 一覧に出す共有の状態。
+ * doc が null (文書ごと消えている) なら、開いていないものとして扱う。
+ * undefined はまだ読めていない状態なので、期限だけで判断する。
+ */
+export function shareStatusFromDoc(
+  doc: { revoked?: boolean; expiresAt: number } | null | undefined,
+  fallbackExpiresAt: number,
+  now: number
+): ShareStatus {
+  if (doc === null) return 'revoked';
+  return shareStatus({ revoked: doc?.revoked ?? false, expiresAt: doc?.expiresAt ?? fallbackExpiresAt }, now);
+}

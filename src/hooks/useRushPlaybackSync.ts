@@ -4,9 +4,11 @@ import {
   commandSeek,
   commandStep,
   commandToggle,
+  createThrottledWriter,
   expectedPosition,
   PlaybackState,
   shouldResync,
+  ThrottledWriter,
 } from '../engine/rushPlaybackSync';
 
 export interface RushPlaybackControls {
@@ -50,6 +52,27 @@ export function useRushSharedPlayback(params: {
   const [needsGesture, setNeedsGesture] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestRef = useRef<{ state: PlaybackState; receivedAt: number } | null>(null);
+  const writerRef = useRef<ThrottledWriter | null>(null);
+
+  /**
+   * 書き込みは間引く。手元への反映は間引かないので、操作の手応えは変わらない。
+   * ⚠️ ドラッグ中のシークをそのまま書くと、毎秒数十回の書き込みになって同期が壊れる。
+   */
+  useEffect(() => {
+    if (!playbackId) return;
+    const writer = createThrottledWriter((next) => {
+      void writeRushPlaybackInDB(playbackId, next).catch((err) => {
+        console.error('Failed to write rush playback:', err);
+        setError('再生状態を配れませんでした。通信状態と権限を確認してください。');
+      });
+    });
+    writerRef.current = writer;
+    return () => {
+      // 画面を離れるときは、溜まっている最後の 1 つを書いてから止める
+      writer.flush();
+      if (writerRef.current === writer) writerRef.current = null;
+    };
+  }, [playbackId]);
 
   /** 手元の <video> を、いるべき位置・再生状態へ合わせる */
   const apply = useCallback(() => {
@@ -79,13 +102,9 @@ export function useRushSharedPlayback(params: {
       latestRef.current = { state: next, receivedAt: Date.now() };
       setState(next);
       apply();
-      if (!playbackId) return;
-      void writeRushPlaybackInDB(playbackId, next).catch((err) => {
-        console.error('Failed to write rush playback:', err);
-        setError('再生状態を配れませんでした。通信状態と権限を確認してください。');
-      });
+      writerRef.current?.push(next);
     },
-    [apply, playbackId]
+    [apply]
   );
 
   useEffect(() => {
