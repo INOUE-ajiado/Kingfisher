@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Video, Lock, User, Play, Volume2, VolumeX, Maximize, Minimize, Radio, AlertTriangle } from 'lucide-react';
 import { normalizeViewerName, shareStatus, MAX_VIEWER_NAME_LENGTH } from '../../engine/rushAccess';
 import {
@@ -112,7 +112,11 @@ export const RushGuestWatch: React.FC<{ shareId: string }> = ({ shareId }) => {
   }, [shareId]);
 
   return (
-    <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col">
+    <div
+      className={`w-full text-slate-100 flex flex-col ${
+        phase.kind === 'watch' ? 'fixed inset-0 bg-black overflow-hidden' : 'min-h-screen bg-slate-950'
+      }`}
+    >
       {phase.kind === 'loading' && (
         <div className="flex-1 flex items-center justify-center text-sm text-slate-400">読み込み中...</div>
       )}
@@ -291,6 +295,22 @@ const WatchScreen: React.FC<{
   const [currentTime, setCurrentTime] = useState(0);
   const [muted, setMuted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  /** 操作類を出しているか (動かしたら出して、しばらくすると消す) */
+  const [chromeVisible, setChromeVisible] = useState(true);
+  const chromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showChrome = useCallback(() => {
+    setChromeVisible(true);
+    if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current);
+    chromeTimerRef.current = setTimeout(() => setChromeVisible(false), 2500);
+  }, []);
+
+  useEffect(() => {
+    showChrome();
+    return () => {
+      if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current);
+    };
+  }, [showChrome]);
   const follower = useRushSharedPlayback({ videoRef, videoUrl, playbackId, fps: FPS, canControl: false });
 
   // 停止・期限切れを見張る
@@ -377,100 +397,104 @@ const WatchScreen: React.FC<{
           : '配信者が一時停止中です';
 
   return (
-    <div className="flex-1 flex flex-col">
-      <header className="flex items-center justify-between gap-2 px-4 py-2 bg-slate-900 border-b border-white/10 text-xs">
-        <div className="flex items-center gap-2 min-w-0">
-          <Video className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <span className="font-bold text-amber-200 truncate">{share.roomName}</span>
-          {state?.live && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold text-[10px] animate-pulse flex-shrink-0">
-              <Radio className="w-3 h-3" />
-              LIVE
+    <div
+      ref={containerRef}
+      className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden select-none"
+      onContextMenu={(e) => e.preventDefault()}
+      onMouseMove={showChrome}
+      onTouchStart={showChrome}
+    >
+      {videoUrl ? (
+        <video
+          key="rush-guest-video"
+          ref={videoRef}
+          src={videoUrl}
+          muted={muted}
+          playsInline
+          disablePictureInPicture
+          controlsList="nodownload noplaybackrate"
+          onTimeUpdate={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+          onSeeked={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+          className="w-full h-full object-contain"
+        />
+      ) : (
+        <p className="text-sm text-slate-500">映像はまだありません</p>
+      )}
+
+      {/* 透かし。映像の上に常に出す (消さない) */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
+        <div className="absolute -inset-1/2 flex flex-wrap content-start gap-x-24 gap-y-20 rotate-[-24deg] opacity-[0.13]">
+          {Array.from({ length: 60 }).map((_, i) => (
+            <span key={i} className="text-white text-sm font-bold whitespace-nowrap">
+              {watermarkText}
             </span>
-          )}
-        </div>
-        <span className="text-slate-400 truncate">視聴者: {name}</span>
-      </header>
-
-      <div
-        ref={containerRef}
-        className="relative flex-1 bg-black flex items-center justify-center overflow-hidden select-none"
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        {videoUrl ? (
-          <video
-            ref={videoRef}
-            src={videoUrl}
-            muted={muted}
-            playsInline
-            disablePictureInPicture
-            controlsList="nodownload noplaybackrate"
-            onTimeUpdate={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
-            onSeeked={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
-            className="w-full h-full max-h-[calc(100vh-96px)] object-contain"
-          />
-        ) : (
-          <p className="text-sm text-slate-500">映像はまだありません</p>
-        )}
-
-        {/* 透かし: 画面全体に薄く敷き、右下にもはっきり出す */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
-          <div className="absolute -inset-1/2 flex flex-wrap content-start gap-x-24 gap-y-20 rotate-[-24deg] opacity-[0.13]">
-            {Array.from({ length: 60 }).map((_, i) => (
-              <span key={i} className="text-white text-sm font-bold whitespace-nowrap">
-                {watermarkText}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div className="absolute bottom-3 right-3 pointer-events-none text-[11px] font-bold text-white/70 bg-black/40 px-2 py-0.5 rounded">
-          {watermarkText}
-        </div>
-
-        {/* 状態とタイムコード */}
-        <div className="absolute top-3 left-3 flex flex-col gap-1 items-start">
-          <span className="font-mono text-amber-300 font-bold text-xs bg-black/70 px-2 py-0.5 rounded border border-white/10">
-            {formatTC(currentTime)}
-          </span>
-          <span className="text-[10px] text-slate-300 bg-black/60 px-2 py-0.5 rounded">{statusText}</span>
-        </div>
-
-        {follower.needsGesture && (
-          <button
-            onClick={follower.unlock}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          >
-            <span className="flex items-center gap-2 px-5 py-3 rounded-full bg-amber-500 text-slate-950 font-bold text-sm shadow-2xl">
-              <Play className="w-5 h-5 fill-current" />
-              タップして視聴を開始
-            </span>
-          </button>
-        )}
-
-        <div className="absolute bottom-3 left-3 flex items-center gap-1.5 z-10">
-          <button
-            onClick={() => setMuted((m) => !m)}
-            title={muted ? '音を出す' : 'ミュート'}
-            className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-white border border-white/20"
-          >
-            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-          {document.fullscreenEnabled && (
-            <button
-              onClick={() => void toggleFullscreen()}
-              title={isFullscreen ? '元のサイズに戻す' : '全画面'}
-              className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-white border border-white/20"
-            >
-              {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
-            </button>
-          )}
+          ))}
         </div>
       </div>
 
-      <footer className="px-4 py-1.5 bg-slate-900 border-t border-white/10 text-[10px] text-slate-500 flex justify-between gap-2">
-        <span>再生・停止・位置は配信者の操作に合わせて動きます</span>
-        <span className="flex-shrink-0">有効期限 {formatDateTime(share.expiresAt)}</span>
-      </footer>
+      {/*
+        操作と説明は、動かしたときだけ出す。
+        ⚠️ ここにメニューや編集の機能を足さないこと。この画面はアプリを契約していない人が開く。
+      */}
+      <div
+        className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${
+          chromeVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        <div className="absolute top-0 left-0 right-0 flex items-start justify-between gap-2 p-3 bg-gradient-to-b from-black/70 to-transparent">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-mono text-amber-300 font-bold text-xs bg-black/70 px-2 py-0.5 rounded border border-white/10">
+              {formatTC(currentTime)}
+            </span>
+            {state?.live && (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold text-[10px] animate-pulse flex-shrink-0">
+                <Radio className="w-3 h-3" />
+                LIVE
+              </span>
+            )}
+            <span className="text-[11px] text-slate-200 truncate">{share.roomName}</span>
+          </div>
+          <span className="text-[10px] text-slate-300 bg-black/50 px-2 py-0.5 rounded whitespace-nowrap">
+            {statusText}
+          </span>
+        </div>
+
+        <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-2 p-3 bg-gradient-to-t from-black/70 to-transparent">
+          <div className="flex items-center gap-1.5 pointer-events-auto">
+            <button
+              onClick={() => setMuted((m) => !m)}
+              title={muted ? '音を出す' : 'ミュート'}
+              className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-white border border-white/20"
+            >
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+            {document.fullscreenEnabled && (
+              <button
+                onClick={() => void toggleFullscreen()}
+                title={isFullscreen ? '元のサイズに戻す' : '全画面'}
+                className="p-2 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-white border border-white/20"
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
+          <span className="text-[10px] font-bold text-white/70 bg-black/40 px-2 py-0.5 rounded whitespace-nowrap">
+            {watermarkText}
+          </span>
+        </div>
+      </div>
+
+      {follower.needsGesture && (
+        <button
+          onClick={follower.unlock}
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+        >
+          <span className="flex items-center gap-2 px-5 py-3 rounded-full bg-amber-500 text-slate-950 font-bold text-sm shadow-2xl">
+            <Play className="w-5 h-5 fill-current" />
+            タップして視聴を開始
+          </span>
+        </button>
+      )}
     </div>
   );
 };
