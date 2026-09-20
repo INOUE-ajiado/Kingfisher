@@ -25,8 +25,7 @@ interface RushSharePanelProps {
   roomId: string;
   roomName: string;
   roomAccessKey: string;
-  videoUrl: string | null;
-  videoName: string | null;
+  videoPath: string | null;
   playbackId: string | null;
   shares: RushShareEntry[];
   userEmail: string;
@@ -65,8 +64,7 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
   roomId,
   roomName,
   roomAccessKey,
-  videoUrl,
-  videoName,
+  videoPath,
   playbackId,
   shares,
   userEmail,
@@ -101,8 +99,7 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
         roomId,
         roomName,
         roomAccessKey,
-        videoUrl,
-        videoName,
+        videoPath,
         playbackId,
         password: password.trim(),
         expiresInMs,
@@ -187,7 +184,7 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
           </select>
         </label>
 
-        {!videoUrl && <p className="text-[10px] text-amber-300">このルームには動画がないため、共有しても映像は出ません。</p>}
+        {!videoPath && <p className="text-[10px] text-amber-300">このルームには動画がないため、共有しても映像は出ません。</p>}
         {error && <p className="text-[10px] text-red-300">{error}</p>}
 
         <button
@@ -255,8 +252,8 @@ const ShareRow: React.FC<{
   onDocRef.current = onDoc;
   useEffect(() => subscribeRushShare(entry.shareId, (doc) => onDocRef.current(doc)), [entry.shareId]);
   useEffect(
-    () => subscribeRushShareViewers(entry.shareId, entry.accessKey, setViewers),
-    [entry.shareId, entry.accessKey]
+    () => subscribeRushShareViewers(entry.shareId, setViewers),
+    [entry.shareId]
   );
 
   const handleCopy = async () => {

@@ -11,7 +11,7 @@ import {
   updateDoc,
   serverTimestamp,
 } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytesResumable, deleteObject } from 'firebase/storage';
 import { db, storage } from './firebase';
 import { RetakeItem } from './retakeStore';
 import {
@@ -22,6 +22,7 @@ import {
   normalizeRoomId,
 } from './rushAccess';
 import { PlaybackState } from './rushPlaybackSync';
+import { sealRushVideo } from './rushFunctions';
 import { deleteRushShareInDB } from './rushShareService';
 
 /**
@@ -64,8 +65,11 @@ export interface RushRoomDoc {
 }
 
 export interface RushAccessDoc {
-  videoUrl: string | null;
-  /** Storage 上の動画のパス。ルームを消すときに動画も消すために使う */
+  /**
+   * Storage 上の動画のパス。
+   * ⚠️ 動画の URL をここへ置かないこと。期限のない URL は取り消せない。
+   * 再生のたびに Cloud Functions から寿命 30 分の署名付き URL を受け取る。
+   */
   videoPath: string | null;
   videoName: string | null;
   /** アップロード時に手元の動画から作ったサムネイル (JPEG の data URL) */
@@ -88,7 +92,6 @@ export interface RushShareEntry {
 }
 
 export interface UploadedRushVideo {
-  url: string;
   path: string;
   name: string;
 }
@@ -144,8 +147,10 @@ export async function uploadRushVideoToStorage(
       },
       async () => {
         try {
-          const url = await getDownloadURL(uploadTask.snapshot.ref);
-          resolve({ url, path, name: file.name });
+          // ⚠️ ダウンロード URL を作らないこと。作ると期限のないトークンが動画に付き、
+          // 共有を止めても URL を知っている人が見続けられる
+          await sealRushVideo(path);
+          resolve({ path, name: file.name });
         } catch (err) {
           reject(err);
         }
@@ -193,7 +198,6 @@ export async function createRushRoomInDB(room: {
   const playbackId = await createRushPlaybackInDB(roomId);
   const accessKey = await computeRoomAccessKey(roomId, room.password);
   const access: RushAccessDoc = {
-    videoUrl: room.video?.url ?? null,
     videoPath: room.video?.path ?? null,
     videoName: room.video?.name ?? null,
     thumbnails: room.thumbnails,
@@ -426,7 +430,7 @@ export async function deleteRushRoomInDB(
   for (const share of access.shares || []) {
     try {
       await updateDoc(doc(db, SHARES, share.shareId), { revoked: true });
-      await deleteRushShareInDB(share.shareId, share.accessKey);
+      await deleteRushShareInDB(share.shareId);
     } catch (err) {
       console.warn('Failed to delete rush share:', err);
     }

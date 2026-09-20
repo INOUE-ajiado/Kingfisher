@@ -4,16 +4,16 @@ import { normalizeViewerName, shareStatus, MAX_VIEWER_NAME_LENGTH } from '../../
 import {
   fetchRushShare,
   heartbeatRushShareViewer,
-  registerRushShareViewer,
   RushShareDoc,
-  RushShareError,
   subscribeRushShare,
-  verifyRushShareAccess,
 } from '../../engine/rushShareService';
+import { describeFunctionError, joinRushShare, refreshRushShareVideoUrl } from '../../engine/rushFunctions';
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 
 const FPS = 24;
 const HEARTBEAT_MS = 30 * 1000;
+/** 署名が切れるこれだけ前に URL を取り直す */
+const URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const NAME_STORAGE_KEY = 'kingfisher_rush_guest_name';
 
 function formatTC(sec: number): string {
@@ -49,11 +49,17 @@ function saveName(name: string): void {
 }
 
 function describeError(err: unknown): string {
-  if (err instanceof RushShareError) return err.message;
   const code = (err as { code?: string } | null)?.code || '';
+  if (code.startsWith('functions/')) return describeFunctionError(err);
   if (code.includes('permission-denied')) return 'この共有は終了したか、有効期限が切れています。';
   if (code.includes('unavailable')) return '接続できません。ネットワークを確認してください。';
   return '読み込みに失敗しました。時間をおいてもう一度お試しください。';
+}
+
+/** 終了・期限切れなら入力画面ごと閉じる。それ以外は入力画面に留めて言い直す */
+function isClosedError(err: unknown): boolean {
+  const message = (err as { message?: string } | null)?.message || '';
+  return message.includes('終了しました') || message.includes('有効期限') || message.includes('見つかりませんでした');
 }
 
 type Phase =
@@ -63,10 +69,11 @@ type Phase =
   | {
       kind: 'watch';
       share: RushShareDoc;
-      accessKey: string;
+      password: string;
       viewerId: string;
       name: string;
-      videoUrl: string | null;
+      videoUrl: string;
+      videoUrlExpiresAt: number;
       playbackId: string | null;
     };
 
@@ -122,10 +129,11 @@ export const RushGuestWatch: React.FC<{ shareId: string }> = ({ shareId }) => {
         <WatchScreen
           shareId={shareId}
           share={phase.share}
-          accessKey={phase.accessKey}
+          password={phase.password}
           viewerId={phase.viewerId}
           name={phase.name}
-          videoUrl={phase.videoUrl}
+          initialVideoUrl={phase.videoUrl}
+          initialExpiresAt={phase.videoUrlExpiresAt}
           playbackId={phase.playbackId}
           onClosed={(message) => setPhase({ kind: 'closed', message })}
         />
@@ -150,10 +158,11 @@ const JoinForm: React.FC<{
   shareId: string;
   share: RushShareDoc;
   onJoined: (joined: {
-    accessKey: string;
+    password: string;
     viewerId: string;
     name: string;
-    videoUrl: string | null;
+    videoUrl: string;
+    videoUrlExpiresAt: number;
     playbackId: string | null;
   }) => void;
   onClosed: (message: string) => void;
@@ -177,15 +186,22 @@ const JoinForm: React.FC<{
     }
     setIsJoining(true);
     try {
-      const { access, accessKey } = await verifyRushShareAccess(shareId, password.trim());
-      const viewerId = crypto.randomUUID();
-      await registerRushShareViewer(shareId, accessKey, viewerId, normalized);
+      // 合言葉の照合と視聴者の登録はサーバー側 (試行回数を制限するため)。
+      // 動画は寿命 30 分の署名付き URL で受け取る
+      const joined = await joinRushShare(shareId, password.trim(), normalized);
       saveName(normalized);
-      onJoined({ accessKey, viewerId, name: normalized, videoUrl: access.videoUrl, playbackId: access.playbackId });
+      onJoined({
+        password: password.trim(),
+        viewerId: joined.viewerId,
+        name: normalized,
+        videoUrl: joined.videoUrl,
+        videoUrlExpiresAt: joined.expiresAt,
+        playbackId: joined.playbackId,
+      });
     } catch (err) {
       console.error('Failed to join rush share:', err);
-      if (err instanceof RushShareError && (err.reason === 'revoked' || err.reason === 'expired' || err.reason === 'not-found')) {
-        onClosed(err.message);
+      if (isClosedError(err)) {
+        onClosed(describeError(err));
         return;
       }
       setError(describeError(err));
@@ -260,13 +276,16 @@ const JoinForm: React.FC<{
 const WatchScreen: React.FC<{
   shareId: string;
   share: RushShareDoc;
-  accessKey: string;
+  password: string;
   viewerId: string;
   name: string;
-  videoUrl: string | null;
+  initialVideoUrl: string;
+  initialExpiresAt: number;
   playbackId: string | null;
   onClosed: (message: string) => void;
-}> = ({ shareId, share, accessKey, viewerId, name, videoUrl, playbackId, onClosed }) => {
+}> = ({ shareId, share, password, viewerId, name, initialVideoUrl, initialExpiresAt, playbackId, onClosed }) => {
+  const [videoUrl, setVideoUrl] = useState(initialVideoUrl);
+  const [urlExpiresAt, setUrlExpiresAt] = useState(initialExpiresAt);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -291,12 +310,43 @@ const WatchScreen: React.FC<{
   // 在席の合図 (ホストの一覧で「視聴中」と出る)
   useEffect(() => {
     const beat = () =>
-      void heartbeatRushShareViewer(shareId, accessKey, viewerId).catch((err) =>
+      void heartbeatRushShareViewer(shareId, viewerId).catch((err) =>
         console.warn('Failed to send viewer heartbeat:', err)
       );
     const timer = setInterval(beat, HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [shareId, accessKey, viewerId]);
+  }, [shareId, viewerId]);
+
+  /**
+   * 署名が切れる前に URL を取り直す。
+   * ⚠️ 差し替えると <video> は頭へ戻るので、位置と再生状態を戻す。細かいずれは同期が直す。
+   */
+  useEffect(() => {
+    const wait = Math.max(5000, urlExpiresAt - Date.now() - URL_REFRESH_MARGIN_MS);
+    const timer = setTimeout(async () => {
+      try {
+        const next = await refreshRushShareVideoUrl(shareId, password, viewerId);
+        const video = videoRef.current;
+        const resumeAt = video?.currentTime ?? 0;
+        const wasPlaying = video ? !video.paused : false;
+        setVideoUrl(next.videoUrl);
+        setUrlExpiresAt(next.expiresAt);
+        if (video) {
+          const restore = () => {
+            video.removeEventListener('loadedmetadata', restore);
+            video.currentTime = resumeAt;
+            if (wasPlaying) void video.play().catch(() => undefined);
+          };
+          video.addEventListener('loadedmetadata', restore);
+        }
+      } catch (err) {
+        console.error('Failed to refresh rush video url:', err);
+        if (isClosedError(err)) onClosed(describeError(err));
+        else setUrlExpiresAt((prev) => prev + 60 * 1000); // 1 分後にもう一度試す
+      }
+    }, wait);
+    return () => clearTimeout(timer);
+  }, [shareId, password, viewerId, urlExpiresAt, onClosed]);
 
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement);

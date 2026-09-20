@@ -116,27 +116,34 @@ service cloud.firestore {
         && request.resource.data.revoked == true;
       allow delete: if isStaff() && isOperatorOf(roomOf(resource.data.roomId));
 
-      match /access/{accessKey} {
-        allow get: if shareOpen() || isShareOperator();
-        allow list: if false;
-        allow create, update, delete: if isShareOperator();
-
-        match /viewers/{viewerId} {
-          allow create: if shareOpen()
-            && exists(/databases/$(database)/documents/rushShares/$(shareId)/access/$(accessKey))
-            && request.resource.data.keys().hasOnly(['name', 'joinedAt', 'lastSeenAt'])
-            && request.resource.data.name is string
-            && request.resource.data.name.size() > 0
-            && request.resource.data.name.size() <= 40
-            && request.resource.data.joinedAt is number
-            && request.resource.data.lastSeenAt is number;
-          allow update: if shareOpen()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
-            && request.resource.data.lastSeenAt is number;
-          // 視聴者どうしで名前が見えないよう、一覧はオペレーターだけ
-          allow read, delete: if isShareOperator();
-        }
+      // 視聴者。名乗るのは関数だけ (合言葉の照合と試行回数の制限をサーバーで行うため)。
+      // 視聴者にできるのは、自分の在席の合図を送ることだけ
+      match /viewers/{viewerId} {
+        allow create: if false;
+        allow update: if shareOpen()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt'])
+          && request.resource.data.lastSeenAt is number;
+        // 視聴者どうしで名前が見えないよう、一覧はオペレーターだけ
+        allow read: if isShareOperator();
+        allow delete: if isShareOperator();
       }
+    }
+
+    // 合言葉のハッシュと動画の在りか。
+    // ⚠️ 読ませないこと。読めると、合言葉を知らなくても動画へ辿り着ける。
+    // 発行と後始末はオペレーターができるが、中身はサーバー (Cloud Functions) だけが読む。
+    match /rushShareSecrets/{shareId} {
+      allow read: if false;
+      allow create: if isStaff()
+        && isOperatorOf(roomOf(request.resource.data.roomId))
+        && request.resource.data.keys().hasOnly(['roomId', 'passwordHash', 'videoPath', 'playbackId', 'createdByEmail', 'createdAt'])
+        && request.resource.data.passwordHash is string;
+      allow update, delete: if isStaff() && isOperatorOf(roomOf(resource.data.roomId));
+    }
+
+    // 合言葉の試行回数。サーバーだけが触る
+    match /rushShareAttempts/{shareId} {
+      allow read, write: if false;
     }
 
     // 削除の記録。書き込むだけで、画面からは読まない

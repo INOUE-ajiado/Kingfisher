@@ -1,0 +1,22 @@
+{
+  "name": "kingfisher-functions",
+  "description": "Kingfisher ラッシュの署名付き URL 発行と合言葉の照合",
+  "private": true,
+  "type": "commonjs",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.2",
+    "firebase-functions": "^6.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

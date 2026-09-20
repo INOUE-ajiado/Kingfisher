@@ -42,6 +42,7 @@ import {
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
 import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
+import { describeFunctionError, getRushRoomVideoUrl } from '../../engine/rushFunctions';
 import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
 import { RushThumbnailBar } from './RushThumbnailBar';
 
@@ -52,7 +53,6 @@ export const RushWindow: React.FC = () => {
   const roomPassword = usePaintStore((s) => s.roomPassword);
   const accessKey = usePaintStore((s) => s.rushAccessKey);
   const videoUrl = usePaintStore((s) => s.videoUrl);
-  const videoName = usePaintStore((s) => s.videoName);
   const thumbnails = usePaintStore((s) => s.rushThumbnails);
   const isMaximized = usePaintStore((s) => s.paneLayout.maximized === 'rush');
   const isLive = usePaintStore((s) => s.isLive);
@@ -90,6 +90,8 @@ export const RushWindow: React.FC = () => {
   const [sideTab, setSideTab] = useState<'retakes' | 'users' | 'share' | 'archives'>('retakes');
 
   // 再生の同期と外部共有 (ルームの access 文書から)
+  const [videoPath, setVideoPath] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [playbackId, setPlaybackId] = useState<string | null>(null);
   const [shares, setShares] = useState<RushShareEntry[]>([]);
   const attachingPlaybackRef = useRef(false);
@@ -137,7 +139,8 @@ export const RushWindow: React.FC = () => {
     attachingPlaybackRef.current = false;
     return subscribeRushAccess(roomId, accessKey, (access) => {
       if (!access) return;
-      setRushVideo(access.videoUrl, access.videoName, access.thumbnails || []);
+      setVideoPath(access.videoPath ?? null);
+      setRushVideo(usePaintStore.getState().videoUrl, access.videoName, access.thumbnails || []);
       setPlaybackId(access.playbackId ?? null);
       setShares(access.shares ?? []);
 
@@ -151,6 +154,39 @@ export const RushWindow: React.FC = () => {
       }
     });
   }, [roomId, accessKey, setRushVideo]);
+
+  /**
+   * 動画の URL を Cloud Functions から受け取り、署名が切れる前に取り直す。
+   * ⚠️ 期限付きなので保存しないこと。ここだけで持ち回る。
+   */
+  useEffect(() => {
+    if (!roomId || !accessKey || !videoPath) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const load = async () => {
+      try {
+        const { videoUrl: url, expiresAt } = await getRushRoomVideoUrl(roomId, accessKey);
+        if (cancelled) return;
+        setVideoError(null);
+        const store = usePaintStore.getState();
+        store.setRushVideo(url, store.videoName, store.rushThumbnails);
+        // 署名が切れる 5 分前に取り直す
+        timer = setTimeout(load, Math.max(5000, expiresAt - Date.now() - 5 * 60 * 1000));
+      } catch (err) {
+        console.error('Failed to get rush video url:', err);
+        if (cancelled) return;
+        setVideoError(describeFunctionError(err));
+        timer = setTimeout(load, 60 * 1000);
+      }
+    };
+    void load();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [roomId, accessKey, videoPath]);
 
   // リテイク指示 (オペレーター同士で共有し、退室しても残る)
   useEffect(() => {
@@ -628,7 +664,9 @@ ${describeBuild(readBuildEnv())}`}
             {/* 同期の状態 (オペレーターも同じ再生に合わせている) */}
             {videoUrl && (
               <div className={`absolute ${isHost ? 'top-10' : 'top-3'} left-3 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded border border-white/10 text-[10px] text-slate-300`}>
-                {playback.error
+                {videoError
+                  ? videoError
+                  : playback.error
                   ? playback.error
                   : !playbackId
                     ? '再生の同期を準備しています'
@@ -899,8 +937,7 @@ ${describeBuild(readBuildEnv())}`}
                 roomId={roomId}
                 roomName={roomName}
                 roomAccessKey={accessKey}
-                videoUrl={videoUrl}
-                videoName={videoName}
+                videoPath={videoPath}
                 playbackId={playbackId}
                 shares={shares}
                 userEmail={user?.email || ''}

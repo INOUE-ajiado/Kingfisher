@@ -189,7 +189,7 @@ export const RushAuthModal: React.FC = () => {
         roomName: trimmedName,
         password: password.trim(),
         accessKey,
-        videoUrl: video?.url ?? null,
+        videoUrl: null,
         videoName: video?.name ?? null,
         thumbnails,
         isLive: false,
@@ -259,7 +259,8 @@ export const RushAuthModal: React.FC = () => {
         roomName: room.roomName,
         password: password.trim(),
         accessKey,
-        videoUrl: access.videoUrl,
+        // 動画の URL は入室後に Cloud Functions から受け取る (寿命 30 分の署名付き)
+        videoUrl: null,
         videoName: access.videoName,
         thumbnails: access.thumbnails || [],
         isLive: !!room.isLive,
