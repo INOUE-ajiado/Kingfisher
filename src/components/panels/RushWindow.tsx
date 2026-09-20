@@ -42,6 +42,7 @@ import {
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
 import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
+import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
 import { RushThumbnailBar } from './RushThumbnailBar';
 
 export const RushWindow: React.FC = () => {
@@ -431,6 +432,19 @@ export const RushWindow: React.FC = () => {
     );
   }
 
+  /**
+   * 同期の状態。
+   * ⚠️ 「連動していない」の切り分けは、まずここを見ること。再生状態の文書に繋がっていない画面は、
+   * 自分の映像だけを動かしてしまう (古い版を掴んでいる / 権限が無い / 通信が切れている)。
+   */
+  const syncTone: 'ok' | 'warn' | 'error' = playback.error ? 'error' : playbackId && playback.state ? 'ok' : 'warn';
+  const syncLabel = syncTone === 'ok' ? '同期' : syncTone === 'warn' ? '同期 準備中' : '同期 エラー';
+  const syncTitle = playback.error
+    ? playback.error
+    : syncTone === 'ok'
+      ? `ルーム全員と同じ再生位置です (${isHost ? 'この画面から操作できます' : '視聴のみ'})`
+      : '再生状態にまだ繋がっていません。この画面の再生は他の人と揃いません';
+
   return (
     <div
       ref={playerContainerRef}
@@ -456,6 +470,22 @@ export const RushWindow: React.FC = () => {
 
         {/* コントロールボタン群 */}
         <div className="flex items-center gap-2">
+          {/* 同期の状態。ここが緑でなければ、その画面は全員の再生に従っていない */}
+          <span
+            title={`${syncTitle}
+${describeBuild(readBuildEnv())}`}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${
+              syncTone === 'ok'
+                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                : syncTone === 'warn'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                  : 'bg-red-500/15 text-red-300 border-red-500/40'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${syncTone === 'ok' ? 'bg-emerald-400' : syncTone === 'warn' ? 'bg-amber-400' : 'bg-red-400'}`} />
+            <span>{syncLabel}</span>
+          </span>
+
           {/* LIVE バッジ */}
           {isLive && (
             <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-600 text-white font-bold text-[10px] animate-pulse">
