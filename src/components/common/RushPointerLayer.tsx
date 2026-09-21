@@ -6,6 +6,7 @@ import {
   isPointerFresh,
   PointerPosition,
   pointerGlow,
+  smoothTowards,
   strokeOpacity,
   strokeWidthPx,
   toVideoPosition,
@@ -77,6 +78,15 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
   drawingRef.current = drawing;
   const isDrawingNowRef = useRef(false);
 
+  /**
+   * 描く位置は React の再描画ではなく、毎フレーム直接動かす。
+   * ⚠️ 届いた位置をそのまま置くとカクつく (届くのは 1 秒に十数回)。
+   * 目標へ少しずつ近づけることで、間を埋めてなめらかに見せる。
+   */
+  const dotNodes = useRef(new Map<string, HTMLDivElement | null>());
+  const targets = useRef(new Map<string, PointerPosition>());
+  const shown = useRef(new Map<string, PointerPosition>());
+
   /** 映像が実際に映っている四角 (枠の中での位置) */
   const contentRect = useCallback(() => {
     const container = containerRef.current;
@@ -118,6 +128,11 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
     const onMove = (e: PointerEvent) => {
       const position = positionOf(e);
       setLocal(position);
+      // 自分の分は追いつきを待たず、その場に置く
+      if (position) {
+        targets.current.set('self', position);
+        shown.current.set('self', position);
+      }
       if (position) {
         pointerSender.move(position);
         if (isDrawingNowRef.current) {
@@ -210,13 +225,48 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
       setStrokes([]);
       return;
     }
-    const stopPointers = subscribeRushPointers(playbackId, setRemote);
+    const stopPointers = subscribeRushPointers(playbackId, (list) => {
+      for (const p of list) {
+        if (typeof p.x === 'number' && typeof p.y === 'number' && p.id !== pointerId) {
+          targets.current.set(p.id, { x: p.x, y: p.y });
+        }
+      }
+      setRemote(list);
+    });
     const stopStrokes = subscribeRushStrokes(playbackId, setStrokes);
     return () => {
       stopPointers();
       stopStrokes();
     };
   }, [playbackId]);
+
+  /** 目標へ少しずつ近づけながら、DOM を直接動かす (React の再描画を挟まない) */
+  useEffect(() => {
+    let raf = 0;
+    let previous = performance.now();
+    const step = (now: number) => {
+      const delta = now - previous;
+      previous = now;
+      const container = containerRef.current;
+      const video = videoRef.current;
+      if (container) {
+        const box = container.getBoundingClientRect();
+        const content = videoContentRect(box.width, box.height, video?.videoWidth ?? 0, video?.videoHeight ?? 0);
+        for (const [id, node] of dotNodes.current) {
+          const target = targets.current.get(id);
+          if (!node || !target) continue;
+          const current = shown.current.get(id) ?? target;
+          const next = id === 'self' ? target : smoothTowards(current, target, delta);
+          shown.current.set(id, next);
+          const { left, top } = fromVideoPosition(next, content);
+          node.style.transform = `translate(${left}px, ${top}px) translate(-50%, -50%)`;
+        }
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [containerRef, videoRef]);
 
   // 消えかけの線を描き直すため、線があるあいだは定期的に更新する
   useEffect(() => {
@@ -262,6 +312,15 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
   }
 
   // 自分の線は手元のものを使う (届いた分から自分のものは除く)
+  // 出ていないポインターの控えは捨てる
+  const liveKeys = new Set(dots.map((d) => d.key));
+  for (const key of Array.from(targets.current.keys())) {
+    if (!liveKeys.has(key)) {
+      targets.current.delete(key);
+      shown.current.delete(key);
+    }
+  }
+
   const visibleStrokes = [...strokes.filter((stroke) => !pointerId || stroke.by !== pointerId), ...ownStrokes]
     .map((stroke) => ({ stroke, opacity: strokeOpacity(stroke.updatedAt, now) }))
     .filter(({ stroke, opacity }) => opacity > 0 && stroke.points.length > 0);
@@ -294,13 +353,21 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
       )}
 
       {dots.map((dot) => {
-        const { left, top } = fromVideoPosition(dot.position, content);
+        const start = fromVideoPosition(shown.current.get(dot.key) ?? dot.position, content);
         const glow = pointerGlow(dot.size, dot.blur);
         return (
           <div
             key={dot.key}
-            className="absolute pointer-events-none z-30"
-            style={{ left: `${left}px`, top: `${top}px`, transform: 'translate(-50%, -50%)' }}
+            ref={(node) => {
+              if (node) dotNodes.current.set(dot.key, node);
+              else dotNodes.current.delete(dot.key);
+            }}
+            className="absolute pointer-events-none z-30 will-change-transform"
+            style={{
+              left: 0,
+              top: 0,
+              transform: `translate(${start.left}px, ${start.top}px) translate(-50%, -50%)`,
+            }}
             aria-hidden
           >
             <div

@@ -61,7 +61,36 @@ export function fromVideoPosition(position: PointerPosition, content: Rect): { l
 }
 
 /** 位置を送る間隔 (ms)。滑らかさと通信量の折り合い */
-export const POINTER_SEND_INTERVAL_MS = 60;
+export const POINTER_SEND_INTERVAL_MS = 45;
+
+/**
+ * 受け取った位置へ追いつく速さ (ms)。小さいほどキビキビ、大きいほどなめらか。
+ *
+ * ⚠️ 届いた位置をそのまま描かないこと。届くのは 1 秒に十数回なので、
+ * そのまま置くと飛び飛びに見える (カクつく)。毎フレーム少しずつ近づける。
+ */
+export const POINTER_FOLLOW_MS = 90;
+
+/**
+ * 今いる位置から目標へ、経過時間ぶんだけ近づけた位置。
+ * フレームの間隔が変わっても速さが揃うよう、指数で近づける。
+ */
+export function smoothTowards(
+  current: PointerPosition,
+  target: PointerPosition,
+  deltaMs: number,
+  responseMs: number = POINTER_FOLLOW_MS
+): PointerPosition {
+  if (!(responseMs > 0) || !(deltaMs > 0)) return target;
+  const t = 1 - Math.exp(-deltaMs / responseMs);
+  const next = {
+    x: current.x + (target.x - current.x) * t,
+    y: current.y + (target.y - current.y) * t,
+  };
+  // ほぼ着いたら目標に合わせる (いつまでも極小の差を追わない)
+  if (Math.abs(target.x - next.x) < 0.0005 && Math.abs(target.y - next.y) < 0.0005) return target;
+  return next;
+}
 
 /** この時間だけ更新が無ければ、送り手が離れたとみなして消す */
 export const POINTER_STALE_MS = 5000;
