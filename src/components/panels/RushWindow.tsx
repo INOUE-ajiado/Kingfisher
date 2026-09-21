@@ -43,6 +43,7 @@ import {
 import { subscribeRushShareViewers, RushShareViewer } from '../../engine/rushShareService';
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
+import { RushPointerLayer } from '../common/RushPointerLayer';
 import {
   buildRushInviteUrl,
   hasOperatorPrivilege,
@@ -77,6 +78,8 @@ export const RushWindow: React.FC = () => {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  /** 映像を載せている枠 (共有するポインターの位置は、この中の映像を基準にする) */
+  const videoAreaRef = useRef<HTMLDivElement | null>(null);
   /** 最後にクリックした場所がこの面の中か (並べて表示しているときのキー操作の宛先) */
   const isPointerInsideRef = useRef(false);
 
@@ -648,7 +651,12 @@ ${describeBuild(readBuildEnv())}`}
       <div className="flex-1 flex overflow-hidden w-full">
         {/* ビデオプレイヤー領域 */}
         <div className="flex-1 flex flex-col bg-black relative w-full h-full min-w-0">
-          <div className="flex-1 flex items-center justify-center relative overflow-hidden group w-full h-full">
+          <div
+            ref={videoAreaRef}
+            className={`flex-1 flex items-center justify-center relative overflow-hidden group w-full h-full ${
+              isHost && videoUrl ? 'cursor-none' : ''
+            }`}
+          >
             {videoUrl ? (
               <video
                 ref={videoRef}
@@ -673,6 +681,14 @@ ${describeBuild(readBuildEnv())}`}
                 </p>
               </div>
             )}
+
+            {/* 配信で共有する赤いポインター。オペレーターが映像の上にいる間だけ出る */}
+            <RushPointerLayer
+              playbackId={playbackId}
+              containerRef={videoAreaRef}
+              videoRef={videoRef}
+              canBroadcast={isHost}
+            />
 
             {/* タイムコード表示 (オペレーター時のみ) */}
             {isHost && (

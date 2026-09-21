@@ -9,6 +9,7 @@ import {
 } from '../../engine/rushShareService';
 import { describeFunctionError, joinRushShare, refreshRushShareVideoUrl } from '../../engine/rushFunctions';
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
+import { RushPointerLayer } from '../common/RushPointerLayer';
 
 const FPS = 24;
 const HEARTBEAT_MS = 30 * 1000;
@@ -430,6 +431,9 @@ const WatchScreen: React.FC<{
       ) : (
         <p className="text-sm text-slate-500">映像はまだありません</p>
       )}
+
+      {/* 配信者が指している場所 (赤いポインター) */}
+      <RushPointerLayer playbackId={playbackId} containerRef={containerRef} videoRef={videoRef} canBroadcast={false} />
 
       {/*
         操作と説明は、動かしたときだけ出す。

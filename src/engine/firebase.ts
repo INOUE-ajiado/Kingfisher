@@ -9,6 +9,8 @@ const firebaseConfig = {
   authDomain: "kingfisher-paint-2026.firebaseapp.com",
   projectId: "kingfisher-paint-2026",
   storageBucket: "kingfisher-paint-2026.firebasestorage.app",
+  // 配信中のマウスポインターの共有に使う (src/engine/rushPointer.ts)
+  databaseURL: "https://kingfisher-paint-2026-default-rtdb.asia-southeast1.firebasedatabase.app",
   messagingSenderId: "274734495597",
   appId: "1:274734495597:web:e1d3bca484e279c2abcc64"
 };
