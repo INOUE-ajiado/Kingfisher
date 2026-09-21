@@ -121,12 +121,12 @@ describe('ぼかしと描画', () => {
     expect(clampStrokeSize(0)).toBe(2);
   });
 
-  it('描いた線は 10 秒で消え、最後の 2 秒で薄くなる', async () => {
+  it('描いた線は 3 秒で消え、最後の 1 秒で薄くなる', async () => {
     const { strokeOpacity } = await import('./rushPointerMath');
     expect(strokeOpacity(0, 0)).toBe(1);
-    expect(strokeOpacity(0, 7999)).toBe(1);
-    expect(strokeOpacity(0, 9000)).toBeCloseTo(0.5);
-    expect(strokeOpacity(0, 10000)).toBe(0);
+    expect(strokeOpacity(0, 1999)).toBe(1);
+    expect(strokeOpacity(0, 2500)).toBeCloseTo(0.5);
+    expect(strokeOpacity(0, 3000)).toBe(0);
     expect(strokeOpacity(0, 99999)).toBe(0);
   });
 
