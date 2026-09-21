@@ -51,7 +51,8 @@ function buildGuestInvite(roomName: string, entry: RushShareEntry): string {
     `URL: ${buildShareUrl(window.location.origin, entry.shareId)}`,
     `パスワード: ${entry.password}`,
     `有効期限: ${formatDateTime(entry.expiresAt)} まで`,
-    '※ URL を開き、お名前とパスワードを入力するとご覧いただけます。',
+    '※ URL を開き、お名前とパスワードを入力するとご覧いただけます。ログインは不要です。',
+    '※ URL が途中で改行されると開けません。1 行のままお使いください。',
     '※ 本映像は関係者限りです。URL・パスワードの転送、録画・撮影はご遠慮ください。',
   ].join('\n');
 }
@@ -144,6 +145,8 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
         <p className="text-[10px] text-slate-400 leading-normal">
           受け取った人は Google ログインなしで、名前とパスワードを入れて視聴できます。
           再生・停止・シークはこの画面の操作に合わせて動きます。
+          <strong className="text-amber-300">社外の方へは、必ずここで発行した URL をお渡しください</strong>
+          (画面上部の「社内招待」はログインが必要です)。
         </p>
 
         <label className="block">

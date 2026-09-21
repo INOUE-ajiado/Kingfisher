@@ -106,6 +106,17 @@ export function parseShareIdFromPath(pathname: string): string | null {
   return m ? m[1] : null;
 }
 
+/**
+ * 視聴ページとして扱うパスか。
+ *
+ * ⚠️ ID が読めない形でも true を返すこと。ここで false にすると、URL がメールで折り返されて
+ * 途中で切れていた場合に、社外の人へペイント画面 (ログイン必須) が出てしまう。
+ * ID が変なら、視聴ページ側で「URL が途中で切れていませんか」と案内する。
+ */
+export function isWatchPath(pathname: string): boolean {
+  return /^\/watch(\/|$)/.test(pathname);
+}
+
 export const SHARE_EXPIRY_OPTIONS: { label: string; ms: number }[] = [
   { label: '1 時間', ms: 60 * 60 * 1000 },
   { label: '24 時間', ms: 24 * 60 * 60 * 1000 },

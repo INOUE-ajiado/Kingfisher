@@ -90,6 +90,14 @@ export const RushGuestWatch: React.FC<{ shareId: string }> = ({ shareId }) => {
 
   useEffect(() => {
     let cancelled = false;
+    if (!shareId) {
+      // メールなどで URL が折り返されて切れている場合がある
+      setPhase({
+        kind: 'closed',
+        message: '視聴用の URL が正しくありません。URL が途中で切れていないか、案内のメッセージをご確認ください。',
+      });
+      return;
+    }
     fetchRushShare(shareId)
       .then((share) => {
         if (cancelled) return;

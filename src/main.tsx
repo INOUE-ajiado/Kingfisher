@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { logDebug } from './engine/debugLog.ts';
-import { parseShareIdFromPath } from './engine/rushAccess.ts';
+import { isWatchPath, parseShareIdFromPath } from './engine/rushAccess.ts';
 import './index.css';
 
 /**
@@ -12,7 +12,9 @@ const App = lazy(() => import('./App.tsx'));
 const RushGuestWatch = lazy(() =>
   import('./components/guest/RushGuestWatch.tsx').then((m) => ({ default: m.RushGuestWatch }))
 );
-const guestShareId = parseShareIdFromPath(window.location.pathname);
+// /watch/... は必ず視聴ページ。ID が読めない形でも、ペイント画面 (ログイン必須) へ落とさない
+const isGuestWatch = isWatchPath(window.location.pathname);
+const guestShareId = parseShareIdFromPath(window.location.pathname) ?? '';
 
 /**
  * 握られなかった例外を DEBUG ログへ流す。
@@ -39,6 +41,6 @@ window.addEventListener('error', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Suspense fallback={null}>{guestShareId ? <RushGuestWatch shareId={guestShareId} /> : <App />}</Suspense>
+    <Suspense fallback={null}>{isGuestWatch ? <RushGuestWatch shareId={guestShareId} /> : <App />}</Suspense>
   </React.StrictMode>,
 );
