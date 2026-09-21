@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Video,
   Volume2,
@@ -18,6 +18,7 @@ import {
   Shield,
   UserPlus,
   UserX,
+  MousePointer2,
   Link2,
   Play,
 } from 'lucide-react';
@@ -45,6 +46,16 @@ import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
 import { RushPointerLayer } from '../common/RushPointerLayer';
 import {
+  clampPointerSize,
+  defaultPointerColor,
+  DEFAULT_POINTER_SIZE,
+  isPointerColor,
+  MAX_POINTER_SIZE,
+  MIN_POINTER_SIZE,
+  POINTER_COLORS,
+  withAlpha,
+} from '../../engine/rushPointerMath';
+import {
   buildRushInviteUrl,
   hasOperatorPrivilege,
   isViewerOnline,
@@ -54,6 +65,28 @@ import {
 import { describeFunctionError, getRushRoomVideoUrl } from '../../engine/rushFunctions';
 import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
 import { RushThumbnailBar } from './RushThumbnailBar';
+
+const POINTER_SETTING_KEY = 'kingfisher_rush_pointer_v1';
+
+/** ポインターの見た目の覚え書き (この端末だけ。読めなくても動く) */
+function readPointerSetting(key: 'color' | 'size', fallback: string): string {
+  try {
+    const raw = localStorage.getItem(POINTER_SETTING_KEY);
+    const value = raw ? (JSON.parse(raw) as Record<string, string>)[key] : null;
+    if (key === 'color') return value && isPointerColor(value) ? value : fallback;
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writePointerSetting(color: string, size: number): void {
+  try {
+    localStorage.setItem(POINTER_SETTING_KEY, JSON.stringify({ color, size: String(size) }));
+  } catch {
+    // 覚えられなくても、その場では使える
+  }
+}
 
 export const RushWindow: React.FC = () => {
   const roomId = usePaintStore((s) => s.roomId);
@@ -80,6 +113,22 @@ export const RushWindow: React.FC = () => {
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   /** 映像を載せている枠 (共有するポインターの位置は、この中の映像を基準にする) */
   const videoAreaRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * 共有するポインターの見た目。既定の色は人ごとに変える。
+   * 選んだ色と大きさはこの端末に覚えておく (人によって好みが違うため)。
+   */
+  const myEmail = normalizeEmail(user?.email);
+  const [pointerColor, setPointerColor] = useState(() => readPointerSetting('color', defaultPointerColor(myEmail)));
+  const [pointerSize, setPointerSize] = useState(() =>
+    clampPointerSize(Number(readPointerSetting('size', String(DEFAULT_POINTER_SIZE))))
+  );
+  const [pointerPanelOpen, setPointerPanelOpen] = useState(false);
+  const pointerIdRef = useRef(`ptr_${Math.random().toString(36).slice(2, 10)}`);
+  const pointerProfile = useMemo(
+    () => ({ name: user?.displayName || myEmail.split('@')[0] || 'オペレーター', color: pointerColor, size: pointerSize }),
+    [user?.displayName, myEmail, pointerColor, pointerSize]
+  );
   /** 最後にクリックした場所がこの面の中か (並べて表示しているときのキー操作の宛先) */
   const isPointerInsideRef = useRef(false);
 
@@ -103,6 +152,10 @@ export const RushWindow: React.FC = () => {
   // リテイクメモ入力フォーム
   const [inputText, setInputText] = useState('');
   const [selectedTag, setSelectedTag] = useState<string>('撮影');
+
+  useEffect(() => {
+    writePointerSetting(pointerColor, pointerSize);
+  }, [pointerColor, pointerSize]);
 
   // 参加者 (社内は participants、社外は共有ごとの viewers)
   const [participants, setParticipants] = useState<RushParticipantDoc[]>([]);
@@ -609,6 +662,72 @@ ${describeBuild(readBuildEnv())}`}
             </button>
           )}
 
+          {/* 共有するポインターの色と大きさ (オペレーターのみ) */}
+          {isHost && (
+            <div className="relative">
+              <button
+                onClick={() => setPointerPanelOpen((open) => !open)}
+                title="共有ポインターの色と大きさ"
+                className={`p-1.5 rounded border transition-colors ${
+                  pointerPanelOpen
+                    ? 'border-white/30 bg-white/10 text-white'
+                    : 'border-white/10 bg-slate-950 text-slate-300 hover:text-white'
+                }`}
+              >
+                <MousePointer2 className="w-3.5 h-3.5" style={{ color: pointerColor }} />
+              </button>
+
+              {pointerPanelOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 w-56 p-3 rounded-lg bg-slate-900 border border-white/15 shadow-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-300">共有ポインター</span>
+                    <span
+                      className="rounded-full"
+                      style={{
+                        width: pointerSize,
+                        height: pointerSize,
+                        background: withAlpha(pointerColor, 0.95),
+                        boxShadow: `0 0 ${Math.round(pointerSize * 0.6)}px ${Math.round(pointerSize * 0.25)}px ${withAlpha(pointerColor, 0.6)}`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {POINTER_COLORS.map((c) => (
+                      <button
+                        key={c.value}
+                        onClick={() => setPointerColor(c.value)}
+                        title={c.label}
+                        className={`w-6 h-6 rounded-full border-2 transition-transform ${
+                          pointerColor === c.value ? 'border-white scale-110' : 'border-white/20 hover:border-white/50'
+                        }`}
+                        style={{ background: c.value }}
+                      />
+                    ))}
+                  </div>
+
+                  <label className="block">
+                    <span className="text-[10px] text-slate-400">大きさ ({pointerSize}px)</span>
+                    <input
+                      type="range"
+                      min={MIN_POINTER_SIZE}
+                      max={MAX_POINTER_SIZE}
+                      value={pointerSize}
+                      onChange={(e) => setPointerSize(clampPointerSize(Number(e.target.value)))}
+                      onPointerUp={(e) => e.currentTarget.blur()}
+                      className="w-full accent-amber-400"
+                    />
+                  </label>
+
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    映像の上にカーソルを乗せている間だけ、この色で全員に見えます。
+                    オペレーターが複数いるときは名前も出ます。
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/*
             映像の音のミュート。
             ⚠️ 通話の機能ではない。音声通話は実装していないので、マイクの絵のボタンを置かないこと
@@ -688,6 +807,8 @@ ${describeBuild(readBuildEnv())}`}
               containerRef={videoAreaRef}
               videoRef={videoRef}
               canBroadcast={isHost}
+              profile={pointerProfile}
+              pointerId={pointerIdRef.current}
             />
 
             {/* タイムコード表示 (オペレーター時のみ) */}
