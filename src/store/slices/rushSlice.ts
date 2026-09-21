@@ -2,14 +2,6 @@ import { StateCreator } from 'zustand';
 import { RetakeItem } from '../../engine/retakeStore';
 import { PaintStore } from '../types';
 
-export interface RushParticipant {
-  id: string;
-  name: string;
-  isHost: boolean;
-  isMuted: boolean;
-  joinedAt: number;
-}
-
 export interface RushArchiveItem {
   id: string;
   title: string;
@@ -44,7 +36,6 @@ export interface RushState {
   recordingStartTime: number | null;
   isMicMuted: boolean;
   isSpeakerMuted: boolean;
-  participants: RushParticipant[];
   retakeItems: RetakeItem[];
   archives: RushArchiveItem[];
   isAuthModalOpen: boolean;
@@ -72,7 +63,6 @@ export interface RushActions {
   setRushRecording: (isRecording: boolean) => void;
   setRushMicMuted: (muted: boolean) => void;
   setRushSpeakerMuted: (muted: boolean) => void;
-  updateRushParticipants: (participants: RushParticipant[]) => void;
   updateRushRetakes: (items: RetakeItem[]) => void;
   addRushArchive: (archive: RushArchiveItem) => void;
   openRushAuthModal: (mode: 'create' | 'join') => void;
@@ -98,7 +88,6 @@ export const initialRushState: RushState = {
   recordingStartTime: null,
   isMicMuted: false,
   isSpeakerMuted: false,
-  participants: [],
   retakeItems: [],
   archives: [],
   isAuthModalOpen: false,
@@ -176,8 +165,6 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
   setRushMicMuted: (muted) => set((state) => ({ ...state, isMicMuted: muted })),
 
   setRushSpeakerMuted: (muted) => set((state) => ({ ...state, isSpeakerMuted: muted })),
-
-  updateRushParticipants: (participants) => set((state) => ({ ...state, participants })),
 
   updateRushRetakes: (items) => set((state) => ({ ...state, retakeItems: items })),
 
