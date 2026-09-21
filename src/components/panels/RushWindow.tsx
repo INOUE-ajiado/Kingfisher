@@ -19,6 +19,8 @@ import {
   UserPlus,
   UserX,
   MousePointer2,
+  Pencil,
+  Eraser,
   Link2,
   Play,
 } from 'lucide-react';
@@ -46,13 +48,20 @@ import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
 import { RushPointerLayer } from '../common/RushPointerLayer';
 import {
+  clampPointerBlur,
   clampPointerSize,
+  clampStrokeSize,
   defaultPointerColor,
+  DEFAULT_POINTER_BLUR,
   DEFAULT_POINTER_SIZE,
+  DEFAULT_STROKE_SIZE,
   isPointerColor,
   MAX_POINTER_SIZE,
+  MAX_STROKE_SIZE,
   MIN_POINTER_SIZE,
+  MIN_STROKE_SIZE,
   POINTER_COLORS,
+  pointerGlow,
   withAlpha,
 } from '../../engine/rushPointerMath';
 import {
@@ -69,7 +78,7 @@ import { RushThumbnailBar } from './RushThumbnailBar';
 const POINTER_SETTING_KEY = 'kingfisher_rush_pointer_v1';
 
 /** ポインターの見た目の覚え書き (この端末だけ。読めなくても動く) */
-function readPointerSetting(key: 'color' | 'size', fallback: string): string {
+function readPointerSetting(key: 'color' | 'size' | 'blur' | 'strokeSize', fallback: string): string {
   try {
     const raw = localStorage.getItem(POINTER_SETTING_KEY);
     const value = raw ? (JSON.parse(raw) as Record<string, string>)[key] : null;
@@ -80,9 +89,12 @@ function readPointerSetting(key: 'color' | 'size', fallback: string): string {
   }
 }
 
-function writePointerSetting(color: string, size: number): void {
+function writePointerSetting(color: string, size: number, blur: number, strokeSize: number): void {
   try {
-    localStorage.setItem(POINTER_SETTING_KEY, JSON.stringify({ color, size: String(size) }));
+    localStorage.setItem(
+      POINTER_SETTING_KEY,
+      JSON.stringify({ color, size: String(size), blur: String(blur), strokeSize: String(strokeSize) })
+    );
   } catch {
     // 覚えられなくても、その場では使える
   }
@@ -123,11 +135,25 @@ export const RushWindow: React.FC = () => {
   const [pointerSize, setPointerSize] = useState(() =>
     clampPointerSize(Number(readPointerSetting('size', String(DEFAULT_POINTER_SIZE))))
   );
+  const [pointerBlur, setPointerBlur] = useState(() =>
+    clampPointerBlur(Number(readPointerSetting('blur', String(DEFAULT_POINTER_BLUR))))
+  );
+  const [strokeSize, setStrokeSize] = useState(() =>
+    clampStrokeSize(Number(readPointerSetting('strokeSize', String(DEFAULT_STROKE_SIZE))))
+  );
+  const [isDrawing, setIsDrawing] = useState(false);
+  const clearStrokesRef = useRef<(() => void) | null>(null);
   const [pointerPanelOpen, setPointerPanelOpen] = useState(false);
   const pointerIdRef = useRef(`ptr_${Math.random().toString(36).slice(2, 10)}`);
   const pointerProfile = useMemo(
-    () => ({ name: user?.displayName || myEmail.split('@')[0] || 'オペレーター', color: pointerColor, size: pointerSize }),
-    [user?.displayName, myEmail, pointerColor, pointerSize]
+    () => ({
+      name: user?.displayName || myEmail.split('@')[0] || 'オペレーター',
+      color: pointerColor,
+      size: pointerSize,
+      blur: pointerBlur,
+      strokeSize,
+    }),
+    [user?.displayName, myEmail, pointerColor, pointerSize, pointerBlur, strokeSize]
   );
   /** 最後にクリックした場所がこの面の中か (並べて表示しているときのキー操作の宛先) */
   const isPointerInsideRef = useRef(false);
@@ -154,8 +180,8 @@ export const RushWindow: React.FC = () => {
   const [selectedTag, setSelectedTag] = useState<string>('撮影');
 
   useEffect(() => {
-    writePointerSetting(pointerColor, pointerSize);
-  }, [pointerColor, pointerSize]);
+    writePointerSetting(pointerColor, pointerSize, pointerBlur, strokeSize);
+  }, [pointerColor, pointerSize, pointerBlur, strokeSize]);
 
   // 参加者 (社内は participants、社外は共有ごとの viewers)
   const [participants, setParticipants] = useState<RushParticipantDoc[]>([]);
@@ -674,7 +700,11 @@ ${describeBuild(readBuildEnv())}`}
                     : 'border-white/10 bg-slate-950 text-slate-300 hover:text-white'
                 }`}
               >
-                <MousePointer2 className="w-3.5 h-3.5" style={{ color: pointerColor }} />
+                {isDrawing ? (
+                  <Pencil className="w-3.5 h-3.5" style={{ color: pointerColor }} />
+                ) : (
+                  <MousePointer2 className="w-3.5 h-3.5" style={{ color: pointerColor }} />
+                )}
               </button>
 
               {pointerPanelOpen && (
@@ -686,8 +716,11 @@ ${describeBuild(readBuildEnv())}`}
                       style={{
                         width: pointerSize,
                         height: pointerSize,
-                        background: withAlpha(pointerColor, 0.95),
-                        boxShadow: `0 0 ${Math.round(pointerSize * 0.6)}px ${Math.round(pointerSize * 0.25)}px ${withAlpha(pointerColor, 0.6)}`,
+                        background: `radial-gradient(circle at 50% 50%, ${withAlpha(pointerColor, 1)} 0%, ${withAlpha(
+                          pointerColor,
+                          0.95
+                        )} ${pointerGlow(pointerSize, pointerBlur).core}%, ${withAlpha(pointerColor, 0)} 100%)`,
+                        boxShadow: `0 0 ${pointerGlow(pointerSize, pointerBlur).blurPx}px ${pointerGlow(pointerSize, pointerBlur).spread}px ${withAlpha(pointerColor, 0.55)}`,
                       }}
                     />
                   </div>
@@ -707,7 +740,7 @@ ${describeBuild(readBuildEnv())}`}
                   </div>
 
                   <label className="block">
-                    <span className="text-[10px] text-slate-400">大きさ ({pointerSize}px)</span>
+                    <span className="text-[10px] text-slate-400">ポインターの大きさ ({pointerSize}px)</span>
                     <input
                       type="range"
                       min={MIN_POINTER_SIZE}
@@ -719,9 +752,61 @@ ${describeBuild(readBuildEnv())}`}
                     />
                   </label>
 
+                  <label className="block">
+                    <span className="text-[10px] text-slate-400">
+                      ぼかし ({Math.round(pointerBlur * 100)}%)
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      value={Math.round(pointerBlur * 100)}
+                      onChange={(e) => setPointerBlur(clampPointerBlur(Number(e.target.value) / 100))}
+                      onPointerUp={(e) => e.currentTarget.blur()}
+                      className="w-full accent-amber-400"
+                    />
+                  </label>
+
+                  <div className="pt-2 border-t border-white/10 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setIsDrawing((on) => !on)}
+                        className={`flex-1 py-1 rounded text-[10px] font-bold flex items-center justify-center gap-1 transition-colors ${
+                          isDrawing
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-white/10 hover:bg-white/20 text-slate-200'
+                        }`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                        {isDrawing ? '描画中 (切る)' : '描画する'}
+                      </button>
+                      <button
+                        onClick={() => clearStrokesRef.current?.()}
+                        title="自分が描いた線を今すぐ消す"
+                        className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-slate-200 text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <Eraser className="w-3 h-3" />
+                        消す
+                      </button>
+                    </div>
+
+                    <label className="block">
+                      <span className="text-[10px] text-slate-400">線の太さ ({strokeSize}px)</span>
+                      <input
+                        type="range"
+                        min={MIN_STROKE_SIZE}
+                        max={MAX_STROKE_SIZE}
+                        value={strokeSize}
+                        onChange={(e) => setStrokeSize(clampStrokeSize(Number(e.target.value)))}
+                        onPointerUp={(e) => e.currentTarget.blur()}
+                        className="w-full accent-amber-400"
+                      />
+                    </label>
+                  </div>
+
                   <p className="text-[10px] text-slate-500 leading-normal">
                     映像の上にカーソルを乗せている間だけ、この色で全員に見えます。
-                    オペレーターが複数いるときは名前も出ます。
+                    描画を入にするとドラッグで線を引けます (10 秒で自動的に消えます)。
                   </p>
                 </div>
               )}
@@ -773,7 +858,7 @@ ${describeBuild(readBuildEnv())}`}
           <div
             ref={videoAreaRef}
             className={`flex-1 flex items-center justify-center relative overflow-hidden group w-full h-full ${
-              isHost && videoUrl ? 'cursor-none' : ''
+              isHost && videoUrl ? (isDrawing ? 'cursor-crosshair' : 'cursor-none') : ''
             }`}
           >
             {videoUrl ? (
@@ -807,8 +892,10 @@ ${describeBuild(readBuildEnv())}`}
               containerRef={videoAreaRef}
               videoRef={videoRef}
               canBroadcast={isHost}
-              profile={pointerProfile}
+              appearance={pointerProfile}
               pointerId={pointerIdRef.current}
+              drawing={isHost && isDrawing}
+              onClearRef={clearStrokesRef}
             />
 
             {/* タイムコード表示 (オペレーター時のみ) */}
