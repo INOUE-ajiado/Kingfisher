@@ -32,6 +32,25 @@ function formatDateTime(ms: number): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * 透かしの敷物を作る。
+ *
+ * ⚠️ 並べた要素を回転させて敷き詰めないこと。折り返しの都合で片側に寄り、
+ * 「左上だけ斜めの文字が出ている」という見え方になる。
+ * 一枚の絵 (SVG) を繰り返し並べれば、どの画面の形でも均等になる。
+ */
+function watermarkBackground(text: string): string {
+  const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="200">
+    <g transform="rotate(-24 230 100)" fill="#ffffff" fill-opacity="0.12"
+       font-family="sans-serif" font-size="15" font-weight="bold">
+      <text x="10" y="60">${safe}</text>
+      <text x="10" y="160">${safe}</text>
+    </g>
+  </svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg.replace(/\s+/g, ' '))}")`;
+}
+
 function readSavedName(): string {
   try {
     return localStorage.getItem(NAME_STORAGE_KEY) || '';
@@ -429,16 +448,12 @@ const WatchScreen: React.FC<{
         <p className="text-sm text-slate-500">映像はまだありません</p>
       )}
 
-      {/* 透かし。映像の上に常に出す (消さない) */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden>
-        <div className="absolute -inset-1/2 flex flex-wrap content-start gap-x-24 gap-y-20 rotate-[-24deg] opacity-[0.13]">
-          {Array.from({ length: 60 }).map((_, i) => (
-            <span key={i} className="text-white text-sm font-bold whitespace-nowrap">
-              {watermarkText}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* 透かし。映像の上に常に薄く敷く (消さない) */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        aria-hidden
+        style={{ backgroundImage: watermarkBackground(watermarkText), backgroundRepeat: 'repeat' }}
+      />
 
       {/*
         操作と説明は、動かしたときだけ出す。
