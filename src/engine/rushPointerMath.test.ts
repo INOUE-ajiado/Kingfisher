@@ -169,3 +169,38 @@ describe('受け取った位置へ滑らかに追いつく', () => {
     expect(next).toEqual({ x: 1, y: 1 });
   });
 });
+
+describe('遅れの埋め合わせ (予測)', () => {
+  it('動いている間は、通信の遅れのぶん先を描く', async () => {
+    const { predictPointer } = await import('./rushPointerMath');
+    // 100ms で 0.1 進んでいる = 1ms あたり 0.001
+    const previous = { position: { x: 0.2, y: 0.5 }, at: 1000 };
+    const latest = { position: { x: 0.3, y: 0.5 }, at: 1100 };
+    // 受け取ったのが 100ms 後なら、その分を足した位置
+    expect(predictPointer(previous, latest, 1200).x).toBeCloseTo(0.4);
+    expect(predictPointer(previous, latest, 1150).x).toBeCloseTo(0.35);
+  });
+
+  it('行き過ぎないよう上限で頭打ちにする', async () => {
+    const { predictPointer, MAX_POINTER_PREDICT_MS } = await import('./rushPointerMath');
+    const previous = { position: { x: 0.2, y: 0.5 }, at: 1000 };
+    const latest = { position: { x: 0.3, y: 0.5 }, at: 1100 };
+    const capped = predictPointer(previous, latest, 1100 + MAX_POINTER_PREDICT_MS * 3);
+    expect(capped.x).toBeCloseTo(Math.min(1, 0.3 + 0.001 * MAX_POINTER_PREDICT_MS));
+  });
+
+  it('映像の外へはみ出さない', async () => {
+    const { predictPointer } = await import('./rushPointerMath');
+    const previous = { position: { x: 0.9, y: 0.5 }, at: 1000 };
+    const latest = { position: { x: 0.99, y: 0.5 }, at: 1050 };
+    expect(predictPointer(previous, latest, 1200).x).toBe(1);
+  });
+
+  it('間が空いた (動きが途切れた) ときは予測しない', async () => {
+    const { predictPointer } = await import('./rushPointerMath');
+    const previous = { position: { x: 0.2, y: 0.5 }, at: 1000 };
+    const latest = { position: { x: 0.3, y: 0.5 }, at: 1400 };
+    expect(predictPointer(previous, latest, 1500)).toEqual({ x: 0.3, y: 0.5 });
+    expect(predictPointer(null, latest, 1500)).toEqual({ x: 0.3, y: 0.5 });
+  });
+});

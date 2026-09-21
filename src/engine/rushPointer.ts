@@ -1,5 +1,7 @@
-import { getDatabase, ref, onValue, onDisconnect, set, update, remove } from 'firebase/database';
-import { app } from './firebase';
+import { ref, onValue, onDisconnect, set, update, remove } from 'firebase/database';
+import { rushDb as db, serverNow } from './rushRealtime';
+export { serverNow };
+
 import {
   clampPointerBlur,
   clampPointerSize,
@@ -40,8 +42,6 @@ export interface RushPointerState extends RushPointerProfile, Partial<PointerPos
   updatedAt: number;
 }
 
-const db = getDatabase(app);
-
 function pointerRef(playbackId: string, pointerId: string) {
   return ref(db, `rushPointers/${playbackId}/${pointerId}`);
 }
@@ -71,7 +71,7 @@ export function createRushPointerSender(
   let disposed = false;
 
   const write = (extra: Record<string, unknown>) => {
-    void set(target, { ...current, updatedAt: Date.now(), ...extra }).catch((err) =>
+    void set(target, { ...current, updatedAt: serverNow(), ...extra }).catch((err) =>
       console.warn('Failed to send rush pointer:', err)
     );
   };
@@ -106,7 +106,7 @@ export function createRushPointerSender(
       current = normalizeProfile(next);
       if (disposed) return;
       // 出ている最中に色や大きさを変えたら、その場で見た目を更新する
-      void update(target, { ...current, updatedAt: Date.now() }).catch(() => undefined);
+      void update(target, { ...current, updatedAt: serverNow() }).catch(() => undefined);
     },
     dispose: () => {
       disposed = true;

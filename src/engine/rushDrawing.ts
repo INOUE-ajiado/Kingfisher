@@ -1,5 +1,5 @@
-import { getDatabase, ref, push, set, update, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from 'firebase/database';
-import { app } from './firebase';
+import { ref, push, set, update, remove, onChildAdded, onChildChanged, onChildRemoved, onDisconnect } from 'firebase/database';
+import { rushDb as db, serverNow } from './rushRealtime';
 import {
   clampStrokeSize,
   decodeStrokePoints,
@@ -37,7 +37,6 @@ export interface RushStrokeProfile {
   size: number;
 }
 
-const db = getDatabase(app);
 /** 送るのはこの間隔まで (描き心地と通信量の折り合い) */
 const STROKE_SEND_INTERVAL_MS = 100;
 /** これより動いていない点は捨てる (映像に対する割合) */
@@ -73,7 +72,7 @@ export function createRushStrokeSender(playbackId: string, authorId: string, pro
     lastSentAt = Date.now();
     void update(ref(db, `rushStrokes/${playbackId}/${strokeId}`), {
       points: encodeStrokePoints(points),
-      updatedAt: Date.now(),
+      updatedAt: serverNow(),
     }).catch((err) => console.warn('Failed to send rush stroke:', err));
     scheduleRemoval(strokeId);
   };
@@ -88,7 +87,7 @@ export function createRushStrokeSender(playbackId: string, authorId: string, pro
       color: current.color,
       size: current.size,
       points: encodeStrokePoints(points),
-      updatedAt: Date.now(),
+      updatedAt: serverNow(),
     }).catch((err) => console.warn('Failed to start rush stroke:', err));
     // 回線が切れても線が残らないように
     void onDisconnect(node).remove();
