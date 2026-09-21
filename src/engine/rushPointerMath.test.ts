@@ -140,3 +140,32 @@ describe('ぼかしと描画', () => {
     expect(decodeStrokePoints('こわれた値')).toEqual([]);
   });
 });
+
+describe('受け取った位置へ滑らかに追いつく', () => {
+  it('1 フレームでは行き過ぎず、目標へ近づく', async () => {
+    const { smoothTowards } = await import('./rushPointerMath');
+    const next = smoothTowards({ x: 0, y: 0 }, { x: 1, y: 1 }, 16, 90);
+    expect(next.x).toBeGreaterThan(0);
+    expect(next.x).toBeLessThan(0.3);
+    expect(next.x).toBeCloseTo(next.y);
+  });
+
+  it('時間が経てば目標に着く (途中は滑らかに増える)', async () => {
+    const { smoothTowards } = await import('./rushPointerMath');
+    let p = { x: 0, y: 0 };
+    const seen: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      p = smoothTowards(p, { x: 1, y: 0 }, 16, 90);
+      seen.push(p.x);
+    }
+    expect(seen.length).toBeGreaterThan(20);
+    for (let i = 1; i < seen.length; i++) expect(seen[i]).toBeGreaterThanOrEqual(seen[i - 1]);
+    expect(p.x).toBe(1);
+  });
+
+  it('フレームが飛んでも行き過ぎない', async () => {
+    const { smoothTowards } = await import('./rushPointerMath');
+    const next = smoothTowards({ x: 0, y: 0 }, { x: 1, y: 1 }, 1000, 90);
+    expect(next).toEqual({ x: 1, y: 1 });
+  });
+});
