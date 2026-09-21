@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Video, Lock, User, Play, Volume2, VolumeX, Maximize, Minimize, Radio, AlertTriangle } from 'lucide-react';
 import { normalizeViewerName, shareStatus, MAX_VIEWER_NAME_LENGTH } from '../../engine/rushAccess';
 import {
@@ -30,25 +30,6 @@ function formatDateTime(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/**
- * 透かしの敷物を作る。
- *
- * ⚠️ 並べた要素を回転させて敷き詰めないこと。折り返しの都合で片側に寄り、
- * 「左上だけ斜めの文字が出ている」という見え方になる。
- * 一枚の絵 (SVG) を繰り返し並べれば、どの画面の形でも均等になる。
- */
-function watermarkBackground(text: string): string {
-  const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="460" height="200">
-    <g transform="rotate(-24 230 100)" fill="#ffffff" fill-opacity="0.12"
-       font-family="sans-serif" font-size="15" font-weight="bold">
-      <text x="10" y="60">${safe}</text>
-      <text x="10" y="160">${safe}</text>
-    </g>
-  </svg>`;
-  return `url("data:image/svg+xml,${encodeURIComponent(svg.replace(/\s+/g, ' '))}")`;
 }
 
 function readSavedName(): string {
@@ -100,7 +81,10 @@ type Phase =
  * 社外の人がログインなしで開く視聴ページ (/watch/{共有ID})。
  *
  * 名前とパスワードを入れると、ホスト (オペレーター) の再生に合わせて動画が流れる。
- * 自分では再生位置を動かせない。名前は透かしとして映像に重ね、ホスト側の一覧にも出る。
+ * 自分では再生位置を動かせない。名前はホスト側の視聴者一覧に出る。
+ *
+ * ⚠️ 映像の上に文字を重ねないこと。ラッシュは動きを細かく見るための配信で、
+ * 透かしのような重ね表示はチェックの邪魔になる (2026-09-21 の指示)。
  *
  * ⚠️ ペイントの画面 (App) とは別に描く。App は社内の Google ログインを前提にしている。
  */
@@ -297,7 +281,7 @@ const JoinForm: React.FC<{
           {isJoining ? '確認中...' : '視聴する'}
         </button>
         <p className="text-[10px] text-slate-500 leading-relaxed">
-          お名前は配信者に表示され、映像にも透かしとして重なります。本映像は関係者限りです。
+          お名前は配信者の画面に表示されます。本映像は関係者限りです。
         </p>
       </form>
     </div>
@@ -403,7 +387,7 @@ const WatchScreen: React.FC<{
 
   const toggleFullscreen = async () => {
     try {
-      // 透かしごと全画面にするため、<video> ではなく枠を全画面にする
+      // 操作類ごと全画面にするため、<video> ではなく枠を全画面にする
       if (document.fullscreenElement) await document.exitFullscreen();
       else await containerRef.current?.requestFullscreen();
     } catch (err) {
@@ -411,7 +395,6 @@ const WatchScreen: React.FC<{
     }
   };
 
-  const watermarkText = useMemo(() => `${name} · ${formatDateTime(Date.now())} · 関係者限り`, [name]);
   const state = follower.state;
   const statusText = follower.error
     ? follower.error
@@ -447,13 +430,6 @@ const WatchScreen: React.FC<{
       ) : (
         <p className="text-sm text-slate-500">映像はまだありません</p>
       )}
-
-      {/* 透かし。映像の上に常に薄く敷く (消さない) */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        aria-hidden
-        style={{ backgroundImage: watermarkBackground(watermarkText), backgroundRepeat: 'repeat' }}
-      />
 
       {/*
         操作と説明は、動かしたときだけ出す。
@@ -501,8 +477,8 @@ const WatchScreen: React.FC<{
               </button>
             )}
           </div>
-          <span className="text-[10px] font-bold text-white/70 bg-black/40 px-2 py-0.5 rounded whitespace-nowrap">
-            {watermarkText}
+          <span className="text-[10px] text-white/70 bg-black/40 px-2 py-0.5 rounded whitespace-nowrap">
+            視聴者: {name}
           </span>
         </div>
       </div>
