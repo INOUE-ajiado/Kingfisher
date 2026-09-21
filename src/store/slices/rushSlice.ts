@@ -2,15 +2,6 @@ import { StateCreator } from 'zustand';
 import { RetakeItem } from '../../engine/retakeStore';
 import { PaintStore } from '../types';
 
-export interface RushArchiveItem {
-  id: string;
-  title: string;
-  videoUrl: string;
-  duration: number;
-  createdAt: number;
-  retakeItems: RetakeItem[];
-}
-
 export interface RushState {
   isRushOpen: boolean;
   roomId: string | null;
@@ -32,12 +23,9 @@ export interface RushState {
   isUploading: boolean;
   uploadProgress: number;
   isLive: boolean;
-  isRecording: boolean;
-  recordingStartTime: number | null;
   isMicMuted: boolean;
   isSpeakerMuted: boolean;
   retakeItems: RetakeItem[];
-  archives: RushArchiveItem[];
   isAuthModalOpen: boolean;
   authModalMode: 'create' | 'join';
 }
@@ -60,11 +48,9 @@ export interface RushActions {
   setRushVideo: (url: string | null, name: string | null, thumbnails?: string[]) => void;
   setRushUploading: (uploading: boolean, progress?: number) => void;
   setRushLive: (isLive: boolean) => void;
-  setRushRecording: (isRecording: boolean) => void;
   setRushMicMuted: (muted: boolean) => void;
   setRushSpeakerMuted: (muted: boolean) => void;
   updateRushRetakes: (items: RetakeItem[]) => void;
-  addRushArchive: (archive: RushArchiveItem) => void;
   openRushAuthModal: (mode: 'create' | 'join') => void;
   closeRushAuthModal: () => void;
 }
@@ -84,12 +70,9 @@ export const initialRushState: RushState = {
   isUploading: false,
   uploadProgress: 0,
   isLive: false,
-  isRecording: false,
-  recordingStartTime: null,
   isMicMuted: false,
   isSpeakerMuted: false,
   retakeItems: [],
-  archives: [],
   isAuthModalOpen: false,
   authModalMode: 'create',
 };
@@ -113,7 +96,7 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
       },
     })),
 
-  /** ルームに入る。前のルームの動画・リテイク・録画は引き継がない */
+  /** ルームに入る。前のルームの動画とリテイクは引き継がない */
   setRushRoom: (data) =>
     set((state) => ({
       ...initialRushState,
@@ -155,21 +138,11 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
 
   setRushLive: (isLive) => set((state) => ({ ...state, isLive })),
 
-  setRushRecording: (isRecording) =>
-    set((state) => ({
-      ...state,
-      isRecording,
-      recordingStartTime: isRecording ? Date.now() : null,
-    })),
-
   setRushMicMuted: (muted) => set((state) => ({ ...state, isMicMuted: muted })),
 
   setRushSpeakerMuted: (muted) => set((state) => ({ ...state, isSpeakerMuted: muted })),
 
   updateRushRetakes: (items) => set((state) => ({ ...state, retakeItems: items })),
-
-  addRushArchive: (archive) =>
-    set((state) => ({ ...state, archives: [archive, ...state.archives] })),
 
   openRushAuthModal: (mode) =>
     set((state) => ({ ...state, isAuthModalOpen: true, authModalMode: mode })),
