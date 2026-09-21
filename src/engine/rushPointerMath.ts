@@ -156,9 +156,12 @@ export function strokeWidthPx(size: number, contentWidth: number): number {
   return Math.max(1, (clampStrokeSize(size) * contentWidth) / STROKE_REFERENCE_WIDTH);
 }
 
-/** 描いた線が残る時間と、消えかけの時間 */
-export const STROKE_LIFETIME_MS = 10000;
-export const STROKE_FADE_MS = 2000;
+/**
+ * 描いた線が残る時間と、消えかけの時間。
+ * ⚠️ 指示を出したそばから画面が汚れないよう短くしてある (2026-09-22 に 10 秒 → 3 秒)。
+ */
+export const STROKE_LIFETIME_MS = 3000;
+export const STROKE_FADE_MS = 1000;
 
 /** 経過に応じた濃さ。寿命を過ぎたら 0 (描かない) */
 export function strokeOpacity(updatedAt: number, now: number): number {

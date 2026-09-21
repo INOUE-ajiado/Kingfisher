@@ -17,7 +17,7 @@ import {
  *
  * ⚠️ 1 本の線を長くしすぎないこと。送るたびに線ぜんぶを書き直すので、
  * 長いと通信量が跳ね上がる。上限を超えたら線を分ける (MAX_STROKE_POINTS)。
- * ⚠️ 描いた線は放っておくと画面に溜まる。10 秒で消えるようにし、
+ * ⚠️ 描いた線は放っておくと画面に溜まる。3 秒で消えるようにし、
  * 回線が切れたときも onDisconnect で消す。
  */
 
@@ -54,7 +54,7 @@ export function createRushStrokeSender(playbackId: string, authorId: string, pro
   let lastSentAt = -Infinity;
   let disposed = false;
 
-  /** 10 秒後に自分で片づける (見ている側も同じ時間で消す) */
+  /** 寿命を過ぎたら自分で片づける (見ている側も同じ時間で消す) */
   const scheduleRemoval = (id: string) => {
     const existing = mine.get(id);
     if (existing) clearTimeout(existing);

@@ -806,7 +806,7 @@ ${describeBuild(readBuildEnv())}`}
 
                   <p className="text-[10px] text-slate-500 leading-normal">
                     映像の上にカーソルを乗せている間だけ、この色で全員に見えます。
-                    描画を入にするとドラッグで線を引けます (10 秒で自動的に消えます)。
+                    描画を入にするとドラッグで線を引けます (3 秒で自動的に消えます)。
                   </p>
                 </div>
               )}
