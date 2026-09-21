@@ -32,6 +32,7 @@ import { deleteRushShareInDB } from './rushShareService';
  *   rushRooms/{roomId}                          ルーム名・作成者・オペレーター・LIVE (社内の誰でも読める)
  *   rushRooms/{roomId}/access/{鍵}              動画の URL・パスとサムネイル (鍵 = ルーム ID + 合言葉のハッシュ)
  *   rushRooms/{roomId}/access/{鍵}/retakes/{id} リテイク指示
+ *   rushRooms/{roomId}/access/{鍵}/participants/{id} 今ルームに入っている社内の人
  *   rushVideos/{roomId}/{時刻}_{乱数}_{名前}      動画本体 (Storage)
  *   rushPlayback/{再生ID}                        ホストの再生状態 (視聴者が追従する。ID は乱数)
  *   rushShares/{共有ID}/...                       外部共有 (rushShareService.ts)
@@ -49,6 +50,7 @@ const ACCESS = 'access';
 const RETAKES = 'retakes';
 const DELETE_LOGS = 'rushRoomDeleteLogs';
 const PLAYBACK = 'rushPlayback';
+const PARTICIPANTS = 'participants';
 const SHARES = 'rushShares';
 
 /** 以前 localStorage に置いていたルーム一覧の控え (合言葉が平文で入っていた) */
@@ -350,6 +352,83 @@ export async function updateRushRoomOperatorsInDB(roomId: string, operatorEmails
     operatorEmails: operatorEmails.map(normalizeEmail),
     lastActiveAt: Date.now(),
   });
+}
+
+// ─── 参加者 (社内) ───────────────────────────────────────────────────────────
+
+export interface RushParticipantDoc {
+  id: string;
+  email: string;
+  name: string;
+  isOperator: boolean;
+  joinedAt: number;
+  lastSeenAt: number;
+}
+
+/** 入室したことを知らせる。以後 heartbeat で在席を伝える */
+export async function joinRushParticipantInDB(
+  roomId: string,
+  accessKey: string,
+  participantId: string,
+  who: { email: string; name: string; isOperator: boolean }
+): Promise<void> {
+  const now = Date.now();
+  await setDoc(doc(db, ROOMS, roomId, ACCESS, accessKey, PARTICIPANTS, participantId), {
+    email: normalizeEmail(who.email),
+    name: who.name,
+    isOperator: who.isOperator,
+    joinedAt: now,
+    lastSeenAt: now,
+  });
+}
+
+export async function heartbeatRushParticipantInDB(
+  roomId: string,
+  accessKey: string,
+  participantId: string,
+  isOperator: boolean
+): Promise<void> {
+  await setDoc(
+    doc(db, ROOMS, roomId, ACCESS, accessKey, PARTICIPANTS, participantId),
+    { lastSeenAt: Date.now(), isOperator },
+    { merge: true }
+  );
+}
+
+export async function leaveRushParticipantInDB(
+  roomId: string,
+  accessKey: string,
+  participantId: string
+): Promise<void> {
+  await deleteDoc(doc(db, ROOMS, roomId, ACCESS, accessKey, PARTICIPANTS, participantId));
+}
+
+/** 今ルームにいる社内の人 (参加した順) */
+export function subscribeRushParticipants(
+  roomId: string,
+  accessKey: string,
+  onUpdate: (participants: RushParticipantDoc[]) => void
+): () => void {
+  return onSnapshot(
+    collection(db, ROOMS, roomId, ACCESS, accessKey, PARTICIPANTS),
+    (snapshot) => {
+      const list: RushParticipantDoc[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        list.push({
+          id: d.id,
+          email: data.email,
+          name: data.name,
+          isOperator: !!data.isOperator,
+          joinedAt: data.joinedAt,
+          lastSeenAt: data.lastSeenAt,
+        });
+      });
+      list.sort((a, b) => a.joinedAt - b.joinedAt);
+      onUpdate(list);
+    },
+    (error) => console.error('Error watching rush participants:', error)
+  );
 }
 
 // ─── 再生状態 (ホスト → 視聴者) ───────────────────────────────────────────────

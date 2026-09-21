@@ -54,6 +54,18 @@ service cloud.firestore {
         allow create: if isStaff() && roomOf(roomId).hostEmail == myEmail();
         allow update, delete: if isStaff() && isOperatorOf(roomOf(roomId));
 
+        // 今ルームにいる人。自分の分だけ書ける (鍵を知っている = 合言葉を知っている)
+        match /participants/{participantId} {
+          allow read: if isStaff();
+          allow create, update: if isStaff()
+            && request.resource.data.email == myEmail()
+            && request.resource.data.keys().hasOnly(['email', 'name', 'isOperator', 'joinedAt', 'lastSeenAt'])
+            && request.resource.data.name is string
+            && request.resource.data.name.size() <= 100;
+          allow delete: if isStaff()
+            && (resource.data.email == myEmail() || isOperatorOf(roomOf(roomId)));
+        }
+
         match /retakes/{retakeId} {
           allow read: if isStaff();
           allow create, update: if isStaff()

@@ -37,11 +37,23 @@ import {
   addRushRetakeInDB,
   deleteRushRetakeInDB,
   attachRushPlaybackInDB,
+  joinRushParticipantInDB,
+  heartbeatRushParticipantInDB,
+  leaveRushParticipantInDB,
+  subscribeRushParticipants,
+  RushParticipantDoc,
   RushShareEntry,
 } from '../../engine/rushService';
+import { subscribeRushShareViewers, RushShareViewer } from '../../engine/rushShareService';
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushSharePanel } from './RushSharePanel';
-import { buildRushInviteUrl, hasOperatorPrivilege, normalizeEmail } from '../../engine/rushAccess';
+import {
+  buildRushInviteUrl,
+  hasOperatorPrivilege,
+  isViewerOnline,
+  normalizeEmail,
+  shareStatusFromDoc,
+} from '../../engine/rushAccess';
 import { describeFunctionError, getRushRoomVideoUrl } from '../../engine/rushFunctions';
 import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
 import { RushThumbnailBar } from './RushThumbnailBar';
@@ -59,7 +71,6 @@ export const RushWindow: React.FC = () => {
   const isRecording = usePaintStore((s) => s.isRecording);
   const isMicMuted = usePaintStore((s) => s.isMicMuted);
   const isSpeakerMuted = usePaintStore((s) => s.isSpeakerMuted);
-  const participants = usePaintStore((s) => s.participants);
   const retakeItems = usePaintStore((s) => s.retakeItems);
   const archives = usePaintStore((s) => s.archives);
   const user = usePaintStore((s) => s.user);
@@ -99,6 +110,12 @@ export const RushWindow: React.FC = () => {
   // リテイクメモ入力フォーム
   const [inputText, setInputText] = useState('');
   const [selectedTag, setSelectedTag] = useState<string>('撮影');
+
+  // 参加者 (社内は participants、社外は共有ごとの viewers)
+  const [participants, setParticipants] = useState<RushParticipantDoc[]>([]);
+  const [guestViewers, setGuestViewers] = useState<Record<string, RushShareViewer[]>>({});
+  const [now, setNow] = useState(Date.now());
+  const participantIdRef = useRef<string>('');
 
   // オペレーター管理 State
   const [operatorEmails, setOperatorEmails] = useState<string[]>([]);
@@ -187,6 +204,63 @@ export const RushWindow: React.FC = () => {
       if (timer) clearTimeout(timer);
     };
   }, [roomId, accessKey, videoPath]);
+
+  /**
+   * 自分がこのルームにいることを知らせ、一覧を購読する。
+   * ⚠️ 画面を閉じたら消すこと。残ると「いない人」が参加者に並び続ける
+   * (最後の合図から 75 秒で離席扱いにはなる)。
+   */
+  useEffect(() => {
+    if (!roomId || !accessKey || !user?.email) return;
+    const participantId = `${normalizeEmail(user.email).replace(/[^a-z0-9]/g, '_')}_${Math.random().toString(36).slice(2, 8)}`;
+    participantIdRef.current = participantId;
+    const who = {
+      email: user.email,
+      name: user.displayName || user.email,
+      isOperator: usePaintStore.getState().isHost,
+    };
+    void joinRushParticipantInDB(roomId, accessKey, participantId, who).catch((err) =>
+      console.error('Failed to join rush participants:', err)
+    );
+
+    const beat = setInterval(() => {
+      void heartbeatRushParticipantInDB(roomId, accessKey, participantId, usePaintStore.getState().isHost).catch(
+        (err) => console.warn('Failed to send participant heartbeat:', err)
+      );
+    }, 30 * 1000);
+
+    const leave = () => void leaveRushParticipantInDB(roomId, accessKey, participantId).catch(() => undefined);
+    window.addEventListener('pagehide', leave);
+
+    const unsubscribe = subscribeRushParticipants(roomId, accessKey, setParticipants);
+    return () => {
+      clearInterval(beat);
+      window.removeEventListener('pagehide', leave);
+      unsubscribe();
+      leave();
+    };
+  }, [roomId, accessKey, user?.email, user?.displayName]);
+
+  // 社外の視聴者 (共有ごと)。公開中のものだけ見る
+  useEffect(() => {
+    if (!isHost || shares.length === 0) {
+      setGuestViewers({});
+      return;
+    }
+    const open = shares.filter((entry) => shareStatusFromDoc(undefined, entry.expiresAt, Date.now()) === 'open');
+    const stops = open.map((entry) =>
+      subscribeRushShareViewers(entry.shareId, (list) =>
+        setGuestViewers((prev) => ({ ...prev, [entry.shareId]: list }))
+      )
+    );
+    return () => stops.forEach((stop) => stop());
+  }, [isHost, shares]);
+
+  // 在席の表示 (「視聴中」かどうか) を進める
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 20 * 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // リテイク指示 (オペレーター同士で共有し、退室しても残る)
   useEffect(() => {
@@ -477,6 +551,12 @@ export const RushWindow: React.FC = () => {
     );
   }
 
+  const onlineParticipants = participants.filter((p) => isViewerOnline(p.lastSeenAt, now));
+  const onlineGuests = Object.values(guestViewers)
+    .flat()
+    .filter((v) => isViewerOnline(v.lastSeenAt, now));
+  const participantCount = onlineParticipants.length + onlineGuests.length;
+
   /**
    * 同期の状態。
    * ⚠️ 「連動していない」の切り分けは、まずここを見ること。再生状態の文書に繋がっていない画面は、
@@ -757,7 +837,7 @@ ${describeBuild(readBuildEnv())}`}
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
-                <span>参加者 ({participants.length || 1})</span>
+                <span>参加者 ({participantCount || 1})</span>
               </button>
               <button
                 onClick={() => setSideTab('share')}
@@ -924,21 +1004,79 @@ ${describeBuild(readBuildEnv())}`}
                   </div>
                 </div>
 
-                {/* 参加メンバー一覧 */}
+                {/* 社内の参加者 */}
                 <div>
                   <h4 className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
-                    オンラインメンバー
+                    社内 ({onlineParticipants.length})
                   </h4>
-                  <div className="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <span className="font-bold text-xs">{isHost ? '自分 (オペレーター)' : '自分 (視聴者)'}</span>
-                    </div>
-                    <span className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded">
-                      {isHost ? 'OPERATOR' : 'GUEST'}
-                    </span>
+                  <div className="space-y-1">
+                    {participants.length === 0 && (
+                      <p className="text-[10px] text-slate-500">読み込み中...</p>
+                    )}
+                    {participants.map((p) => {
+                      const online = isViewerOnline(p.lastSeenAt, now);
+                      const isMe = p.id === participantIdRef.current;
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between gap-2 p-2 rounded bg-white/5 border border-white/5"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                            <span className="text-xs truncate">
+                              {p.name}
+                              {isMe && <span className="text-slate-500"> (自分)</span>}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                              p.isOperator ? 'text-amber-400 bg-amber-400/10' : 'text-indigo-300 bg-indigo-400/10'
+                            }`}
+                          >
+                            {p.isOperator ? 'OPERATOR' : '視聴'}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
+
+                {/* 社外の視聴者 (外部共有の URL から入った人) */}
+                {isHost && (
+                  <div>
+                    <h4 className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
+                      社外 ({onlineGuests.length})
+                    </h4>
+                    {Object.values(guestViewers).flat().length === 0 ? (
+                      <p className="text-[10px] text-slate-500">
+                        まだ誰も入っていません (「外部共有」タブで視聴 URL を発行できます)
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {Object.values(guestViewers)
+                          .flat()
+                          .sort((a, b) => a.joinedAt - b.joinedAt)
+                          .map((v) => {
+                            const online = isViewerOnline(v.lastSeenAt, now);
+                            return (
+                              <div
+                                key={v.id}
+                                className="flex items-center justify-between gap-2 p-2 rounded bg-white/5 border border-white/5"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${online ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+                                  <span className="text-xs truncate">{v.name}</span>
+                                </div>
+                                <span className="text-[10px] font-bold text-emerald-300 bg-emerald-400/10 px-1.5 py-0.5 rounded flex-shrink-0">
+                                  社外
+                                </span>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
