@@ -1,6 +1,12 @@
 import { getDatabase, ref, onValue, onDisconnect, set, update, remove } from 'firebase/database';
 import { app } from './firebase';
-import { clampPointerSize, isPointerColor, PointerPosition, POINTER_SEND_INTERVAL_MS } from './rushPointerMath';
+import {
+  clampPointerBlur,
+  clampPointerSize,
+  isPointerColor,
+  PointerPosition,
+  POINTER_SEND_INTERVAL_MS,
+} from './rushPointerMath';
 
 /**
  * 配信中のマウスポインターの共有。
@@ -24,6 +30,8 @@ export interface RushPointerProfile {
   color: string;
   /** 丸の直径 (px) */
   size: number;
+  /** 周りのぼやけ具合 (0 = くっきり、1 = ふんわり) */
+  blur: number;
 }
 
 export interface RushPointerState extends RushPointerProfile, Partial<PointerPosition> {
@@ -114,6 +122,7 @@ function normalizeProfile(profile: RushPointerProfile): RushPointerProfile {
     name: (profile.name || '').slice(0, 40),
     color: isPointerColor(profile.color) ? profile.color.toLowerCase() : '#ff2d2d',
     size: clampPointerSize(profile.size),
+    blur: clampPointerBlur(profile.blur),
   };
 }
 

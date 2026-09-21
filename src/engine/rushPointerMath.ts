@@ -115,3 +115,74 @@ export function withAlpha(color: string, alpha: number): string {
   const b = parseInt(safe.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+// ─── ぼかしと描画 ────────────────────────────────────────────────────────────
+
+/** ポインターのぼやけ具合 (0 = くっきり、1 = ふんわり) */
+export const DEFAULT_POINTER_BLUR = 0.5;
+
+export function clampPointerBlur(blur: number): number {
+  if (!Number.isFinite(blur)) return DEFAULT_POINTER_BLUR;
+  return Math.min(Math.max(Math.round(blur * 100) / 100, 0), 1);
+}
+
+/**
+ * ぼやけ具合から、丸の描き方を決める。
+ * 0 なら縁のはっきりした点、1 なら周りが大きくにじむ点になる。
+ */
+export function pointerGlow(size: number, blur: number): { core: number; spread: number; blurPx: number } {
+  const b = clampPointerBlur(blur);
+  return {
+    // 芯の割合 (ぼかすほど芯は小さく)
+    core: Math.round((1 - b) * 70 + 20),
+    spread: Math.round(size * (0.2 + b * 0.9)),
+    blurPx: Math.round(size * (0.3 + b * 1.6)),
+  };
+}
+
+/** 描いた線の太さ。窓の大きさが違っても、映像に対する太さが同じになるようにする */
+export const STROKE_REFERENCE_WIDTH = 1280;
+export const MIN_STROKE_SIZE = 2;
+export const MAX_STROKE_SIZE = 24;
+export const DEFAULT_STROKE_SIZE = 6;
+
+export function clampStrokeSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_STROKE_SIZE;
+  return Math.round(Math.min(Math.max(size, MIN_STROKE_SIZE), MAX_STROKE_SIZE));
+}
+
+export function strokeWidthPx(size: number, contentWidth: number): number {
+  if (!(contentWidth > 0)) return clampStrokeSize(size);
+  return Math.max(1, (clampStrokeSize(size) * contentWidth) / STROKE_REFERENCE_WIDTH);
+}
+
+/** 描いた線が残る時間と、消えかけの時間 */
+export const STROKE_LIFETIME_MS = 10000;
+export const STROKE_FADE_MS = 2000;
+
+/** 経過に応じた濃さ。寿命を過ぎたら 0 (描かない) */
+export function strokeOpacity(updatedAt: number, now: number): number {
+  const age = now - updatedAt;
+  if (age >= STROKE_LIFETIME_MS) return 0;
+  const fadeStart = STROKE_LIFETIME_MS - STROKE_FADE_MS;
+  if (age <= fadeStart) return 1;
+  return Math.max(0, 1 - (age - fadeStart) / STROKE_FADE_MS);
+}
+
+/** 1 本の線に入れる点の上限。超えたら線を分ける (1 回の送信を小さく保つ) */
+export const MAX_STROKE_POINTS = 120;
+
+/** 点の並び ⇄ 文字列 ("x,y|x,y|…")。小数は 4 桁に丸める */
+export function encodeStrokePoints(points: PointerPosition[]): string {
+  return points.map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)}`).join('|');
+}
+
+export function decodeStrokePoints(encoded: string): PointerPosition[] {
+  if (!encoded) return [];
+  const points: PointerPosition[] = [];
+  for (const pair of encoded.split('|')) {
+    const [x, y] = pair.split(',').map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+  }
+  return points;
+}

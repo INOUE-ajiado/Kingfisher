@@ -98,3 +98,45 @@ describe('ポインターの見た目', () => {
     expect(withAlpha('おかしな値', 1)).toBe('rgba(255, 45, 45, 1)');
   });
 });
+
+describe('ぼかしと描画', () => {
+  it('ぼかしは 0〜1 に収め、上げるほど にじみが広がる', async () => {
+    const { clampPointerBlur, pointerGlow, DEFAULT_POINTER_BLUR } = await import('./rushPointerMath');
+    expect(clampPointerBlur(-1)).toBe(0);
+    expect(clampPointerBlur(5)).toBe(1);
+    expect(clampPointerBlur(Number.NaN)).toBe(DEFAULT_POINTER_BLUR);
+
+    const sharp = pointerGlow(20, 0);
+    const soft = pointerGlow(20, 1);
+    expect(sharp.core).toBeGreaterThan(soft.core); // くっきり = 芯が大きい
+    expect(soft.blurPx).toBeGreaterThan(sharp.blurPx);
+  });
+
+  it('線の太さは映像の大きさに合わせて変わる (見た目の太さが揃う)', async () => {
+    const { strokeWidthPx, clampStrokeSize } = await import('./rushPointerMath');
+    expect(strokeWidthPx(6, 1280)).toBeCloseTo(6);
+    expect(strokeWidthPx(6, 640)).toBeCloseTo(3);
+    expect(strokeWidthPx(6, 0)).toBe(6);
+    expect(clampStrokeSize(99)).toBe(24);
+    expect(clampStrokeSize(0)).toBe(2);
+  });
+
+  it('描いた線は 10 秒で消え、最後の 2 秒で薄くなる', async () => {
+    const { strokeOpacity } = await import('./rushPointerMath');
+    expect(strokeOpacity(0, 0)).toBe(1);
+    expect(strokeOpacity(0, 7999)).toBe(1);
+    expect(strokeOpacity(0, 9000)).toBeCloseTo(0.5);
+    expect(strokeOpacity(0, 10000)).toBe(0);
+    expect(strokeOpacity(0, 99999)).toBe(0);
+  });
+
+  it('点の並びを文字列にして戻せる', async () => {
+    const { encodeStrokePoints, decodeStrokePoints } = await import('./rushPointerMath');
+    const points = [{ x: 0.1234, y: 0.5678 }, { x: 0.9, y: 0.1 }];
+    const encoded = encodeStrokePoints(points);
+    expect(encoded).toBe('0.1234,0.5678|0.9000,0.1000');
+    expect(decodeStrokePoints(encoded)).toEqual([{ x: 0.1234, y: 0.5678 }, { x: 0.9, y: 0.1 }]);
+    expect(decodeStrokePoints('')).toEqual([]);
+    expect(decodeStrokePoints('こわれた値')).toEqual([]);
+  });
+});
