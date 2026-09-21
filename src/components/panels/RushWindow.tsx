@@ -294,7 +294,16 @@ export const RushWindow: React.FC = () => {
   // 招待情報のコピー
   const handleCopyInvite = async () => {
     if (!roomId) return;
-    const inviteText = `[Kingfisher ラッシュ案内]\nルーム名: ${roomName}\nルームID: ${roomId}\nパスワード: ${roomPassword}\nURL: ${buildRushInviteUrl(window.location.origin, roomId)}`;
+    // ⚠️ これは社内向け。社外の人には「外部共有」タブの /watch/... を渡すこと
+    const inviteText = [
+      '[Kingfisher ラッシュ案内 / 社内向け]',
+      `ルーム名: ${roomName}`,
+      `ルームID: ${roomId}`,
+      `パスワード: ${roomPassword}`,
+      `URL: ${buildRushInviteUrl(window.location.origin, roomId)}`,
+      '※ @ajiado.co.jp のアカウントでのログインが必要です。',
+      '※ 社外の方へは、この案内ではなく「外部共有」で発行した視聴 URL をお渡しください。',
+    ].join('\n');
     try {
       await navigator.clipboard.writeText(inviteText);
       setCopiedLink(true);
@@ -593,10 +602,11 @@ ${describeBuild(readBuildEnv())}`}
           {isHost && (
             <button
               onClick={handleCopyInvite}
-              title="招待情報・パスワードをコピー"
+              title="社内向けの招待をコピー (ログインが必要。社外の方へは「外部共有」タブの視聴 URL を渡してください)"
               className="p-1.5 rounded bg-white/10 hover:bg-white/20 text-slate-200 transition-colors flex items-center gap-1"
             >
               {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
+              <span className="text-[10px] font-bold">社内招待</span>
             </button>
           )}
 

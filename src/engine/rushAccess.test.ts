@@ -154,3 +154,16 @@ describe('外部共有の安全側の既定', () => {
     expect(shareStatusFromDoc({ revoked: false, expiresAt: future }, 0, Date.now())).toBe('open');
   });
 });
+
+describe('視聴ページの振り分け', () => {
+  it('/watch/… は ID が読めない形でも視聴ページ扱いにする (ログイン画面へ落とさない)', async () => {
+    const { isWatchPath } = await import('./rushAccess');
+    expect(isWatchPath('/watch/oPFWQ7h1HjP_aYuZitcvTw')).toBe(true);
+    expect(isWatchPath('/watch/short')).toBe(true); // 途中で切れた URL
+    expect(isWatchPath('/watch/')).toBe(true);
+    expect(isWatchPath('/watch')).toBe(true);
+    expect(isWatchPath('/')).toBe(false);
+    expect(isWatchPath('/?room=RUSH-AAAAAA')).toBe(false); // 社内向けの招待はアプリ側
+    expect(isWatchPath('/watchdog')).toBe(false);
+  });
+});
