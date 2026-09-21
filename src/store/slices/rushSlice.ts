@@ -23,7 +23,6 @@ export interface RushState {
   isUploading: boolean;
   uploadProgress: number;
   isLive: boolean;
-  isMicMuted: boolean;
   isSpeakerMuted: boolean;
   retakeItems: RetakeItem[];
   isAuthModalOpen: boolean;
@@ -48,7 +47,6 @@ export interface RushActions {
   setRushVideo: (url: string | null, name: string | null, thumbnails?: string[]) => void;
   setRushUploading: (uploading: boolean, progress?: number) => void;
   setRushLive: (isLive: boolean) => void;
-  setRushMicMuted: (muted: boolean) => void;
   setRushSpeakerMuted: (muted: boolean) => void;
   updateRushRetakes: (items: RetakeItem[]) => void;
   openRushAuthModal: (mode: 'create' | 'join') => void;
@@ -70,7 +68,6 @@ export const initialRushState: RushState = {
   isUploading: false,
   uploadProgress: 0,
   isLive: false,
-  isMicMuted: false,
   isSpeakerMuted: false,
   retakeItems: [],
   isAuthModalOpen: false,
@@ -102,7 +99,6 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
       ...initialRushState,
       isAuthModalOpen: state.isAuthModalOpen,
       authModalMode: state.authModalMode,
-      isMicMuted: state.isMicMuted,
       isSpeakerMuted: state.isSpeakerMuted,
       isRushOpen: true,
       roomId: data.roomId,
@@ -137,8 +133,6 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
     set((state) => ({ ...state, isUploading: uploading, uploadProgress: progress })),
 
   setRushLive: (isLive) => set((state) => ({ ...state, isLive })),
-
-  setRushMicMuted: (muted) => set((state) => ({ ...state, isMicMuted: muted })),
 
   setRushSpeakerMuted: (muted) => set((state) => ({ ...state, isSpeakerMuted: muted })),
 

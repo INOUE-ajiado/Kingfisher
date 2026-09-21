@@ -323,7 +323,7 @@ export const MenuBar: React.FC = () => {
           action: () => (roll.views.rollB.isOpen ? closeRollWindow('rollB') : openRollWindow('rollB')),
         },
         {
-          label: 'ラッシュ専用ウィンドウを表示 (クラウド・WebRTC配信)',
+          label: 'ラッシュ専用ウィンドウを表示 (クラウド配信・再生位置を同期)',
           shortcut: '',
           checked: usePaintStore.getState().isRushOpen,
           action: () => {

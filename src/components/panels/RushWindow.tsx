@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Video,
-  Mic,
-  MicOff,
   Volume2,
   VolumeX,
   Radio,
@@ -66,14 +64,12 @@ export const RushWindow: React.FC = () => {
   const thumbnails = usePaintStore((s) => s.rushThumbnails);
   const isMaximized = usePaintStore((s) => s.paneLayout.maximized === 'rush');
   const isLive = usePaintStore((s) => s.isLive);
-  const isMicMuted = usePaintStore((s) => s.isMicMuted);
   const isSpeakerMuted = usePaintStore((s) => s.isSpeakerMuted);
   const retakeItems = usePaintStore((s) => s.retakeItems);
   const user = usePaintStore((s) => s.user);
 
   const leaveRushRoom = usePaintStore((s) => s.leaveRushRoom);
   const setRushLive = usePaintStore((s) => s.setRushLive);
-  const setRushMicMuted = usePaintStore((s) => s.setRushMicMuted);
   const setRushSpeakerMuted = usePaintStore((s) => s.setRushSpeakerMuted);
   const updateRushRetakes = usePaintStore((s) => s.updateRushRetakes);
   const setRushVideo = usePaintStore((s) => s.setRushVideo);
@@ -503,8 +499,9 @@ export const RushWindow: React.FC = () => {
         </div>
         <h2 className="text-xl font-bold mb-2">ラッシュ専用セッション</h2>
         <p className="text-xs text-slate-400 max-w-sm text-center mb-6 leading-relaxed">
-          クラウドDBおよびWebRTC超低遅延配信を使用した、ラッシュ専用ルームです。
-          招待URLとパスワードで参加者とリアルタイム共有できます。
+          クラウドに置いた映像を、参加者全員で同じ位置・同じタイミングで見るためのルームです。
+          オペレーターの再生・停止・コマ送りに、社内の視聴者も社外の視聴者も合わせて動きます。
+          音声のやり取りはありません (Meet などを併用してください)。
         </p>
         <div className="flex items-center gap-3">
           <button
@@ -609,27 +606,20 @@ ${describeBuild(readBuildEnv())}`}
             </button>
           )}
 
-          {/* マイク・スピーカーミュート */}
-          <div className="flex items-center bg-slate-950 rounded border border-white/10 p-0.5">
-            <button
-              onClick={() => setRushMicMuted(!isMicMuted)}
-              title={isMicMuted ? 'マイクミュート解除' : 'マイクミュート'}
-              className={`p-1 rounded transition-colors ${
-                isMicMuted ? 'text-red-400 bg-red-950/40' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              {isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              onClick={() => setRushSpeakerMuted(!isSpeakerMuted)}
-              title={isSpeakerMuted ? '音声ミュート解除' : '音声ミュート'}
-              className={`p-1 rounded transition-colors ${
-                isSpeakerMuted ? 'text-red-400 bg-red-950/40' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              {isSpeakerMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-            </button>
-          </div>
+          {/*
+            映像の音のミュート。
+            ⚠️ 通話の機能ではない。音声通話は実装していないので、マイクの絵のボタンを置かないこと
+            (2026-09-22 に「押しても何もしない」ものとして外した)。
+          */}
+          <button
+            onClick={() => setRushSpeakerMuted(!isSpeakerMuted)}
+            title={isSpeakerMuted ? '映像の音を出す' : '映像の音をミュート'}
+            className={`p-1.5 rounded border border-white/10 bg-slate-950 transition-colors ${
+              isSpeakerMuted ? 'text-red-400' : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            {isSpeakerMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </button>
 
           {/* 招待コピー (ホストのみ) */}
           {isHost && (
