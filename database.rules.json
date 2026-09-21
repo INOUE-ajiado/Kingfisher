@@ -5,13 +5,18 @@
     "rushPointers": {
       "$playbackId": {
         ".read": true,
-        ".write": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/@ajiado[.]co[.]jp$/)",
-        ".validate": "newData.hasChildren(['visible', 'updatedAt'])",
-        "visible": { ".validate": "newData.isBoolean()" },
-        "x": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
-        "y": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
-        "updatedAt": { ".validate": "newData.isNumber()" },
-        "$other": { ".validate": false }
+        "$pointerId": {
+          ".write": "auth != null && auth.token.email_verified == true && auth.token.email.matches(/@ajiado[.]co[.]jp$/)",
+          ".validate": "newData.hasChildren(['visible', 'updatedAt', 'color', 'size'])",
+          "visible": { ".validate": "newData.isBoolean()" },
+          "x": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+          "y": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 1" },
+          "color": { ".validate": "newData.isString() && newData.val().matches(/^#[0-9a-f]{6}$/)" },
+          "size": { ".validate": "newData.isNumber() && newData.val() >= 10 && newData.val() <= 48" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 40" },
+          "updatedAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
       }
     }
   }

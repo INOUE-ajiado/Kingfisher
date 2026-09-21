@@ -67,3 +67,34 @@ describe('古いポインターは消す', () => {
     expect(isPointerFresh(1000, 6000)).toBe(false);
   });
 });
+
+describe('ポインターの見た目', () => {
+  it('同じ人はいつも同じ色、違う人は散らばる', async () => {
+    const { defaultPointerColor, POINTER_COLORS } = await import('./rushPointerMath');
+    expect(defaultPointerColor('op@ajiado.co.jp')).toBe(defaultPointerColor('op@ajiado.co.jp'));
+    const colors = new Set(
+      ['a@ajiado.co.jp', 'b@ajiado.co.jp', 'c@ajiado.co.jp', 'd@ajiado.co.jp'].map(defaultPointerColor)
+    );
+    expect(colors.size).toBeGreaterThan(1);
+    for (const c of colors) expect(POINTER_COLORS.some((p) => p.value === c)).toBe(true);
+  });
+
+  it('大きさは決めた範囲に収める', async () => {
+    const { clampPointerSize, MIN_POINTER_SIZE, MAX_POINTER_SIZE, DEFAULT_POINTER_SIZE } = await import(
+      './rushPointerMath'
+    );
+    expect(clampPointerSize(4)).toBe(MIN_POINTER_SIZE);
+    expect(clampPointerSize(100)).toBe(MAX_POINTER_SIZE);
+    expect(clampPointerSize(24.4)).toBe(24);
+    expect(clampPointerSize(Number.NaN)).toBe(DEFAULT_POINTER_SIZE);
+  });
+
+  it('色の形を検査し、透過色へ直せる', async () => {
+    const { isPointerColor, withAlpha } = await import('./rushPointerMath');
+    expect(isPointerColor('#ff2d2d')).toBe(true);
+    expect(isPointerColor('red')).toBe(false);
+    expect(isPointerColor('#fff')).toBe(false);
+    expect(withAlpha('#ff2d2d', 0.5)).toBe('rgba(255, 45, 45, 0.5)');
+    expect(withAlpha('おかしな値', 1)).toBe('rgba(255, 45, 45, 1)');
+  });
+});
