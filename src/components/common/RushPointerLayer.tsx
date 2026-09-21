@@ -1,11 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createRushPointerSender, RushPointerState, subscribeRushPointers } from '../../engine/rushPointer';
+import {
+  createRushPointerSender,
+  RushPointerState,
+  serverNow,
+  subscribeRushPointers,
+} from '../../engine/rushPointer';
 import { createRushStrokeSender, RushStroke, subscribeRushStrokes } from '../../engine/rushDrawing';
 import {
   fromVideoPosition,
   isPointerFresh,
   PointerPosition,
+  PointerSample,
   pointerGlow,
+  predictPointer,
   smoothTowards,
   strokeOpacity,
   strokeWidthPx,
@@ -84,8 +91,11 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
    * 目標へ少しずつ近づけることで、間を埋めてなめらかに見せる。
    */
   const dotNodes = useRef(new Map<string, HTMLDivElement | null>());
-  const targets = useRef(new Map<string, PointerPosition>());
   const shown = useRef(new Map<string, PointerPosition>());
+  /** 直近 2 回ぶんの位置と時刻。速さを出して、通信の遅れを埋める */
+  const samples = useRef(new Map<string, { previous: PointerSample | null; latest: PointerSample }>());
+  /** 自分の分はその場の位置をそのまま使う */
+  const selfTarget = useRef<PointerPosition | null>(null);
 
   /** 映像が実際に映っている四角 (枠の中での位置) */
   const contentRect = useCallback(() => {
@@ -130,7 +140,7 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
       setLocal(position);
       // 自分の分は追いつきを待たず、その場に置く
       if (position) {
-        targets.current.set('self', position);
+        selfTarget.current = position;
         shown.current.set('self', position);
       }
       if (position) {
@@ -144,7 +154,7 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
             if (tail && Math.hypot(position.x - tail.x, position.y - tail.y) < 0.002) return prev;
             return [
               ...prev.slice(0, -1),
-              { ...last, points: [...last.points, position], updatedAt: Date.now() },
+              { ...last, points: [...last.points, position], updatedAt: serverNow() },
             ];
           });
         }
@@ -169,7 +179,7 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
           color: appearance.color,
           size: appearance.strokeSize,
           points: [position],
-          updatedAt: Date.now(),
+          updatedAt: serverNow(),
         },
       ]);
     };
@@ -227,9 +237,13 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
     }
     const stopPointers = subscribeRushPointers(playbackId, (list) => {
       for (const p of list) {
-        if (typeof p.x === 'number' && typeof p.y === 'number' && p.id !== pointerId) {
-          targets.current.set(p.id, { x: p.x, y: p.y });
-        }
+        if (typeof p.x !== 'number' || typeof p.y !== 'number' || p.id === pointerId) continue;
+        const sample: PointerSample = { position: { x: p.x, y: p.y }, at: p.updatedAt };
+        const held = samples.current.get(p.id);
+        // ⚠️ 同じ時刻・古い時刻のものは捨てる。入れ直すと速さの計算が狂い、
+        // ポインターが行ったり来たりする (通信の都合で前後して届くことがある)
+        if (held && sample.at <= held.latest.at) continue;
+        samples.current.set(p.id, { previous: held?.latest ?? null, latest: sample });
       }
       setRemote(list);
     });
@@ -252,11 +266,22 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
       if (container) {
         const box = container.getBoundingClientRect();
         const content = videoContentRect(box.width, box.height, video?.videoWidth ?? 0, video?.videoHeight ?? 0);
+        const nowServer = serverNow();
         for (const [id, node] of dotNodes.current) {
-          const target = targets.current.get(id);
-          if (!node || !target) continue;
-          const current = shown.current.get(id) ?? target;
-          const next = id === 'self' ? target : smoothTowards(current, target, delta);
+          if (!node) continue;
+          let next: PointerPosition | null = null;
+          if (id === 'self') {
+            next = selfTarget.current;
+          } else {
+            const sample = samples.current.get(id);
+            if (sample) {
+              // 届いた位置と速さから「今いるはずの場所」を出し、そこへ素早く寄せる
+              const predicted = predictPointer(sample.previous, sample.latest, nowServer);
+              const current = shown.current.get(id) ?? predicted;
+              next = smoothTowards(current, predicted, delta);
+            }
+          }
+          if (!next) continue;
           shown.current.set(id, next);
           const { left, top } = fromVideoPosition(next, content);
           node.style.transform = `translate(${left}px, ${top}px) translate(-50%, -50%)`;
@@ -286,7 +311,9 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
 
   const rect = contentRect();
   if (!rect) return null;
-  const now = Date.now();
+  // ⚠️ 端末の時計ではなくサーバー基準で測ること (時計がずれた端末では、
+  // 出ているポインターを消したり、描いた線を即座に消したりしてしまう)
+  const now = serverNow();
   const content = rect.content;
 
   const dots = remote
@@ -314,11 +341,14 @@ export const RushPointerLayer: React.FC<RushPointerLayerProps> = ({
   // 自分の線は手元のものを使う (届いた分から自分のものは除く)
   // 出ていないポインターの控えは捨てる
   const liveKeys = new Set(dots.map((d) => d.key));
-  for (const key of Array.from(targets.current.keys())) {
+  for (const key of Array.from(samples.current.keys())) {
     if (!liveKeys.has(key)) {
-      targets.current.delete(key);
+      samples.current.delete(key);
       shown.current.delete(key);
     }
+  }
+  for (const key of Array.from(shown.current.keys())) {
+    if (!liveKeys.has(key)) shown.current.delete(key);
   }
 
   const visibleStrokes = [...strokes.filter((stroke) => !pointerId || stroke.by !== pointerId), ...ownStrokes]

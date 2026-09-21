@@ -61,15 +61,59 @@ export function fromVideoPosition(position: PointerPosition, content: Rect): { l
 }
 
 /** 位置を送る間隔 (ms)。滑らかさと通信量の折り合い */
-export const POINTER_SEND_INTERVAL_MS = 45;
+export const POINTER_SEND_INTERVAL_MS = 33;
 
 /**
  * 受け取った位置へ追いつく速さ (ms)。小さいほどキビキビ、大きいほどなめらか。
  *
- * ⚠️ 届いた位置をそのまま描かないこと。届くのは 1 秒に十数回なので、
+ * ⚠️ 届いた位置をそのまま描かないこと。届くのは 1 秒に数十回なので、
  * そのまま置くと飛び飛びに見える (カクつく)。毎フレーム少しずつ近づける。
+ * ⚠️ 大きくしすぎないこと。相手の動きから遅れて付いていく感じになる。
+ * 遅れの埋め合わせは predictPointer (下) が受け持つ。
  */
-export const POINTER_FOLLOW_MS = 90;
+export const POINTER_FOLLOW_MS = 28;
+
+// ─── 遅れの埋め合わせ (予測) ─────────────────────────────────────────────────
+
+/**
+ * 予測してよい上限 (ms)。
+ * 通信の片道が 100〜150ms になることがあるので、そこを覆える長さにする。
+ * ⚠️ 無制限にしないこと。相手が急に止まったとき、伸ばし続けて行き過ぎる。
+ */
+export const MAX_POINTER_PREDICT_MS = 320;
+
+/** 間がこれだけ空いたら、動きが途切れたとみなして予測しない */
+export const POINTER_SAMPLE_GAP_MS = 250;
+
+export interface PointerSample {
+  position: PointerPosition;
+  /** 送り手が書いた時刻 (サーバー基準) */
+  at: number;
+}
+
+/**
+ * 届いた 2 点の速さから「今いるはずの位置」を出す。
+ *
+ * 通信には片道 100ms 前後かかる。届いた位置をそのまま描くと、その分だけ
+ * オペレーターの手より後ろに出続ける。速さが分かれば先を読んで埋められる。
+ *
+ * ⚠️ 予測は上限で頭打ちにすること。相手が急に止まったとき、伸ばし続けると
+ * 行き過ぎて戻る動き (ゴムのような揺り返し) になる。
+ */
+export function predictPointer(previous: PointerSample | null, latest: PointerSample, now: number): PointerPosition {
+  const ahead = Math.min(Math.max(now - latest.at, 0), MAX_POINTER_PREDICT_MS);
+  if (!previous) return latest.position;
+
+  const span = latest.at - previous.at;
+  if (!(span > 0) || span > POINTER_SAMPLE_GAP_MS) return latest.position;
+
+  const vx = (latest.position.x - previous.position.x) / span;
+  const vy = (latest.position.y - previous.position.y) / span;
+  return {
+    x: Math.min(Math.max(latest.position.x + vx * ahead, 0), 1),
+    y: Math.min(Math.max(latest.position.y + vy * ahead, 0), 1),
+  };
+}
 
 /**
  * 今いる位置から目標へ、経過時間ぶんだけ近づけた位置。
