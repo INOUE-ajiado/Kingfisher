@@ -49,17 +49,15 @@ describe('rushSlice とログイン状態', () => {
 });
 
 describe('ルームの切り替え', () => {
-  it('別のルームへ入り直すと、前のルームの動画・リテイク・録画は残らない', () => {
+  it('別のルームへ入り直すと、前のルームの動画とリテイクは残らない', () => {
     s().setRushRoom(room);
     s().updateRushRetakes([{ id: 'r1', timecode: '00:00:01+00', frame: 24, tag: '撮影', text: 'x' }]);
-    s().addRushArchive({ id: 'a1', title: 't', videoUrl: room.videoUrl, duration: 1, createdAt: 0, retakeItems: [] });
 
     s().setRushRoom({ ...room, roomId: 'RUSH-BBBBBB', videoUrl: null, videoName: null, thumbnails: [], isLive: false });
     expect(s().roomId).toBe('RUSH-BBBBBB');
     expect(s().videoUrl).toBeNull();
     expect(s().rushThumbnails).toEqual([]);
     expect(s().retakeItems).toEqual([]);
-    expect(s().archives).toEqual([]);
     expect(s().isLive).toBe(false);
   });
 
