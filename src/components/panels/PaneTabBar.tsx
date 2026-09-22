@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Maximize2, Minimize2, X } from 'lucide-react';
+import { Maximize2, Minimize2, PictureInPicture2, X } from 'lucide-react';
 import { PaneId, PaneSlot, PANE_LABELS } from '../../engine/paneLayout';
 
 /**
@@ -28,6 +28,16 @@ interface PaneTabBarProps {
   onDropOnSlot: (pane: PaneId) => void;
   /** タブを掴んでいる / 離した。枠のあいだの落とし先を開くのに使う */
   onDragStateChange?: (dragging: boolean) => void;
+  /**
+   * タブに添える情報 (開いているファイル名など)。
+   * ⚠️ 面の中にもう 1 本見出しを置かないこと。× と ⤢ が 2 つ並び、
+   * 面を 3 つ出すだけで 60px を見出しだけで失っていた。
+   */
+  detailOf?: (pane: PaneId) => string | null;
+  /** 切り離し (Tear-off) / ドッキング復帰 */
+  onToggleFloat?: (pane: PaneId) => void;
+  /** いま切り離されている面 */
+  isFloating?: (pane: PaneId) => boolean;
 }
 
 const TONE: Record<PaneId, { active: string; idle: string }> = {
@@ -74,6 +84,9 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
   onToggleMaximize,
   onDropOnSlot,
   onDragStateChange,
+  detailOf,
+  onToggleFloat,
+  isFloating,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -129,6 +142,30 @@ export const PaneTabBar: React.FC<PaneTabBarProps> = ({
             }`}
           >
             <span className="truncate max-w-[7rem]">{PANE_LABELS[pane]}</span>
+
+            {/* 開いているものは、選ばれているタブにだけ添える (畳まれたタブは名前だけ) */}
+            {isActive && detailOf?.(pane) && (
+              <span className="truncate max-w-[18rem] font-normal opacity-90">
+                {detailOf(pane)}
+              </span>
+            )}
+
+            {onToggleFloat && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleFloat(pane);
+                }}
+                title={
+                  isFloating?.(pane)
+                    ? 'ドッキングに戻す'
+                    : '切り離して独立表示 (Tear-off)'
+                }
+                className="p-0.5 rounded hover:bg-black/20"
+              >
+                <PictureInPicture2 className="w-2.5 h-2.5" />
+              </button>
+            )}
 
             <button
               onClick={(e) => {

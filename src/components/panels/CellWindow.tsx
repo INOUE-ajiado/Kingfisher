@@ -1492,6 +1492,43 @@ export const CellWindow: React.FC = () => {
     else if (pane === 'rush') usePaintStore.getState().closeRushWindow();
   };
 
+  /**
+   * タブに添える「いま開いているもの」。
+   * ⚠️ 面の中にもう 1 本見出しを置かないこと (2 つの × が並ぶ)。
+   */
+  const paneDetail = (pane: PaneId): string | null => {
+    if (pane === 'winA') {
+      return `${folderNameA || 'Orig'}: ${resolveFileNameForView(currentFileIndex, 0) || '---'}${isDirtyA ? ' *' : ''}`;
+    }
+    if (pane === 'winB') {
+      return `${folderNameB || 'Retake'}: ${resolveFileNameForView(splitFileIndex, 1) || '---'}${isDirtyB ? ' *' : ''}`;
+    }
+    if (pane === 'rollA' || pane === 'rollB') {
+      const view = roll.views[pane];
+      const at = view.files.length > 1 && view.currentPath
+        ? ` (${view.files.findIndex((v) => v.path === view.currentPath) + 1}/${view.files.length})`
+        : '';
+      return `${view.fileName || '(未読み込み)'}${at}`;
+    }
+    if (pane === 'reference') return referenceCanvas.fileName || null;
+    return null;
+  };
+
+  const paneIsFloating = (pane: PaneId): boolean => {
+    if (pane === 'winA') return isWinAFloating;
+    if (pane === 'winB') return isWinBFloating;
+    if (pane === 'reference') return referenceCanvas.isFloating;
+    if (pane === 'rollA' || pane === 'rollB') return roll.views[pane].isFloating;
+    return false;
+  };
+
+  const togglePaneFloating = (pane: PaneId) => {
+    if (pane === 'winA') toggleWinAFloating();
+    else if (pane === 'winB') toggleWinBFloating();
+    else if (pane === 'reference') toggleReferenceFloating();
+    else if (pane === 'rollA' || pane === 'rollB') toggleRollFloating(pane);
+  };
+
   /** 一面表示中はその枠だけを、幅いっぱいに出す */
   const slotsToRender = paneLayout.maximized
     ? paneLayout.slots
@@ -1608,6 +1645,9 @@ export const CellWindow: React.FC = () => {
                 onToggleMaximize={toggleMaximizedPane}
                 onDropOnSlot={(pane) => stackPaneOnSlot(pane, slot.id)}
                 onDragStateChange={setIsPaneDragging}
+                detailOf={paneDetail}
+                onToggleFloat={togglePaneFloating}
+                isFloating={paneIsFloating}
               />
               <div className="flex-1 flex min-h-0 w-full">{renderPane(slot.activePane)}</div>
             </div>
