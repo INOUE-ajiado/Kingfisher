@@ -152,6 +152,39 @@ export function isViewerOnline(lastSeenAt: number, now: number): boolean {
 }
 
 /**
+ * 一覧に残す時間。これより古い記録は出さない。
+ *
+ * ⚠️ 古い記録を出し続けないこと。ブラウザを閉じると記録は残るので、
+ * 同じ人が何度も入り直すと一覧が同じ名前で埋まる (2026-09-23 の報告)。
+ */
+export const PRESENCE_LIST_WINDOW_MS = 5 * 60 * 1000;
+
+export function isPresenceVisible(lastSeenAt: number, now: number): boolean {
+  return now - lastSeenAt < PRESENCE_LIST_WINDOW_MS;
+}
+
+/** これより古い記録は消してよい (誰も見ていない) */
+export const PRESENCE_STALE_MS = 30 * 60 * 1000;
+
+/**
+ * 端末ごと・ルームごとに変わらない札を作る。
+ *
+ * ⚠️ 入室のたびに新しい札を作らないこと。画面を開き直すたびに別人として並ぶ。
+ * タブを閉じるまで同じ札を使い回す。
+ */
+export function stablePresenceId(storageKey: string): string {
+  const fallback = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  try {
+    const held = sessionStorage.getItem(storageKey);
+    if (held) return held;
+    sessionStorage.setItem(storageKey, fallback);
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * 外部共有のパスワードの最小の長さ。
  *
  * ⚠️ 短くしないこと。共有の URL を持っている人は、合言葉を何度でも試せる (回数制限は無い)。

@@ -38,12 +38,18 @@ export const joinRushShare = onCall(async (request) => {
   const secret = await verifySharePassword(shareId, password);
   const video = await signVideoUrl(secret.videoPath);
 
-  const viewerId = newViewerId();
-  await db.collection(SHARES).doc(shareId).collection(VIEWERS).doc(viewerId).set({
-    name,
-    joinedAt: Date.now(),
-    lastSeenAt: Date.now(),
-  });
+  /**
+   * ⚠️ 入り直すたびに新しい札を作らないこと。同じ人が何人も並んで見える。
+   * 画面が持っている札をそのまま使い、無ければ新しく作る。
+   */
+  const requested = typeof request.data?.viewerId === 'string' ? request.data.viewerId : '';
+  const viewerId = /^[0-9a-f]{32}$/.test(requested) ? requested : newViewerId();
+  await db
+    .collection(SHARES)
+    .doc(shareId)
+    .collection(VIEWERS)
+    .doc(viewerId)
+    .set({ name, joinedAt: Date.now(), lastSeenAt: Date.now() }, { merge: true });
 
   return {
     viewerId,

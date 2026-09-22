@@ -167,3 +167,54 @@ describe('視聴ページの振り分け', () => {
     expect(isWatchPath('/watchdog')).toBe(false);
   });
 });
+
+describe('参加者の一覧に残す範囲', () => {
+  it('合図が新しければ在席、しばらく無ければ離席、さらに古ければ一覧から外す', async () => {
+    const { isViewerOnline, isPresenceVisible } = await import('./rushAccess');
+    const now = 10 * 60 * 1000;
+    const 分 = 60 * 1000;
+    // 30 秒前 = 在席
+    expect(isViewerOnline(now - 30_000, now)).toBe(true);
+    expect(isPresenceVisible(now - 30_000, now)).toBe(true);
+    // 2 分前 = 離席だが一覧には残る
+    expect(isViewerOnline(now - 2 * 分, now)).toBe(false);
+    expect(isPresenceVisible(now - 2 * 分, now)).toBe(true);
+    // 6 分前 = 一覧から外す
+    expect(isPresenceVisible(now - 6 * 分, now)).toBe(false);
+  });
+
+  it('同じ札を使い回す (開き直しても別人にならない)', async () => {
+    const { stablePresenceId } = await import('./rushAccess');
+    const store: Record<string, string> = {};
+    // sessionStorage を差し替えて確かめる
+    const original = globalThis.sessionStorage;
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      value: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+      },
+      configurable: true,
+    });
+
+    const first = stablePresenceId('room-A');
+    expect(stablePresenceId('room-A')).toBe(first);
+    expect(stablePresenceId('room-B')).not.toBe(first);
+
+    Object.defineProperty(globalThis, 'sessionStorage', { value: original, configurable: true });
+  });
+
+  it('保存できない環境でも札は作れる', async () => {
+    const { stablePresenceId } = await import('./rushAccess');
+    const original = globalThis.sessionStorage;
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      get() {
+        throw new Error('使えません');
+      },
+      configurable: true,
+    });
+    expect(stablePresenceId('room-C')).toMatch(/^[a-z0-9]+$/);
+    Object.defineProperty(globalThis, 'sessionStorage', { value: original, configurable: true });
+  });
+});
