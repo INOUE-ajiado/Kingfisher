@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { useShallow } from 'zustand/react/shallow';
 import { FileBrowser } from './FileBrowser';
 import { RetakeNotePanel } from './RetakeNotePanel';
 import { RollId, ROLL_IDS } from '../../store/types';
@@ -91,7 +92,23 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     syncMode,
     openRollWindow,
     setRollReady,
-  } = usePaintStore();
+  } = usePaintStore(
+    useShallow((s) => ({
+        closeRollWindow: s.closeRollWindow,
+        toggleRollFloating: s.toggleRollFloating,
+        setActiveRollId: s.setActiveRollId,
+        loadRollFile: s.loadRollFile,
+        loadRollFiles: s.loadRollFiles,
+        stepRoll: s.stepRoll,
+        reportRollPlaybackFailure: s.reportRollPlaybackFailure,
+        setRollFps: s.setRollFps,
+        updateRollSyncOffset: s.updateRollSyncOffset,
+        toggleSyncMode: s.toggleSyncMode,
+        syncMode: s.syncMode,
+        openRollWindow: s.openRollWindow,
+        setRollReady: s.setRollReady,
+    }))
+  );
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
