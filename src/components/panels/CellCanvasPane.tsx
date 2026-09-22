@@ -249,11 +249,21 @@ export const CellCanvasPane: React.FC<CellCanvasPaneProps> = ({
           </div>
         )}
 
+        {/*
+          ⚠️ 目盛りの無い「0px / 半分 / 全幅」だけを出さないこと。
+          倍率にもスクロールにも連動せず、測れないのに測れるように見えていた。
+          今の倍率と画像の実寸を出す。
+        */}
         {showRuler && image && (
           <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
-            <span>0px</span>
-            <span>{Math.floor(image.width / 2)}px</span>
-            <span>{image.width}px</span>
+            <span>
+              {image.width} x {image.height} px
+            </span>
+            <span>
+              表示 {Math.round(transform.scale * 100)}%
+              {transform.rotation ? ` / ${Math.round(transform.rotation)}°` : ''}
+            </span>
+            <span>1px = {(transform.scale).toFixed(2)}px</span>
           </div>
         )}
 
