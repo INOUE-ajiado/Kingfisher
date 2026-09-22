@@ -30,3 +30,6 @@ yarn-error.log*
 *.sw?
 .DS_Store
 Thumbs.db
+
+# 手元の確認用素材 (数百 MB の撮影ロールを置く場所)
+sample/

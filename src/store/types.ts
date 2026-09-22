@@ -649,6 +649,10 @@ export interface ViewSlice {
   syncFrameOffset: number;
   /** 連動中のコマ差を 0 に揃える (Win B を Win A と同じコマへ) */
   alignSyncFrames: () => void;
+  /**
+   * セルの左右 (Win A / Win B) とロール 2 面をまとめた「連動」。
+   * ⚠️ 連動しているかを持つのはここだけ。ロール側へ写さないこと。
+   */
   syncMode: boolean
   activeViewIndex: 0 | 1
   splitFileIndex: number
@@ -964,22 +968,22 @@ export interface RollViewState {
   isRealtimeProRes?: boolean;
 }
 
+/**
+ * ロールの連動の控え。
+ *
+ * ⚠️ ここに「連動しているか」の旗を置かないこと。入り切りは syncMode が唯一の source。
+ * 以前は roll.sync / roll.fileSync という写しがあり、画面側が
+ * `roll.sync || syncMode` のように OR で読む (＝食い違う前提の) コードになっていた。
+ * ここが持つのは、連動を入れた時点の「ずれ」だけ。
+ */
 export interface RollState {
   /** 面ごとの再生状態 (映像の一覧も面ごとに持つ) */
   views: Record<RollId, RollViewState>;
   /** ツリーから選んだときに開く面 */
   activeId: RollId;
-  /** 2 面の再生を連動させるか */
-  sync: boolean;
   /** 連動を開始した時点の時刻差 (B - A、秒) */
   syncOffset: number;
-  /**
-   * 2 面のツリーで選ぶロールを連動させるか。
-   * 再生の連動 (sync) とは別物。あちらは同じロールの中の時刻、こちらは
-   * 「一覧の何本目を開くか」を合わせる。
-   */
-  fileSync: boolean;
-  /** ツリーの連動を開始した時点の一覧上のずれ (B - A、本数) */
+  /** 連動を開始した時点の一覧上のずれ (B - A、本数) */
   fileSyncOffset: number;
 }
 
@@ -1010,20 +1014,14 @@ export interface RollSlice {
   /** <video> が再生を拒否したときに呼ぶ。コーデックを調べて理由を出す */
   reportRollPlaybackFailure: (id: RollId) => Promise<void>
   setRollFps: (id: RollId, fps: number, source: 'auto' | 'manual') => void
-  /**
-   * 2 面の再生を連動させる / やめる。
-   * 開始時の時刻差 (B - A、秒) を渡すと、その差を保ったまま追従する。
-   */
-  toggleRollSync: (offset?: number) => void
   /** 連動中の時刻差 (B - A、秒) だけを更新する (片方の面だけ動かしたとき用) */
   updateRollSyncOffset: (offset: number) => void
-  /** ロールの全連動 (再生連動 & 選択連動) を一括で切り替える */
-  setRollSyncAll: (enabled: boolean) => void
   /**
-   * 2 面のツリーで選ぶロールを連動させる / やめる。
-   * 開始時に今それぞれ開いている本数の差を記録し、以降その差を保って追従する。
+   * 連動 (syncMode) を入れ切りしたときにロール側で必要な支度をする。
+   * 入れたときは今の時刻差・一覧のずれを控え、片方だけ開いていれば相手も開く。
+   * ⚠️ ここで旗は持たない。入り切りは syncMode が唯一の source。
    */
-  toggleRollFileSync: () => void
+  setRollSyncAll: (enabled: boolean) => void
   /** ツリーの連動のずれを 0 に戻し、ロール B を ロール A と同じ位置へ揃える */
   alignRollFiles: () => void
   setRollReady: (id: RollId) => void

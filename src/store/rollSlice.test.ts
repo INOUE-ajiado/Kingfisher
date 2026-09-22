@@ -69,12 +69,11 @@ beforeEach(() => {
     roll: {
       views: { rollA: emptyView(), rollB: emptyView() },
       activeId: 'rollA',
-      sync: false,
       syncOffset: 0,
-      fileSync: false,
       fileSyncOffset: 0,
     },
     activeSurface: 'cell',
+    syncMode: false,
   });
 });
 
@@ -248,42 +247,38 @@ describe('2 面 (修正前 / 修正後の見比べ)', () => {
 });
 
 describe('連動', () => {
+  // ⚠️ 連動しているかを持つのは syncMode だけ。ロール側は「ずれ」しか持たない
   const openBoth = () => {
     s().loadRollFile('rollA', movFile('avc1', 'before.mov'));
     s().loadRollFile('rollB', movFile('avc1', 'after.mov'));
   };
 
-  it('片方しか開いていなければ連動しない', () => {
-    s().loadRollFile('rollA', movFile('avc1'));
-    s().toggleRollSync(0);
-    expect(s().roll.sync).toBe(false);
-  });
-
-  it('両方開いていれば連動できる', () => {
+  it('連動の旗はロール側に写さない (syncMode が唯一の source)', () => {
     openBoth();
-    s().toggleRollSync(0);
-    expect(s().roll.sync).toBe(true);
-  });
-
-  it('開始時の時刻差を覚える', () => {
-    // 片方を頭出ししてから連動させる使い方があるので、差を保つ
-    openBoth();
-    s().toggleRollSync(1.5);
-    expect(s().roll.syncOffset).toBeCloseTo(1.5, 6);
+    s().toggleSyncMode();
+    expect(s().syncMode).toBe(true);
+    expect('sync' in s().roll).toBe(false);
+    expect('fileSync' in s().roll).toBe(false);
   });
 
   it('もう一度押すと解除される', () => {
     openBoth();
-    s().toggleRollSync(1.5);
-    s().toggleRollSync();
-    expect(s().roll.sync).toBe(false);
+    s().toggleSyncMode();
+    s().toggleSyncMode();
+    expect(s().syncMode).toBe(false);
   });
 
   it('時刻差だけを更新できる', () => {
     openBoth();
-    s().toggleRollSync(1.0);
+    s().toggleSyncMode();
     s().updateRollSyncOffset(2.5);
     expect(s().roll.syncOffset).toBeCloseTo(2.5, 6);
+  });
+
+  it('連動していなければ時刻差は更新しない', () => {
+    openBoth();
+    s().updateRollSyncOffset(2.5);
+    expect(s().roll.syncOffset).toBe(0);
   });
 });
 
@@ -302,19 +297,18 @@ describe('ツリーの選択の連動', () => {
   const pathA = () => s().roll.views.rollA.currentPath;
   const pathB = () => s().roll.views.rollB.currentPath;
 
-  it('片方に一覧が無ければ連動しない', () => {
+  it('片方に一覧が無ければ、ずれは 0 のまま', () => {
     s().loadRollFile('rollA', movFile('avc1'));
-    s().toggleRollFileSync();
-    expect(s().roll.fileSync).toBe(false);
+    s().toggleSyncMode();
+    expect(s().roll.fileSyncOffset).toBe(0);
   });
 
   it('開始時のずれを覚え、押しただけでは動かさない', () => {
     // 「A の 1 本目と B の 2 本目が同じカット」という並びに合わせてから連動させる
     loadBoth();
     s().selectRollFile('rollB', 'After/c2.mov');
-    s().toggleRollFileSync();
+    s().toggleSyncMode();
 
-    expect(s().roll.fileSync).toBe(true);
     expect(s().roll.fileSyncOffset).toBe(1);
     expect(pathA()).toBe('Before/c1.mov');
     expect(pathB()).toBe('After/c2.mov');
@@ -323,7 +317,7 @@ describe('ツリーの選択の連動', () => {
   it('片方で選ぶと、もう片方もずれを保って動く', () => {
     loadBoth();
     s().selectRollFile('rollB', 'After/c2.mov');
-    s().toggleRollFileSync();
+    s().toggleSyncMode();
 
     s().selectRollFile('rollA', 'Before/c2.mov');
     expect(pathB()).toBe('After/c3.mov');
@@ -335,7 +329,7 @@ describe('ツリーの選択の連動', () => {
 
   it('コマ送り (前後のロールへ) からも連動する', () => {
     loadBoth();
-    s().toggleRollFileSync();
+    s().toggleSyncMode();
     s().stepRoll('rollA', 1);
     expect(pathA()).toBe('Before/c2.mov');
     expect(pathB()).toBe('After/c2.mov');
@@ -344,7 +338,7 @@ describe('ツリーの選択の連動', () => {
   it('一覧の端では止まるが、ずれ自体は保つ', () => {
     loadBoth();
     s().selectRollFile('rollB', 'After/c2.mov');
-    s().toggleRollFileSync(); // ずれ +1
+    s().toggleSyncMode(); // ずれ +1
 
     s().selectRollFile('rollA', 'Before/c3.mov');
     expect(pathB()).toBe('After/c3.mov'); // これ以上先が無いので端で止まる
@@ -364,7 +358,7 @@ describe('ツリーの選択の連動', () => {
   it('差を揃えるとロール B がロール A と同じ位置へ来る', () => {
     loadBoth();
     s().selectRollFile('rollB', 'After/c3.mov');
-    s().toggleRollFileSync();
+    s().toggleSyncMode();
     s().alignRollFiles();
 
     expect(s().roll.fileSyncOffset).toBe(0);
@@ -373,18 +367,23 @@ describe('ツリーの選択の連動', () => {
 
   it('連動で開いた URL も手放す', () => {
     loadBoth();
-    s().toggleRollFileSync();
+    s().toggleSyncMode();
     const before = revoked.length;
     s().selectRollFile('rollA', 'Before/c2.mov');
     // 2 面とも差し替わるので、前の URL は 2 本とも解放される
     expect(revoked.length).toBe(before + 2);
   });
 
-  it('面を閉じたら連動も解ける', () => {
+  it('面を閉じたら一覧のずれは 0 に戻る (連動そのものは切らない)', () => {
     loadBoth();
-    s().toggleRollFileSync();
+    s().selectRollFile('rollB', 'After/c2.mov');
+    s().toggleSyncMode();
+    expect(s().roll.fileSyncOffset).toBe(1);
+
     s().closeRollWindow('rollB');
-    expect(s().roll.fileSync).toBe(false);
+    expect(s().roll.fileSyncOffset).toBe(0);
+    // ⚠️ セルの左右連動と同じ旗なので、ロールを 1 面閉じただけで切らない
+    expect(s().syncMode).toBe(true);
   });
 });
 

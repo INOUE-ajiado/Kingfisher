@@ -1449,7 +1449,7 @@ export const FileBrowser: React.FC = () => {
             <span>撮影ロール</span>
 
             {/* 共通の連携ボタンで一元管理されるため個別の連携ボタンは統合 */}
-            {(roll.fileSync || roll.sync) && (
+            {syncMode && (
               <span className="ml-auto text-[9px] font-bold text-amber-500 flex items-center gap-1">
                 <Link className="w-3 h-3" />
                 <span>連携中</span>
@@ -1469,11 +1469,11 @@ export const FileBrowser: React.FC = () => {
                   </span>
                   {/* どの面へ開くかは面ごとのツリーで決まるが、他の導線 (連番表など) の
                       行き先が分かるように、アクティブな面には印を出す */}
-                  {((roll.activeId === pane.id && rollPanes.length > 1) || roll.fileSync || roll.sync) && (
+                  {((roll.activeId === pane.id && rollPanes.length > 1) || syncMode) && (
                     <span className={`text-[8px] font-bold px-1 rounded flex-shrink-0 ${
-                      roll.fileSync || roll.sync ? 'bg-emerald-400 text-slate-900' : 'bg-amber-400 text-slate-900'
+                      syncMode ? 'bg-emerald-400 text-slate-900' : 'bg-amber-400 text-slate-900'
                     }`}>
-                      {roll.fileSync || roll.sync ? '選択先 (連動)' : '選択先'}
+                      {syncMode ? '選択先 (連動)' : '選択先'}
                     </span>
                   )}
                 </div>
@@ -1499,7 +1499,7 @@ export const FileBrowser: React.FC = () => {
                         currentIdx={pane.activeIdx}
                         selectionTone={pane.selectionTone}
                         fileIcon="film"
-                        showSyncBadge={roll.fileSync}
+                        showSyncBadge={syncMode}
                       />
                     ))
                   )}
