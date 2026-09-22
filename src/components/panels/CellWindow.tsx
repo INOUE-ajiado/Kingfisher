@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { useShallow } from 'zustand/react/shallow';
 import { angleFromCenter, normalizeAngle, screenToImagePoint, snapAngle } from '../../engine/viewTransform';
 import {
   collectImageFilesFromEntry,
@@ -19,20 +20,27 @@ import {
   sampleColorAt,
 } from '../../engine/paintAlgorithm';
 import { cloneTGAImage, createCheckerPattern } from '../../engine/imageDecode';
-import { AlertTriangle, Maximize2, Minimize2, FolderOpen, Loader2, FileCode } from 'lucide-react';
+import { FolderOpen, Loader2, FileCode } from 'lucide-react';
 import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { useFrameLoader, useCellPrefetch, useOnionSkinFrames } from '../../hooks/useFrameLoader';
-import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { DockPlaceholder } from '../common/DockPlaceholder';
 import { ReferenceCanvasView } from './ReferenceCanvasView';
 import { RollViewer } from './RollViewer';
 import { RushWindow } from './RushWindow';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
+import { CellCanvasPane } from './CellCanvasPane';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
 import { RollId, CanvasTransform } from '../../store/types';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import { getRenderSignal, subscribeRenderSignal } from '../../engine/renderSignal';
 import { fitTransformFor, isUserAdjusted, sizeKeyOf } from '../../engine/canvasFit';
+import {
+  onionAlpha,
+  tintedOnionCanvas,
+  clearOnionCache,
+  OnionColor,
+  OnionDisplayMode,
+} from '../../engine/onionSkin';
 import { wheelInputFrom, wheelTransform } from '../../engine/canvasZoom';
 
 export const CellWindow: React.FC = () => {
@@ -106,7 +114,77 @@ export const CellWindow: React.FC = () => {
     canvasCustomBgColor,
     isPsdLoading,
     psdLoadingFileName,
-  } = usePaintStore();
+    isAuthenticated,
+  } = usePaintStore(
+    useShallow((s) => ({
+        currentFileIndex: s.currentFileIndex,
+        splitFileIndex: s.splitFileIndex,
+        isSplitView: s.isSplitView,
+        syncMode: s.syncMode,
+        activeViewIndex: s.activeViewIndex,
+        setActiveViewIndex: s.setActiveViewIndex,
+        activeTool: s.activeTool,
+        toolOptions: s.toolOptions,
+        currentColor: s.currentColor,
+        backgroundColor: s.backgroundColor,
+        setCurrentColor: s.setCurrentColor,
+        currentImage: s.currentImage,
+        setCurrentImage: s.setCurrentImage,
+        splitImage: s.splitImage,
+        setSplitImage: s.setSplitImage,
+        resolveFileNameForView: s.resolveFileNameForView,
+        isDirtyA: s.isDirtyA,
+        isDirtyB: s.isDirtyB,
+        prevImage: s.prevImage,
+        nextImage: s.nextImage,
+        canvasTransform: s.canvasTransform,
+        setCanvasTransform: s.setCanvasTransform,
+        splitCanvasTransform: s.splitCanvasTransform,
+        setSplitCanvasTransform: s.setSplitCanvasTransform,
+        lightTable: s.lightTable,
+        triggerRender: s.triggerRender,
+        folderNameA: s.folderNameA,
+        folderNameB: s.folderNameB,
+        saveUndoState: s.saveUndoState,
+        isPlaying: s.isPlaying,
+        fps: s.fps,
+        roll: s.roll,
+        toggleRollFloating: s.toggleRollFloating,
+        loadRollFiles: s.loadRollFiles,
+        closeRollWindow: s.closeRollWindow,
+        closeReferenceWindow: s.closeReferenceWindow,
+        toggleIsSplitView: s.toggleIsSplitView,
+        isWinAVisible: s.isWinAVisible,
+        toggleWinAVisible: s.toggleWinAVisible,
+        paneLayout: s.paneLayout,
+        syncPaneVisibility: s.syncPaneVisibility,
+        setActivePaneInSlot: s.setActivePaneInSlot,
+        stackPaneOnSlot: s.stackPaneOnSlot,
+        movePaneToPosition: s.movePaneToPosition,
+        toggleMaximizedPane: s.toggleMaximizedPane,
+        setPaneSlotFlex: s.setPaneSlotFlex,
+        showGrid: s.showGrid,
+        showRuler: s.showRuler,
+        showUnpaintedFlash: s.showUnpaintedFlash,
+        pegStabilizer: s.pegStabilizer,
+        referenceCanvas: s.referenceCanvas,
+        colorSpecLayoutMode: s.colorSpecLayoutMode,
+        isWinAFloating: s.isWinAFloating,
+        isWinBFloating: s.isWinBFloating,
+        toggleWinAFloating: s.toggleWinAFloating,
+        toggleWinBFloating: s.toggleWinBFloating,
+        toggleReferenceFloating: s.toggleReferenceFloating,
+        setCustomDropFolderA: s.setCustomDropFolderA,
+        setCustomDropFolderB: s.setCustomDropFolderB,
+        setFolderHandleA: s.setFolderHandleA,
+        setFolderHandleB: s.setFolderHandleB,
+        canvasBgMatteMode: s.canvasBgMatteMode,
+        canvasCustomBgColor: s.canvasCustomBgColor,
+        isPsdLoading: s.isPsdLoading,
+        psdLoadingFileName: s.psdLoadingFileName,
+        isAuthenticated: s.isAuthenticated,
+    }))
+  );
 
   // 引きはがし・移動・リサイズ・ドッキング復帰・重なり順は useFloatingWindow に集約
   const winAWindow = useFloatingWindow({
@@ -154,22 +232,30 @@ export const CellWindow: React.FC = () => {
   const [isSpacePressed, setIsSpacePressed] = useState(false);
 
   /**
-   * ドラッグ操作を canvas の外で離した時の取りこぼし対策。
+   * 掴んだまま canvas の外で離したときの取りこぼし対策。
    *
-   * パン・ブラシの終了は canvas の onMouseUp だけに任せていたため、
-   * キャンバスの外へ出てからボタンを離すと状態が「押しっぱなし」のまま残り、
+   * パン・ブラシ・回転ビュー・投げ縄の終了を canvas の onMouseUp だけに任せていると、
+   * 外へ出てからボタンを離した場合に「押しっぱなし」の状態が残り、
    * 以降の左クリックがすべてパン扱いになって描画ツールが反応しなくなる。
-   * window 側でも確実に終了させる。
+   *
+   * ⚠️ canvas の上で離した分はここで打ち切らないこと。pointerup は onMouseUp より
+   * 先に来るため、無条件に止めると通常の塗りが実行されなくなる。
+   * 外で離した投げ縄は塗らずに破棄する (履歴は確定の直前に積むので汚れない)。
    */
   useEffect(() => {
-    if (!isPanning && !isBrushing && !isRotatingView) return;
+    if (!isPanning && !isBrushing && !isRotatingView && !isLassoing) return;
 
-    const endDrag = () => {
+    const endDrag = (e: Event) => {
       setIsPanning(false);
       setIsBrushing(false);
       setIsRotatingView(false);
       rotateDragRef.current = null;
       setLastPos(null);
+
+      const canvas = lassoView === 1 ? rightCanvasRef.current : leftCanvasRef.current;
+      if (canvas && e.target === canvas) return;
+      setIsLassoing(false);
+      setLassoPoints([]);
     };
 
     window.addEventListener('pointerup', endDrag);
@@ -178,39 +264,7 @@ export const CellWindow: React.FC = () => {
       window.removeEventListener('pointerup', endDrag);
       window.removeEventListener('pointercancel', endDrag);
     };
-  }, [isPanning, isBrushing, isRotatingView]);
-
-  /**
-   * 投げ縄をキャンバスの外で離したときの取りこぼし対策。
-   *
-   * 上の endDrag は isLassoing を落としていない (依存配列も [isPanning, isBrushing]
-   * なので投げ縄だけの操作では登録すらされない)。そのため外で離すと
-   * 「投げ縄を引いている」状態が残り、ボタンを押していないのにカーソルへ
-   * 輪郭線が付いてきてしまう。
-   *
-   * ⚠️ キャンバス上で離した分はここで触らないこと。pointerup は onMouseUp より
-   * 先に来るため、無条件に打ち切ると通常の塗りが実行されなくなる。
-   * 外で離した場合は塗らずに破棄する (キャンバス上で離したときだけ塗る、という
-   * 従来の意図をそのまま保つ)。履歴は確定の直前に積むので、破棄しても
-   * 履歴や「未保存」の表示は汚れない。
-   */
-  useEffect(() => {
-    if (!isLassoing) return;
-
-    const cancelLasso = (e: Event) => {
-      const canvas = lassoView === 1 ? rightCanvasRef.current : leftCanvasRef.current;
-      if (canvas && e.target === canvas) return;
-      setIsLassoing(false);
-      setLassoPoints([]);
-    };
-
-    window.addEventListener('pointerup', cancelLasso);
-    window.addEventListener('pointercancel', cancelLasso);
-    return () => {
-      window.removeEventListener('pointerup', cancelLasso);
-      window.removeEventListener('pointercancel', cancelLasso);
-    };
-  }, [isLassoing, lassoView]);
+  }, [isPanning, isBrushing, isRotatingView, isLassoing, lassoView]);
 
   /**
    * ウィンドウからフォーカスが外れている間に Space を離すと keyup が届かず、
@@ -542,6 +596,14 @@ export const CellWindow: React.FC = () => {
   };
 
 
+  /**
+   * カットを変えたら、色づけして取ってあるコマを捨てる。
+   * ⚠️ 残しておくと、前のカットの大きな絵を抱えたままになる。
+   */
+  useEffect(() => {
+    clearOnionCache();
+  }, [folderNameA]);
+
   // 画像の読み込み・先読み・オニオンスキンは useFrameLoader 系フックに委譲する。
   // (splitImage = Win B の編集対象はストア管理なので、保存・Undo が Win A と同じ経路を通る)
   const loadFrameForView = useFrameLoader();
@@ -729,6 +791,53 @@ export const CellWindow: React.FC = () => {
     return () => clearInterval(interval);
   }, [isPlaying, fps, toolOptions.frameHold]);
 
+  /**
+   * 素材を canvas へ写すための下書き。
+   *
+   * ⚠️ 描くたびに new しないこと。ブラシを 1 回引くだけで描き直しが走るので、
+   * 重ねる枚数ぶんの canvas が毎回作られていた。1 枚を使い回す
+   * (写したらすぐ描き込むので、次の呼び出しまで内容を持つ必要はない)。
+   */
+  const scratchCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const toScratchCanvas = useCallback(
+    (img: { width: number; height: number; data: Uint8ClampedArray }): HTMLCanvasElement | null => {
+      if (!scratchCanvasRef.current) scratchCanvasRef.current = document.createElement('canvas');
+      const scratch = scratchCanvasRef.current;
+      if (scratch.width !== img.width || scratch.height !== img.height) {
+        scratch.width = img.width;
+        scratch.height = img.height;
+      }
+      const sctx = scratch.getContext('2d');
+      if (!sctx) return null;
+      const imgData = sctx.createImageData(img.width, img.height);
+      imgData.data.set(img.data);
+      sctx.putImageData(imgData, 0, 0);
+      return scratch;
+    },
+    []
+  );
+
+  /**
+   * タップ穴のずれを直す補正をかける。
+   *
+   * ⚠️ 焼き込みと同じ順 (回す → 倍率 → 平行移動)。順が違うと画面と結果がずれる。
+   * ⚠️ 絵とガイドで別々に書かないこと。片方だけ直すと、合っているのかが分からなくなる。
+   */
+  const applyPegTransform = useCallback(
+    (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+      if (!pegStabilizer.enabled) return;
+      const totalX = pegStabilizer.offsetX + pegStabilizer.manualX;
+      const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
+      const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
+      ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
+      ctx.rotate(totalRot);
+      ctx.scale(pegStabilizer.scale, pegStabilizer.scale);
+      ctx.translate(-canvas.width / 2, -canvas.height / 2);
+    },
+    [pegStabilizer]
+  );
+
   // キャンバス描画
   const renderCanvasInstance = useCallback(
     (canvas: HTMLCanvasElement | null, targetImg: any, isLeft: boolean) => {
@@ -769,164 +878,62 @@ export const CellWindow: React.FC = () => {
       }
 
       // 1. Draw Onion Skin Layers (オニオンスキン: 前後フレーム透過 & カラーコーディング)
+      // ⚠️ 過去と未来で処理を分けて書かないこと。以前は色と符号だけが違う
+      // 46 行が 2 つ並んでおり、片方だけ直る形になっていた。
       if (isLeft && lightTable.enabled && !isPlaying) {
-        // A. 過去フレーム描画 (Past Frames: デフォルト 赤)
+        const mode = (lightTable.displayMode ?? 'monochrome') as OnionDisplayMode;
+        const startOpacity = lightTable.startOpacity ?? 30;
+        const opacityStep = lightTable.opacityStep ?? 10;
+
         // 「カット全体」指定のときは読み込めた枚数ぶんすべて重ねる
-        const pastCount = lightTable.showAllFrames
-          ? onionFramesMap.size
-          : lightTable.pastFrames ?? 1;
+        const pastCount = lightTable.showAllFrames ? onionFramesMap.size : lightTable.pastFrames ?? 1;
+        const futureCount = lightTable.showAllFrames ? onionFramesMap.size : lightTable.futureFrames ?? 1;
+
+        // 奥のコマから順に重ねる (過去は遠い方から、未来は近い方から)
+        const layers: { step: number; color: OnionColor; frame: any }[] = [];
         for (let step = pastCount; step >= 1; step--) {
-          const frameImg = onionFramesMap.get(-step) || (step === 1 ? prevImage : null);
-          if (!frameImg) continue;
-
-          const startOp = (lightTable.startOpacity ?? 30) / 100;
-          const stepDecay = ((lightTable.opacityStep ?? 10) * (step - 1)) / 100;
-          const frameAlpha = Math.max(0.05, startOp - stepDecay);
-
-          const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
-          const pColor = lightTable.pastColor || { r: 239, g: 68, b: 68 };
-          const mode = lightTable.displayMode;
-
-          for (let i = 0; i < frameImg.data.length; i += 4) {
-            const a = frameImg.data[i + 3];
-            if (a > 0) {
-              if (mode === 'monochrome') {
-                const lum = (0.299 * frameImg.data[i] + 0.587 * frameImg.data[i + 1] + 0.114 * frameImg.data[i + 2]) / 255;
-                frameImgData.data[i] = Math.round(lum * pColor.r);
-                frameImgData.data[i + 1] = Math.round(lum * pColor.g);
-                frameImgData.data[i + 2] = Math.round(lum * pColor.b);
-                frameImgData.data[i + 3] = a;
-              } else if (mode === 'half-color') {
-                frameImgData.data[i] = Math.round((frameImg.data[i] + pColor.r) / 2);
-                frameImgData.data[i + 1] = Math.round((frameImg.data[i + 1] + pColor.g) / 2);
-                frameImgData.data[i + 2] = Math.round((frameImg.data[i + 2] + pColor.b) / 2);
-                frameImgData.data[i + 3] = a;
-              } else {
-                frameImgData.data[i] = frameImg.data[i];
-                frameImgData.data[i + 1] = frameImg.data[i + 1];
-                frameImgData.data[i + 2] = frameImg.data[i + 2];
-                frameImgData.data[i + 3] = a;
-              }
-            }
-          }
-
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = frameImg.width;
-          tempCanvas.height = frameImg.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCtx.putImageData(frameImgData, 0, 0);
-            ctx.globalAlpha = frameAlpha;
-            ctx.drawImage(tempCanvas, 0, 0);
-            ctx.globalAlpha = 1.0;
-          }
+          const frame = onionFramesMap.get(-step) || (step === 1 ? prevImage : null);
+          if (frame) layers.push({ step, color: lightTable.pastColor || { r: 239, g: 68, b: 68 }, frame });
+        }
+        for (let step = 1; step <= futureCount; step++) {
+          const frame = onionFramesMap.get(step) || (step === 1 ? nextImage : null);
+          if (frame) layers.push({ step, color: lightTable.futureColor || { r: 59, g: 130, b: 246 }, frame });
         }
 
-        // B. 未来フレーム描画 (Future Frames: デフォルト 青)
-        const futureCount = lightTable.showAllFrames
-          ? onionFramesMap.size
-          : lightTable.futureFrames ?? 1;
-        for (let step = 1; step <= futureCount; step++) {
-          const frameImg = onionFramesMap.get(step) || (step === 1 ? nextImage : null);
-          if (!frameImg) continue;
-
-          const startOp = (lightTable.startOpacity ?? 30) / 100;
-          const stepDecay = ((lightTable.opacityStep ?? 10) * (step - 1)) / 100;
-          const frameAlpha = Math.max(0.05, startOp - stepDecay);
-
-          const frameImgData = ctx.createImageData(frameImg.width, frameImg.height);
-          const fColor = lightTable.futureColor || { r: 59, g: 130, b: 246 };
-          const mode = lightTable.displayMode;
-
-          for (let i = 0; i < frameImg.data.length; i += 4) {
-            const a = frameImg.data[i + 3];
-            if (a > 0) {
-              if (mode === 'monochrome') {
-                const lum = (0.299 * frameImg.data[i] + 0.587 * frameImg.data[i + 1] + 0.114 * frameImg.data[i + 2]) / 255;
-                frameImgData.data[i] = Math.round(lum * fColor.r);
-                frameImgData.data[i + 1] = Math.round(lum * fColor.g);
-                frameImgData.data[i + 2] = Math.round(lum * fColor.b);
-                frameImgData.data[i + 3] = a;
-              } else if (mode === 'half-color') {
-                frameImgData.data[i] = Math.round((frameImg.data[i] + fColor.r) / 2);
-                frameImgData.data[i + 1] = Math.round((frameImg.data[i + 1] + fColor.g) / 2);
-                frameImgData.data[i + 2] = Math.round((frameImg.data[i + 2] + fColor.b) / 2);
-                frameImgData.data[i + 3] = a;
-              } else {
-                frameImgData.data[i] = frameImg.data[i];
-                frameImgData.data[i + 1] = frameImg.data[i + 1];
-                frameImgData.data[i + 2] = frameImg.data[i + 2];
-                frameImgData.data[i + 3] = a;
-              }
-            }
-          }
-
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = frameImg.width;
-          tempCanvas.height = frameImg.height;
-          const tempCtx = tempCanvas.getContext('2d');
-          if (tempCtx) {
-            tempCtx.putImageData(frameImgData, 0, 0);
-            ctx.globalAlpha = frameAlpha;
-            ctx.drawImage(tempCanvas, 0, 0);
-            ctx.globalAlpha = 1.0;
-          }
+        for (const layer of layers) {
+          const tinted = tintedOnionCanvas(layer.frame, layer.color, mode);
+          if (!tinted) continue;
+          ctx.globalAlpha = onionAlpha(startOpacity, opacityStep, layer.step);
+          ctx.drawImage(tinted, 0, 0);
+          ctx.globalAlpha = 1.0;
         }
       }
-
       // 1.5 Draw Individual Light Table SubLayers (登録された個別の参照TGA: 移動・回転アフィン変換)
       if (isLeft && lightTable.items && lightTable.items.length > 0) {
         for (const subItem of lightTable.items) {
           if (!subItem.visible || !subItem.image) continue;
 
           const subImg = subItem.image;
-          const subCanvas = document.createElement('canvas');
-          subCanvas.width = subImg.width;
-          subCanvas.height = subImg.height;
-          const subCtx = subCanvas.getContext('2d');
+          const subCanvas = toScratchCanvas(subImg);
+          if (!subCanvas) continue;
 
-          if (subCtx) {
-            const imgData = subCtx.createImageData(subImg.width, subImg.height);
-            imgData.data.set(subImg.data);
-            subCtx.putImageData(imgData, 0, 0);
+          ctx.save();
+          // サブレイヤー位置オフセット & 回転中心移動
+          ctx.translate(canvas.width / 2 + subItem.offsetX, canvas.height / 2 + subItem.offsetY);
+          ctx.rotate((subItem.rotation * Math.PI) / 180);
+          ctx.translate(-subImg.width / 2, -subImg.height / 2);
 
-            ctx.save();
-            // サブレイヤー位置オフセット & 回転中心移動
-            ctx.translate(canvas.width / 2 + subItem.offsetX, canvas.height / 2 + subItem.offsetY);
-            ctx.rotate((subItem.rotation * Math.PI) / 180);
-            ctx.translate(-subImg.width / 2, -subImg.height / 2);
-
-            ctx.globalAlpha = subItem.opacity / 100;
-            ctx.drawImage(subCanvas, 0, 0);
-            ctx.restore();
-          }
+          ctx.globalAlpha = subItem.opacity / 100;
+          ctx.drawImage(subCanvas, 0, 0);
+          ctx.restore();
         }
       }
 
       // 2. Draw Target Image (スタビライザー アフィン変換適用)
-      const imgData = ctx.createImageData(targetImg.width, targetImg.height);
-      imgData.data.set(targetImg.data);
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = targetImg.width;
-      tempCanvas.height = targetImg.height;
-      const tempCtx = tempCanvas.getContext('2d');
-
-      if (tempCtx) {
-        tempCtx.putImageData(imgData, 0, 0);
-
+      const tempCanvas = toScratchCanvas(targetImg);
+      if (tempCanvas) {
         ctx.save();
-        if (pegStabilizer.enabled) {
-          const totalX = pegStabilizer.offsetX + pegStabilizer.manualX;
-          const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
-          const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
-
-          // ⚠️ 焼き込みと同じ順 (回す → 倍率 → 平行移動)。順が違うと画面と結果がずれる
-          ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
-          ctx.rotate(totalRot);
-          ctx.scale(pegStabilizer.scale, pegStabilizer.scale);
-          ctx.translate(-canvas.width / 2, -canvas.height / 2);
-        }
-
+        applyPegTransform(ctx, canvas);
         ctx.drawImage(tempCanvas, 0, 0);
         ctx.restore();
       }
@@ -984,15 +991,7 @@ export const CellWindow: React.FC = () => {
         if (pegStabilizer.holes.length === 3) {
           // 画像と同じ補正をかけて描く。基準の赤と重なれば合っている
           ctx.save();
-          if (pegStabilizer.enabled) {
-            const totalX = pegStabilizer.offsetX + pegStabilizer.manualX;
-            const totalY = pegStabilizer.offsetY + pegStabilizer.manualY;
-            const totalRot = (pegStabilizer.rotation + pegStabilizer.manualRotation) * (Math.PI / 180);
-            ctx.translate(canvas.width / 2 + totalX, canvas.height / 2 + totalY);
-            ctx.rotate(totalRot);
-            ctx.scale(pegStabilizer.scale, pegStabilizer.scale);
-            ctx.translate(-canvas.width / 2, -canvas.height / 2);
-          }
+          applyPegTransform(ctx, canvas);
           ctx.strokeStyle = '#10B981';
           ctx.lineWidth = 2;
           pegStabilizer.holes.forEach((hole) => {
@@ -1018,7 +1017,20 @@ export const CellWindow: React.FC = () => {
         ctx.setLineDash([]);
       }
     },
-    [prevImage, nextImage, onionFramesMap, lightTable, isPlaying, showGrid, showUnpaintedFlash, lassoPoints, lassoView, pegStabilizer]
+    [
+      prevImage,
+      nextImage,
+      onionFramesMap,
+      lightTable,
+      isPlaying,
+      showGrid,
+      showUnpaintedFlash,
+      lassoPoints,
+      lassoView,
+      pegStabilizer,
+      toScratchCanvas,
+      applyPegTransform,
+    ]
   );
 
   useEffect(() => {
@@ -1351,299 +1363,80 @@ export const CellWindow: React.FC = () => {
 
   // --- 各面の中身。並べる順序はレイアウトが決めるので、ここでは組み立てるだけ ---
 
+  /** 掴んでいる間は追従を切る (transition が入ると引きずられる) */
+  const isTransformDragging = isPanning || isRotatingView;
+  const paneCursorClass =
+    activeTool === 'pan' || isSpacePressed
+      ? 'cursor-grab active:cursor-grabbing'
+      : activeTool === 'rotateView'
+      ? 'cursor-alias'
+      : 'cursor-crosshair';
+
   const winAPaneContent = (
-    <>
-          {/* 左ビュー (Win A / Dir A) */}
-          <div
-            ref={winAWindow.targetRef}
-            style={winAWindow.windowStyle}
-            onPointerDownCapture={winAWindow.bringToFront}
-            onClick={() => setActiveViewIndex(0)}
-            onDragEnter={(e) => handleWindowDragEnter(e, 'winA')}
-            onDragOver={(e) => handleWindowDragOver(e, 'winA')}
-            onDragLeave={(e) => handleWindowDragLeave(e, 'winA')}
-            onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winA')}
-            // ⚠️ ハイライト用のクラスはレイアウト用のクラスと必ず併記する。
-            // 以前は D&D 中に flex-1 が外れて要素が縮み、カーソルの下から
-            // 逃げてしまうため判定が点滅していた。
-            /*
-              ⚠️ ドッキング中は 1px の枠・角丸なし。太い枠と角丸は、面を並べたときに
-              その分だけ絵が小さくなる。浮かせたときだけ従来の見た目に戻す。
-            */
-            className={`flex flex-col ${
-              isWinAFloating
-                ? `border-2 bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(0, true)}`
-                : `border flex-1 relative overflow-hidden ${activeBorderClass(0, false)}`
-            } ${isWinADragOver ? 'border-blue-500 ring-4 ring-inset ring-blue-500/60' : ''}`}
-          >
-            {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
-            {isWinADragOver && (
-              <div className="absolute inset-0 bg-blue-950/90 backdrop-blur-xs border-2 border-dashed border-blue-300 rounded flex flex-col items-center justify-center text-blue-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
-                <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-blue-400" />
-                <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win A で開く</span>
-                {/* 映像を落としたときの行き先を先に伝える (ロール B へ入れる導線が分かりにくかった) */}
-                <span className="text-[10px] opacity-80 mt-1">撮影ロール (.mov / .mp4) なら ロール A で開きます</span>
-                <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
-              </div>
-            )}
-
-            {/* Win A タイトルバー (Tear-off & Docking 対応) */}
-            <div
-              onPointerDown={winAWindow.handleHeaderPointerDown}
-              className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
-            >
-              <span className="font-semibold text-blue-600 dark:text-blue-400 flex items-center gap-1.5 min-w-0">
-                <span className="truncate">
-                  Win A ({folderNameA || 'Orig'}): {resolveFileNameForView(currentFileIndex, 0) || '---'}
-                  {isDirtyA ? ' *' : ''}
-                </span>
-                {currentImage?.isReadOnly && !usePaintStore.getState().isAuthenticated && (
-                  <span className="flex-shrink-0 bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-xs whitespace-nowrap">
-                    🔒 閲覧専用 (描画不可)
-                  </span>
-                )}
-              </span>
-
-              <div className="flex items-center gap-1">
-                {!currentImage && (
-                  <span className="text-[9px] text-red-500 font-bold flex items-center gap-1 mr-1">
-                    <AlertTriangle className="w-3 h-3" /> NO DATA
-                  </span>
-                )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleWinAFloating();
-                  }}
-                  title={isWinAFloating ? 'ドッキングに戻す' : '切り離して独立表示 (Tear-off)'}
-                  className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-600 dark:text-slate-300"
-                >
-                  {isWinAFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-                </button>
-              </div>
-            </div>
-
-            {showRuler && currentImage && (
-              <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
-                <span>0px</span>
-                <span>{Math.floor(currentImage.width / 2)}px</span>
-                <span>{currentImage.width}px</span>
-              </div>
-            )}
-
-            <div
-              className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
-                activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : activeTool === 'rotateView' ? 'cursor-alias' : 'cursor-crosshair'
-              }`}
-              onWheel={(e) => handleWheel(e, true)}
-            >
-              <div
-                style={{
-                  transform: `translate(${canvasTransform.offsetX}px, ${canvasTransform.offsetY}px) scale(${canvasTransform.scale}) rotate(${canvasTransform.rotation ?? 0}deg)`,
-                  transformOrigin: 'center center',
-                  transition: isPanning || isRotatingView ? 'none' : 'transform 0.05s ease-out',
-                }}
-                className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
-              >
-                <canvas
-                  ref={leftCanvasRef}
-                  onMouseDown={(e) => handleMouseDown(e, true)}
-                  onMouseMove={(e) => handleMouseMove(e, true)}
-                  onMouseUp={() => handleMouseUp(true)}
-                  onContextMenu={(e) => e.preventDefault()}
-                  className="block"
-                />
-
-                {readOnlyNoticeView === 0 && (
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
-                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                    <span>
-                      この画像は閲覧専用（TGA 以外）のため描画できません。
-                      <br />
-                      .tga のセルが入ったフォルダを選択してください。
-                    </span>
-                  </div>
-                )}
-
-                {!currentImage && (
-                  <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
-                    <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm select-none animate-in fade-in duration-150">
-                      <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 flex items-center justify-center mb-2.5 text-blue-600 dark:text-blue-400">
-                        <FolderOpen className="w-5 h-5" />
-                      </div>
-                      <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO CELL DATA</h3>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2.5 leading-relaxed">
-                        エクスプローラーやFinderから TGAファイルが入ったフォルダを開いてセル画像を選択してください
-                      </p>
-                      <span className="text-[9px] text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                        ファイル &gt; フォルダを開く (Ctrl+Shift+O) または 右パネル Open A
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* ⚡ フローティング Win A 用の全4角マルチリサイズグリップ */}
-            {isWinAFloating && (
-              <CornerResizeHandles getResizeHandler={winAWindow.getResizeHandler} topOffset={24} />
-            )}
-          </div>
-
-          {/* Win A を切り離した跡地: ドッキング復帰のドロップ先 ＆ 復帰ボタン */}
-          {isWinAFloating && (
-            <DockPlaceholder
-              id="winA-dock-target"
-              label="Win A"
-              onRestore={toggleWinAFloating}
-              isActive={winAWindow.isOverDockTarget}
-            />
-          )}
-    </>
+    <CellCanvasPane
+      viewIdx={0}
+      floating={winAWindow}
+      isFloating={isWinAFloating}
+      toggleFloating={toggleWinAFloating}
+      borderClass={activeBorderClass(0, isWinAFloating)}
+      isDragOver={isWinADragOver}
+      onDragEnter={(e) => handleWindowDragEnter(e, 'winA')}
+      onDragOver={(e) => handleWindowDragOver(e, 'winA')}
+      onDragLeave={(e) => handleWindowDragLeave(e, 'winA')}
+      onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winA')}
+      onActivate={() => setActiveViewIndex(0)}
+      folderName={folderNameA}
+      fileName={resolveFileNameForView(currentFileIndex, 0) || ''}
+      isDirty={isDirtyA}
+      image={currentImage}
+      showReadOnlyBadge={!!currentImage?.isReadOnly && !isAuthenticated}
+      showReadOnlyNotice={readOnlyNoticeView === 0}
+      showRuler={showRuler}
+      transform={canvasTransform}
+      isDragging={isTransformDragging}
+      cursorClass={paneCursorClass}
+      canvasRef={(el) => {
+        leftCanvasRef.current = el;
+      }}
+      onWheel={(e) => handleWheel(e, true)}
+      onMouseDown={(e) => handleMouseDown(e, true)}
+      onMouseMove={(e) => handleMouseMove(e, true)}
+      onMouseUp={() => handleMouseUp(true)}
+    />
   );
 
-  const winBPaneContent = (
-    <>
-          {/* 右ビュー (Win B / Dir B / Split View 有効時) */}
-          {isSplitView && (
-            <div
-              ref={winBWindow.targetRef}
-              style={winBWindow.windowStyle}
-              onPointerDownCapture={winBWindow.bringToFront}
-              onClick={() => setActiveViewIndex(1)}
-              onDragEnter={(e) => handleWindowDragEnter(e, 'winB')}
-              onDragOver={(e) => handleWindowDragOver(e, 'winB')}
-              onDragLeave={(e) => handleWindowDragLeave(e, 'winB')}
-              onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
-              // Win A と同様、ハイライトでレイアウトが変わらないようにする
-              className={`flex flex-col ${
-                isWinBFloating
-                  ? `border-2 bg-slate-100 dark:bg-slate-900 shadow-2xl rounded relative ${activeBorderClass(1, true)}`
-                  : `border flex-1 relative overflow-hidden ${activeBorderClass(1, false)}`
-              } ${isWinBDragOver ? 'border-emerald-500 ring-4 ring-inset ring-emerald-500/60' : ''}`}
-            >
-              {/* 📁 エクスプローラーダイレクト D&D 案内オーバーレイ */}
-              {isWinBDragOver && (
-                <div className="absolute inset-0 bg-emerald-950/90 backdrop-blur-xs border-2 border-dashed border-emerald-300 rounded flex flex-col items-center justify-center text-emerald-200 z-50 pointer-events-none p-4 animate-in fade-in duration-100 select-none">
-                  <FolderOpen className="w-10 h-10 mb-2 animate-bounce text-emerald-400" />
-                  <span className="font-bold text-sm text-white">ここにフォルダをドロップして Win B で開く</span>
-                  <span className="text-[10px] opacity-80 mt-1">撮影ロール (.mov / .mp4) なら ロール B で開きます</span>
-                  <span className="text-[10px] opacity-80 mt-1">エクスプローラーからダイレクトにフォルダを開けます</span>
-                </div>
-              )}
-
-              {/* Win B タイトルバー (Tear-off & Docking 対応) */}
-              <div
-                onPointerDown={winBWindow.handleHeaderPointerDown}
-                className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-2 text-[11px] select-none touch-none cursor-grab active:cursor-grabbing"
-              >
-                <span className="font-semibold text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
-                  <span>Win B ({folderNameB || 'Retake'}): {resolveFileNameForView(splitFileIndex, 1) || '---'}{isDirtyB ? ' *' : ''}</span>
-                  {splitImage?.isReadOnly && !usePaintStore.getState().isAuthenticated && (
-                    <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded shadow-xs">
-                      🔒 閲覧専用 (Sheet View)
-                    </span>
-                  )}
-                </span>
-
-                <div className="flex items-center gap-1">
-                  {!splitImage && (
-                    <span className="text-[9px] text-red-500 font-bold flex items-center gap-1 mr-1">
-                      <AlertTriangle className="w-3 h-3" /> NO DATA
-                    </span>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleWinBFloating();
-                    }}
-                    title={isWinBFloating ? 'ドッキングに戻す' : '切り離して独立表示 (Tear-off)'}
-                    className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-600 dark:text-slate-300"
-                  >
-                    {isWinBFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-                  </button>
-                </div>
-              </div>
-
-              {showRuler && splitImage && (
-                <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
-                  <span>0px</span>
-                  <span>{Math.floor(splitImage.width / 2)}px</span>
-                  <span>{splitImage.width}px</span>
-                </div>
-              )}
-
-              <div
-                className={`flex-1 bg-slate-300 dark:bg-slate-950 relative flex items-center justify-center overflow-hidden transition-colors ${
-                  activeTool === 'pan' || isSpacePressed ? 'cursor-grab active:cursor-grabbing' : activeTool === 'rotateView' ? 'cursor-alias' : 'cursor-crosshair'
-                }`}
-                onWheel={(e) => handleWheel(e, false)}
-              >
-                <div
-                  style={{
-                    transform: `translate(${splitCanvasTransform.offsetX}px, ${splitCanvasTransform.offsetY}px) scale(${splitCanvasTransform.scale}) rotate(${splitCanvasTransform.rotation ?? 0}deg)`,
-                    transformOrigin: 'center center',
-                    transition: isPanning || isRotatingView ? 'none' : 'transform 0.05s ease-out',
-                  }}
-                  className="shadow-2xl border border-slate-400 dark:border-slate-700 bg-white relative"
-                >
-                  <canvas
-                    ref={rightCanvasRef}
-                    onMouseDown={(e) => handleMouseDown(e, false)}
-                    onMouseMove={(e) => handleMouseMove(e, false)}
-                    onMouseUp={() => handleMouseUp(false)}
-                    onContextMenu={(e) => e.preventDefault()}
-                    className="block"
-                  />
-
-                  {readOnlyNoticeView === 1 && (
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none px-3 py-2 rounded-lg bg-amber-500 text-white text-[11px] font-bold shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2 duration-150">
-                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                      <span>
-                        この画像は閲覧専用（TGA 以外）のため描画できません。
-                        <br />
-                        .tga のセルが入ったフォルダを選択してください。
-                      </span>
-                    </div>
-                  )}
-
-                  {!splitImage && (
-                    <div className="absolute inset-0 flex items-center justify-center p-4 bg-slate-900/10 dark:bg-slate-950/20 backdrop-blur-[1px] pointer-events-none">
-                      <div className="flex flex-col items-center justify-center p-5 text-center bg-white/95 dark:bg-slate-900/95 border border-slate-300 dark:border-slate-800 rounded-xl shadow-2xl max-w-sm select-none animate-in fade-in duration-150">
-                        <div className="w-10 h-10 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center mb-2.5 text-emerald-600 dark:text-emerald-400">
-                          <FolderOpen className="w-5 h-5" />
-                        </div>
-                        <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">NO RETAKE DATA</h3>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mb-2.5 leading-relaxed">
-                          リテイク用（Dir B）フォルダを開いて比較セル画像を表示してください
-                        </p>
-                        <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                          右パネル Open B からリテイクフォルダを選択
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ⚡ フローティング Win B 用の全4角マルチリサイズグリップ */}
-              {isWinBFloating && (
-                <CornerResizeHandles getResizeHandler={winBWindow.getResizeHandler} topOffset={24} />
-              )}
-            </div>
-          )}
-
-          {/* Win B を切り離した跡地 */}
-          {isSplitView && isWinBFloating && (
-            <DockPlaceholder
-              id="winB-dock-target"
-              label="Win B"
-              onRestore={toggleWinBFloating}
-              isActive={winBWindow.isOverDockTarget}
-            />
-          )}
-    </>
-  );
+  const winBPaneContent = isSplitView ? (
+    <CellCanvasPane
+      viewIdx={1}
+      floating={winBWindow}
+      isFloating={isWinBFloating}
+      toggleFloating={toggleWinBFloating}
+      borderClass={activeBorderClass(1, isWinBFloating)}
+      isDragOver={isWinBDragOver}
+      onDragEnter={(e) => handleWindowDragEnter(e, 'winB')}
+      onDragOver={(e) => handleWindowDragOver(e, 'winB')}
+      onDragLeave={(e) => handleWindowDragLeave(e, 'winB')}
+      onDrop={(e) => handleFolderOrFilesNativeDrop(e, 'winB')}
+      onActivate={() => setActiveViewIndex(1)}
+      folderName={folderNameB}
+      fileName={resolveFileNameForView(splitFileIndex, 1) || ''}
+      isDirty={isDirtyB}
+      image={splitImage}
+      showReadOnlyBadge={!!splitImage?.isReadOnly && !isAuthenticated}
+      showReadOnlyNotice={readOnlyNoticeView === 1}
+      showRuler={showRuler}
+      transform={splitCanvasTransform}
+      isDragging={isTransformDragging}
+      cursorClass={paneCursorClass}
+      canvasRef={(el) => {
+        rightCanvasRef.current = el;
+      }}
+      onWheel={(e) => handleWheel(e, false)}
+      onMouseDown={(e) => handleMouseDown(e, false)}
+      onMouseMove={(e) => handleMouseMove(e, false)}
+      onMouseUp={() => handleMouseUp(false)}
+    />
+  ) : null;
 
   const referencePaneContent = (
     <>
