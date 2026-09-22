@@ -7,7 +7,8 @@ import {
   RushShareDoc,
   subscribeRushShare,
 } from '../../engine/rushShareService';
-import { describeFunctionError, joinRushShare, refreshRushShareVideoUrl } from '../../engine/rushFunctions';
+import { joinRushShare, refreshRushShareVideoUrl } from '../../engine/rushFunctions';
+import { describeRushError, isRushShareClosed } from '../../engine/rushErrors';
 import { useRushSharedPlayback } from '../../hooks/useRushPlaybackSync';
 import { RushPointerLayer } from '../common/RushPointerLayer';
 
@@ -47,20 +48,6 @@ function saveName(name: string): void {
   } catch {
     // 保存できなくても視聴はできる
   }
-}
-
-function describeError(err: unknown): string {
-  const code = (err as { code?: string } | null)?.code || '';
-  if (code.startsWith('functions/')) return describeFunctionError(err);
-  if (code.includes('permission-denied')) return 'この共有は終了したか、有効期限が切れています。';
-  if (code.includes('unavailable')) return '接続できません。ネットワークを確認してください。';
-  return '読み込みに失敗しました。時間をおいてもう一度お試しください。';
-}
-
-/** 終了・期限切れなら入力画面ごと閉じる。それ以外は入力画面に留めて言い直す */
-function isClosedError(err: unknown): boolean {
-  const message = (err as { message?: string } | null)?.message || '';
-  return message.includes('終了しました') || message.includes('有効期限') || message.includes('見つかりませんでした');
 }
 
 type Phase =
@@ -117,7 +104,7 @@ export const RushGuestWatch: React.FC<{ shareId: string }> = ({ shareId }) => {
           setPhase({ kind: 'form', share });
         }
       })
-      .catch((err) => !cancelled && setPhase({ kind: 'closed', message: describeError(err) }));
+      .catch((err) => !cancelled && setPhase({ kind: 'closed', message: describeRushError(err) }));
     return () => {
       cancelled = true;
     };
@@ -216,11 +203,11 @@ const JoinForm: React.FC<{
       });
     } catch (err) {
       console.error('Failed to join rush share:', err);
-      if (isClosedError(err)) {
-        onClosed(describeError(err));
+      if (isRushShareClosed(err)) {
+        onClosed(describeRushError(err));
         return;
       }
-      setError(describeError(err));
+      setError(describeRushError(err));
     } finally {
       setIsJoining(false);
     }
@@ -373,7 +360,7 @@ const WatchScreen: React.FC<{
         }
       } catch (err) {
         console.error('Failed to refresh rush video url:', err);
-        if (isClosedError(err)) onClosed(describeError(err));
+        if (isRushShareClosed(err)) onClosed(describeRushError(err));
         else setUrlExpiresAt((prev) => prev + 60 * 1000); // 1 分後にもう一度試す
       }
     }, wait);

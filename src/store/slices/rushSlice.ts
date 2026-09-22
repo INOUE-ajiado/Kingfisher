@@ -20,8 +20,6 @@ export interface RushState {
   videoUrl: string | null;
   videoName: string | null;
   rushThumbnails: string[];
-  isUploading: boolean;
-  uploadProgress: number;
   isLive: boolean;
   isSpeakerMuted: boolean;
   retakeItems: RetakeItem[];
@@ -45,7 +43,8 @@ export interface RushActions {
   }) => void;
   leaveRushRoom: () => void;
   setRushVideo: (url: string | null, name: string | null, thumbnails?: string[]) => void;
-  setRushUploading: (uploading: boolean, progress?: number) => void;
+  /** 動画の URL はそのままに、名前とサムネイルだけ入れ替える (URL は関数から受け取る) */
+  setRushVideoMeta: (name: string | null, thumbnails: string[]) => void;
   setRushLive: (isLive: boolean) => void;
   setRushSpeakerMuted: (muted: boolean) => void;
   updateRushRetakes: (items: RetakeItem[]) => void;
@@ -65,8 +64,6 @@ export const initialRushState: RushState = {
   videoUrl: null,
   videoName: null,
   rushThumbnails: [],
-  isUploading: false,
-  uploadProgress: 0,
   isLive: false,
   isSpeakerMuted: false,
   retakeItems: [],
@@ -129,8 +126,7 @@ export const createRushSlice: StateCreator<PaintStore, [], [], RushSlice> = (set
       rushThumbnails: thumbnails ?? state.rushThumbnails,
     })),
 
-  setRushUploading: (uploading, progress = 0) =>
-    set((state) => ({ ...state, isUploading: uploading, uploadProgress: progress })),
+  setRushVideoMeta: (name, thumbnails) => set(() => ({ videoName: name, rushThumbnails: thumbnails })),
 
   setRushLive: (isLive) => set((state) => ({ ...state, isLive })),
 

@@ -32,25 +32,10 @@ import {
   UploadedRushVideo,
 } from '../../engine/rushService';
 import { hasOperatorPrivilege, normalizeRoomId, readRoomIdFromSearch } from '../../engine/rushAccess';
+import { describeRushError } from '../../engine/rushErrors';
 import { generateThumbnailsFromFile } from '../../engine/rushThumbnails';
 
 const MIN_PASSWORD_LENGTH = 4;
-
-/** Firestore / Storage の例外を、画面に出せる言葉へ直す */
-function describeCloudError(err: unknown): string {
-  const code = (err as { code?: string } | null)?.code || '';
-  if (code.includes('permission-denied') || code.includes('unauthorized')) {
-    return '権限がありません (@ajiado.co.jp でログインしているか、このルームのオペレーターかを確認してください)';
-  }
-  if (code.includes('unavailable') || code.includes('retry-limit-exceeded')) {
-    return 'クラウドに接続できません。ネットワークを確認してください';
-  }
-  if (code.includes('not-found') || code.includes('failed-precondition')) {
-    return 'クラウド側 (Firestore / Storage) が準備されていません。管理者に連絡してください';
-  }
-  const message = (err as { message?: string } | null)?.message;
-  return message || String(err);
-}
 
 /** URL から ?room= を取り除く (参加し終えたあとに再び開かないように) */
 function clearRoomParamFromUrl(): void {
@@ -112,7 +97,7 @@ export const RushAuthModal: React.FC = () => {
         setRooms(fetchedRooms);
         setRoomsError('');
       },
-      (error) => setRoomsError(`ルーム一覧を読み込めません: ${describeCloudError(error)}`)
+      (error) => setRoomsError(`ルーム一覧を読み込めません: ${describeRushError(error)}`)
     );
     return () => unsubscribe();
   }, [isAuthModalOpen, isAjiadoUser]);
@@ -202,7 +187,7 @@ export const RushAuthModal: React.FC = () => {
       setSelectedFile(null);
     } catch (err) {
       console.error('Failed to upload video / create room:', err);
-      setErrorMsg(`動画のアップロードまたはルーム作成に失敗しました: ${describeCloudError(err)}`);
+      setErrorMsg(`動画のアップロードまたはルーム作成に失敗しました: ${describeRushError(err)}`);
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -224,7 +209,7 @@ export const RushAuthModal: React.FC = () => {
     } catch (err) {
       console.error(err);
       setDeleteError(
-        err instanceof RushJoinError ? err.message : `ルームの削除に失敗しました: ${describeCloudError(err)}`
+        err instanceof RushJoinError ? err.message : `ルームの削除に失敗しました: ${describeRushError(err)}`
       );
     } finally {
       setIsDeleting(false);
@@ -273,7 +258,7 @@ export const RushAuthModal: React.FC = () => {
     } catch (err) {
       console.error('Failed to join rush room:', err);
       setErrorMsg(
-        err instanceof RushJoinError ? err.message : `参加できませんでした: ${describeCloudError(err)}`
+        err instanceof RushJoinError ? err.message : `参加できませんでした: ${describeRushError(err)}`
       );
     } finally {
       setIsJoining(false);

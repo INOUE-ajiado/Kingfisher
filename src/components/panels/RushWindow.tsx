@@ -119,6 +119,7 @@ export const RushWindow: React.FC = () => {
   const setRushSpeakerMuted = usePaintStore((s) => s.setRushSpeakerMuted);
   const updateRushRetakes = usePaintStore((s) => s.updateRushRetakes);
   const setRushVideo = usePaintStore((s) => s.setRushVideo);
+  const setRushVideoMeta = usePaintStore((s) => s.setRushVideoMeta);
   const openRushAuthModal = usePaintStore((s) => s.openRushAuthModal);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -229,7 +230,8 @@ export const RushWindow: React.FC = () => {
     return subscribeRushAccess(roomId, accessKey, (access) => {
       if (!access) return;
       setVideoPath(access.videoPath ?? null);
-      setRushVideo(usePaintStore.getState().videoUrl, access.videoName, access.thumbnails || []);
+      // 動画の URL は Cloud Functions から受け取るので、ここでは名前とサムネイルだけ入れる
+      setRushVideoMeta(access.videoName, access.thumbnails || []);
       setPlaybackId(access.playbackId ?? null);
       setShares(access.shares ?? []);
 
@@ -258,8 +260,24 @@ export const RushWindow: React.FC = () => {
         const { videoUrl: url, expiresAt } = await getRushRoomVideoUrl(roomId, accessKey);
         if (cancelled) return;
         setVideoError(null);
-        const store = usePaintStore.getState();
-        store.setRushVideo(url, store.videoName, store.rushThumbnails);
+
+        /**
+         * ⚠️ URL を入れ替えると <video> は頭へ戻る。位置と再生状態を控えて戻すこと。
+         * 同期がすぐ直すとはいえ、映像が一瞬 0 秒へ飛ぶのが見えてしまう。
+         */
+        const video = videoRef.current;
+        const resumeAt = video?.currentTime ?? 0;
+        const wasPlaying = video ? !video.paused : false;
+        usePaintStore.getState().setRushVideo(url, usePaintStore.getState().videoName, undefined);
+        if (video && resumeAt > 0) {
+          const restore = () => {
+            video.removeEventListener('loadedmetadata', restore);
+            video.currentTime = resumeAt;
+            if (wasPlaying) void video.play().catch(() => undefined);
+          };
+          video.addEventListener('loadedmetadata', restore);
+        }
+
         // 署名が切れる 5 分前に取り直す
         timer = setTimeout(load, Math.max(5000, expiresAt - Date.now() - 5 * 60 * 1000));
       } catch (err) {

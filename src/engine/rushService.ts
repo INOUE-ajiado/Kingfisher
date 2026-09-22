@@ -86,7 +86,6 @@ export interface RushAccessDoc {
 /** ルームの access 文書に控える外部共有。合言葉はここにしか置かない (招待文を作り直すため) */
 export interface RushShareEntry {
   shareId: string;
-  accessKey: string;
   password: string;
   expiresAt: number;
   createdAt: number;
@@ -433,8 +432,8 @@ export function subscribeRushParticipants(
 
 // ─── 再生状態 (ホスト → 視聴者) ───────────────────────────────────────────────
 
-/** 再生状態の文書を作り、その ID を返す */
-export async function createRushPlaybackInDB(roomId: string): Promise<string> {
+/** 再生状態の文書を作り、その ID を返す (ルームを作るときと、古いルームを開いたときに使う) */
+async function createRushPlaybackInDB(roomId: string): Promise<string> {
   const playbackId = generatePlaybackId();
   await setDoc(doc(db, PLAYBACK, playbackId), {
     roomId: normalizeRoomId(roomId),
