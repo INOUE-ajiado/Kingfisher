@@ -35,13 +35,21 @@ export function describeFunctionError(err: unknown): string {
   return '通信に失敗しました。時間をおいてお試しください。';
 }
 
-/** 社外の視聴者が名前と合言葉で入室する */
-export async function joinRushShare(shareId: string, password: string, name: string): Promise<JoinShareResult> {
-  const call = httpsCallable<{ shareId: string; password: string; name: string }, JoinShareResult>(
-    functions,
-    'joinRushShare'
-  );
-  return (await call({ shareId, password, name })).data;
+/**
+ * 社外の視聴者が名前と合言葉で入室する。
+ * viewerId を渡すと、その札を使い回す (開き直しても一覧に増えない)。
+ */
+export async function joinRushShare(
+  shareId: string,
+  password: string,
+  name: string,
+  viewerId?: string
+): Promise<JoinShareResult> {
+  const call = httpsCallable<
+    { shareId: string; password: string; name: string; viewerId?: string },
+    JoinShareResult
+  >(functions, 'joinRushShare');
+  return (await call({ shareId, password, name, viewerId })).data;
 }
 
 /** 視聴中に署名が切れる前の取り直し (在席の合図も兼ねる) */

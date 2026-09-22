@@ -67,8 +67,11 @@ import {
 import {
   buildRushInviteUrl,
   hasOperatorPrivilege,
+  isPresenceVisible,
   isViewerOnline,
   normalizeEmail,
+  PRESENCE_STALE_MS,
+  stablePresenceId,
 } from '../../engine/rushAccess';
 import { describeFunctionError, getRushRoomVideoUrl } from '../../engine/rushFunctions';
 import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
@@ -301,7 +304,8 @@ export const RushWindow: React.FC = () => {
    */
   useEffect(() => {
     if (!roomId || !accessKey || !user?.email) return;
-    const participantId = `${normalizeEmail(user.email).replace(/[^a-z0-9]/g, '_')}_${Math.random().toString(36).slice(2, 8)}`;
+    // ⚠️ 毎回新しい札を作らないこと。開き直すたびに同じ人が並ぶ
+    const participantId = stablePresenceId(`kingfisher_rush_participant_${roomId}`);
     participantIdRef.current = participantId;
     const who = {
       email: user.email,
@@ -321,7 +325,15 @@ export const RushWindow: React.FC = () => {
     const leave = () => void leaveRushParticipantInDB(roomId, accessKey, participantId).catch(() => undefined);
     window.addEventListener('pagehide', leave);
 
-    const unsubscribe = subscribeRushParticipants(roomId, accessKey, setParticipants);
+    const unsubscribe = subscribeRushParticipants(roomId, accessKey, (list) => {
+      setParticipants(list);
+      // ずっと前に閉じた人の記録は、気づいた人が片づける
+      for (const p of list) {
+        if (Date.now() - p.lastSeenAt > PRESENCE_STALE_MS) {
+          void leaveRushParticipantInDB(roomId, accessKey, p.id).catch(() => undefined);
+        }
+      }
+    });
     return () => {
       clearInterval(beat);
       window.removeEventListener('pagehide', leave);
@@ -625,10 +637,14 @@ export const RushWindow: React.FC = () => {
     );
   }
 
-  const onlineParticipants = participants.filter((p) => isViewerOnline(p.lastSeenAt, now));
-  const onlineGuests = Object.values(guestViewers)
+  // 一覧に出すのは、最近まで居た人だけ (古い記録で埋めない)
+  const listedParticipants = participants.filter((p) => isPresenceVisible(p.lastSeenAt, now));
+  const listedGuests = Object.values(guestViewers)
     .flat()
-    .filter((v) => isViewerOnline(v.lastSeenAt, now));
+    .filter((v) => isPresenceVisible(v.lastSeenAt, now))
+    .sort((a, b) => a.joinedAt - b.joinedAt);
+  const onlineParticipants = listedParticipants.filter((p) => isViewerOnline(p.lastSeenAt, now));
+  const onlineGuests = listedGuests.filter((v) => isViewerOnline(v.lastSeenAt, now));
   const participantCount = onlineParticipants.length + onlineGuests.length;
 
   /**
@@ -1186,10 +1202,10 @@ ${describeBuild(readBuildEnv())}`}
                     社内 ({onlineParticipants.length})
                   </h4>
                   <div className="space-y-1">
-                    {participants.length === 0 && (
+                    {listedParticipants.length === 0 && (
                       <p className="text-[10px] text-slate-500">読み込み中...</p>
                     )}
-                    {participants.map((p) => {
+                    {listedParticipants.map((p) => {
                       const online = isViewerOnline(p.lastSeenAt, now);
                       const isMe = p.id === participantIdRef.current;
                       return (
@@ -1223,16 +1239,13 @@ ${describeBuild(readBuildEnv())}`}
                     <h4 className="text-slate-400 font-bold text-[10px] uppercase tracking-wider mb-2">
                       社外 ({onlineGuests.length})
                     </h4>
-                    {Object.values(guestViewers).flat().length === 0 ? (
+                    {listedGuests.length === 0 ? (
                       <p className="text-[10px] text-slate-500">
                         まだ誰も入っていません (「外部共有」タブで視聴 URL を発行できます)
                       </p>
                     ) : (
                       <div className="space-y-1">
-                        {Object.values(guestViewers)
-                          .flat()
-                          .sort((a, b) => a.joinedAt - b.joinedAt)
-                          .map((v) => {
+                        {listedGuests.map((v) => {
                             const online = isViewerOnline(v.lastSeenAt, now);
                             return (
                               <div
@@ -1248,7 +1261,7 @@ ${describeBuild(readBuildEnv())}`}
                                 </span>
                               </div>
                             );
-                          })}
+                        })}
                       </div>
                     )}
                   </div>

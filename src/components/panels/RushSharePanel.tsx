@@ -3,6 +3,7 @@ import { Link2, Copy, Check, Ban, Trash2, Users, KeyRound, Clock, Shuffle } from
 import {
   buildShareUrl,
   DEFAULT_SHARE_EXPIRY_MS,
+  isPresenceVisible,
   isValidSharePassword,
   isViewerOnline,
   MIN_SHARE_PASSWORD_LENGTH,
@@ -296,7 +297,8 @@ const ShareRow: React.FC<{
     }
   };
 
-  const online = viewers.filter((v) => status === 'open' && isViewerOnline(v.lastSeenAt, now));
+  const listed = viewers.filter((v) => isPresenceVisible(v.lastSeenAt, now));
+  const online = listed.filter((v) => status === 'open' && isViewerOnline(v.lastSeenAt, now));
   const label = status ? STATUS_LABEL[status] : { text: '読み込み中', className: 'bg-slate-500/20 text-slate-400' };
 
   return (
@@ -336,7 +338,7 @@ const ShareRow: React.FC<{
       {/* 名前の一覧は「参加者」タブにまとめてある。ここでは人数だけ */}
       <div className="pt-1 border-t border-white/5 flex items-center gap-1 text-[10px] text-slate-400">
         <Users className="w-3 h-3" />
-        視聴者 {viewers.length} 人 (視聴中 {online.length}) · 名前は「参加者」タブ
+        視聴者 {listed.length} 人 (視聴中 {online.length}) · 名前は「参加者」タブ
       </div>
     </div>
   );

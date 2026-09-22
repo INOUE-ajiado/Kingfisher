@@ -34,6 +34,23 @@ function formatDateTime(ms: number): string {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** この共有での自分の札 (同じタブのあいだ使い回す) */
+function readViewerId(shareId: string): string | undefined {
+  try {
+    return sessionStorage.getItem(`kingfisher_rush_viewer_${shareId}`) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveViewerId(shareId: string, viewerId: string): void {
+  try {
+    sessionStorage.setItem(`kingfisher_rush_viewer_${shareId}`, viewerId);
+  } catch {
+    // 覚えられなくても視聴はできる
+  }
+}
+
 function readSavedName(): string {
   try {
     return localStorage.getItem(NAME_STORAGE_KEY) || '';
@@ -191,7 +208,10 @@ const JoinForm: React.FC<{
     try {
       // 合言葉の照合と視聴者の登録はサーバー側 (試行回数を制限するため)。
       // 動画は寿命 30 分の署名付き URL で受け取る
-      const joined = await joinRushShare(shareId, password.trim(), normalized);
+      // 同じタブで開き直したときは、前と同じ札で入る (一覧に何人も並ばないように)
+      const held = readViewerId(shareId);
+      const joined = await joinRushShare(shareId, password.trim(), normalized, held);
+      saveViewerId(shareId, joined.viewerId);
       saveName(normalized);
       onJoined({
         password: password.trim(),
