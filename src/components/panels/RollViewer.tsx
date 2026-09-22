@@ -12,8 +12,7 @@ import { useFloatingWindow } from '../../hooks/useFloatingWindow';
 import { useFullscreen } from '../../hooks/useFullscreen';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { collectDroppedVideoFiles, commonRootName, steppedTime, frameIndexAt, estimateFps, COMMON_FPS, rewindIfPlaybackFinished } from '../../engine/videoSource';
-import { resolveDropHandles } from '../../engine/fileSystemPath';
-import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
+import { prepareDroppedItems } from '../../engine/dropFolder';
 import {
   registerRollVideo,
   getRollVideo,
@@ -590,15 +589,12 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     e.stopPropagation();
     setIsDragOver(false);
 
-    const items = readDropItems(e.dataTransfer);
-    const store = usePaintStore.getState();
+    const { handled, plainFiles, entries, handles } = await prepareDroppedItems(
+      e.dataTransfer,
+      usePaintStore.getState()
+    );
+    if (handled) return;
 
-    const multi = await readMultipleDroppedFolders(items, store);
-    if (multi.handled) return;
-
-    const { plainFiles, handlePromises, entries } = items;
-
-    const handles = await resolveDropHandles(handlePromises);
     // フォルダの中に複数入っていることがあるので、まとめて受け取って一覧にする
     const videos = await collectDroppedVideoFiles(plainFiles, handles, entries);
     if (videos.length > 0) loadRollFiles(rollId, videos, commonRootName(videos));
