@@ -18,8 +18,6 @@ export interface RushPlaybackControls {
   seek: (position: number) => void;
   /** コマ送り (送ったら止まる) */
   step: (frames: number) => void;
-  /** 配信中 (LIVE) の切り替え */
-  setLive: (live: boolean) => void;
 }
 
 export interface RushSharedPlayback {
@@ -136,7 +134,7 @@ export function useRushSharedPlayback(params: {
   const currentFor = useCallback(
     (): { state: PlaybackState; position: number; duration: number } => {
       const video = videoRef.current;
-      const base = latestRef.current?.state ?? { playing: false, position: 0, live: false };
+      const base = latestRef.current?.state ?? { playing: false, position: 0 };
       const duration = video?.duration ?? Number.NaN;
       // 今の位置は手元の <video> を正とする (操作した人の画面が基準)
       const position = video ? video.currentTime : base.position;
@@ -170,16 +168,6 @@ export function useRushSharedPlayback(params: {
       [canControl, currentFor, publish, fps]
     ),
 
-    setLive: useCallback(
-      (live: boolean) => {
-        if (!canControl) return;
-        // ⚠️ 位置は必ず今の値で書き直すこと。古い位置のまま書くと、受け取った側は
-        // そこから経過分を足し直すので、全員の再生が巻き戻る
-        const { state: s, position } = currentFor();
-        publish({ ...s, live, position });
-      },
-      [canControl, currentFor, publish]
-    ),
   };
 
   const unlock = useCallback(() => {

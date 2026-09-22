@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Video, Lock, User, Play, Volume2, VolumeX, Maximize, Minimize, Radio, AlertTriangle } from 'lucide-react';
+import { Video, Lock, User, Play, Volume2, VolumeX, Maximize, Minimize, AlertTriangle } from 'lucide-react';
 import { normalizeViewerName, shareStatus, MAX_VIEWER_NAME_LENGTH } from '../../engine/rushAccess';
 import {
   fetchRushShare,
@@ -436,12 +436,6 @@ const WatchScreen: React.FC<{
             <span className="font-mono text-amber-300 font-bold text-xs bg-black/70 px-2 py-0.5 rounded border border-white/10">
               {formatTC(currentTime)}
             </span>
-            {state?.live && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-600 text-white font-bold text-[10px] animate-pulse flex-shrink-0">
-                <Radio className="w-3 h-3" />
-                LIVE
-              </span>
-            )}
             <span className="text-[11px] text-slate-200 truncate">{share.roomName}</span>
           </div>
           <span className="text-[10px] text-slate-300 bg-black/50 px-2 py-0.5 rounded whitespace-nowrap">

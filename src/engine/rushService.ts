@@ -83,13 +83,18 @@ export interface RushAccessDoc {
   shares?: RushShareEntry[];
 }
 
-/** ルームの access 文書に控える外部共有。合言葉はここにしか置かない (招待文を作り直すため) */
+/**
+ * ルームの access 文書に控える外部共有。
+ *
+ * ⚠️ 期限や発行者をここへ写さないこと。それらは共有の文書 (rushShares) が持っており、
+ * 写すと停止や期限の扱いが 2 か所に散って食い違う。ここに置くのは
+ * 「どの共有か」と「招待文を作り直すための合言葉」だけにする。
+ */
 export interface RushShareEntry {
   shareId: string;
   password: string;
-  expiresAt: number;
+  /** 一覧の並び順にだけ使う (共有の文書が読めるまでの仮の順番) */
   createdAt: number;
-  createdByEmail: string;
 }
 
 export interface UploadedRushVideo {
@@ -454,7 +459,6 @@ async function createRushPlaybackInDB(roomId: string): Promise<string> {
     roomId: normalizeRoomId(roomId),
     playing: false,
     position: 0,
-    live: false,
     updatedAt: serverTimestamp(),
   });
   return playbackId;
@@ -471,7 +475,6 @@ export async function writeRushPlaybackInDB(playbackId: string, state: PlaybackS
   await updateDoc(doc(db, PLAYBACK, playbackId), {
     playing: state.playing,
     position: state.position,
-    live: state.live,
     updatedAt: serverTimestamp(),
   });
 }
@@ -490,7 +493,7 @@ export function subscribeRushPlayback(
     (snap) => {
       if (!snap.exists() || snap.metadata.hasPendingWrites) return;
       const d = snap.data();
-      onUpdate({ playing: !!d.playing, position: Number(d.position) || 0, live: !!d.live }, Date.now());
+      onUpdate({ playing: !!d.playing, position: Number(d.position) || 0 }, Date.now());
     },
     (error) => {
       console.error('Error watching rush playback:', error);

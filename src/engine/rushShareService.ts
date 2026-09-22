@@ -97,13 +97,7 @@ export async function createRushShareInDB(params: {
     createdAt: now,
   };
 
-  const entry: RushShareEntry = {
-    shareId,
-    password: params.password,
-    expiresAt,
-    createdAt: now,
-    createdByEmail,
-  };
+  const entry: RushShareEntry = { shareId, password: params.password, createdAt: now };
 
   try {
     await setDoc(doc(db, SHARE_SECRETS, shareId), secret);

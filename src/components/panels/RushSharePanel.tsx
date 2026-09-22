@@ -44,13 +44,13 @@ function generateGuestPassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
-function buildGuestInvite(roomName: string, entry: RushShareEntry): string {
+function buildGuestInvite(roomName: string, entry: RushShareEntry, expiresAt: number): string {
   return [
     '[ラッシュ試写のご案内]',
     `タイトル: ${roomName}`,
     `URL: ${buildShareUrl(window.location.origin, entry.shareId)}`,
     `パスワード: ${entry.password}`,
-    `有効期限: ${formatDateTime(entry.expiresAt)} まで`,
+    `有効期限: ${formatDateTime(expiresAt)} まで`,
     '※ URL を開き、お名前とパスワードを入力するとご覧いただけます。ログインは不要です。',
     '※ URL が途中で改行されると開けません。1 行のままお使いください。',
     '※ 本映像は関係者限りです。URL・パスワードの転送、録画・撮影はご遠慮ください。',
@@ -115,19 +115,30 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
     }
   };
 
-  // 文書ごと消えている共有 (null) は「終了」扱いにする
-  const statusOf = (entry: RushShareEntry): ShareStatus =>
-    shareStatusFromDoc(statuses[entry.shareId], entry.expiresAt, now);
+  /**
+   * 共有の状態は、共有の文書 (rushShares) だけを見て決める。
+   * ⚠️ ルーム側の控えに期限を写さないこと (食い違いの元になる)。
+   * 文書ごと消えている (null) ものは「終了」扱い。まだ読めていない (undefined) ものは保留。
+   */
+  const statusOf = (entry: RushShareEntry): ShareStatus | null => {
+    const doc = statuses[entry.shareId];
+    if (doc === undefined) return null;
+    return shareStatusFromDoc(doc, doc?.expiresAt ?? 0, now);
+  };
 
-  const closedEntries = shares.filter((s) => statusOf(s) !== 'open');
+  const closedEntries = shares.filter((s) => {
+    const status = statusOf(s);
+    return status !== null && status !== 'open';
+  });
   const sorted = [...shares].sort((a, b) => b.createdAt - a.createdAt);
 
   const handleClearClosed = async () => {
     try {
+      // まだ読めていないものは、消さずに残す
       await removeRushShareEntriesInDB(
         roomId,
         roomAccessKey,
-        shares.filter((s) => statusOf(s) === 'open')
+        shares.filter((s) => statusOf(s) !== 'revoked' && statusOf(s) !== 'expired')
       );
     } catch (err) {
       console.error('Failed to clear rush shares:', err);
@@ -223,6 +234,7 @@ export const RushSharePanel: React.FC<RushSharePanelProps> = ({
               entry={entry}
               roomName={roomName}
               status={statusOf(entry)}
+              share={statuses[entry.shareId] ?? null}
               now={now}
               onDoc={(doc) => setStatuses((prev) => ({ ...prev, [entry.shareId]: doc }))}
             />
@@ -242,10 +254,12 @@ const STATUS_LABEL: Record<ShareStatus, { text: string; className: string }> = {
 const ShareRow: React.FC<{
   entry: RushShareEntry;
   roomName: string;
-  status: ShareStatus;
+  status: ShareStatus | null;
+  /** 共有の文書 (期限や停止はこれが正) */
+  share: RushShareDoc | null;
   now: number;
   onDoc: (doc: RushShareDoc | null) => void;
-}> = ({ entry, roomName, status, now, onDoc }) => {
+}> = ({ entry, roomName, status, share, now, onDoc }) => {
   const [viewers, setViewers] = useState<RushShareViewer[]>([]);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -261,7 +275,7 @@ const ShareRow: React.FC<{
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(buildGuestInvite(roomName, entry));
+      await navigator.clipboard.writeText(buildGuestInvite(roomName, entry, share?.expiresAt ?? 0));
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
@@ -283,7 +297,7 @@ const ShareRow: React.FC<{
   };
 
   const online = viewers.filter((v) => status === 'open' && isViewerOnline(v.lastSeenAt, now));
-  const label = STATUS_LABEL[status];
+  const label = status ? STATUS_LABEL[status] : { text: '読み込み中', className: 'bg-slate-500/20 text-slate-400' };
 
   return (
     <div className={`p-2 rounded border space-y-1.5 ${status === 'open' ? 'bg-slate-950 border-white/10' : 'bg-slate-950/50 border-white/5 opacity-70'}`}>
@@ -291,7 +305,7 @@ const ShareRow: React.FC<{
         <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${label.className}`}>{label.text}</span>
         <span className="text-[10px] text-slate-400 flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {formatDateTime(entry.expiresAt)} まで
+          {share ? `${formatDateTime(share.expiresAt)} まで` : '期限を読み込み中'}
         </span>
       </div>
       <p className="font-mono text-[10px] text-slate-300 break-all">
@@ -319,23 +333,10 @@ const ShareRow: React.FC<{
         </div>
       )}
 
-      <div className="pt-1 border-t border-white/5">
-        <div className="flex items-center gap-1 text-[10px] text-slate-400 font-bold mb-1">
-          <Users className="w-3 h-3" />
-          視聴者 {viewers.length} 人 (視聴中 {online.length})
-        </div>
-        {viewers.map((v) => {
-          const isOnline = status === 'open' && isViewerOnline(v.lastSeenAt, now);
-          return (
-            <div key={v.id} className="flex items-center justify-between text-[10px] py-0.5">
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isOnline ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                <span className="truncate text-slate-200">{v.name}</span>
-              </span>
-              <span className="text-slate-500 font-mono flex-shrink-0">{formatDateTime(v.joinedAt).slice(5)}</span>
-            </div>
-          );
-        })}
+      {/* 名前の一覧は「参加者」タブにまとめてある。ここでは人数だけ */}
+      <div className="pt-1 border-t border-white/5 flex items-center gap-1 text-[10px] text-slate-400">
+        <Users className="w-3 h-3" />
+        視聴者 {viewers.length} 人 (視聴中 {online.length}) · 名前は「参加者」タブ
       </div>
     </div>
   );
