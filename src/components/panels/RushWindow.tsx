@@ -25,6 +25,7 @@ import {
   Play,
 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
+import { useFullscreen } from '../../hooks/useFullscreen';
 import { RetakeItem } from '../../engine/retakeStore';
 import { isAjiadoDomain } from '../../engine/firebase';
 import {
@@ -166,7 +167,6 @@ export const RushWindow: React.FC = () => {
   const [duration, setDuration] = useState(0);
   const [fps] = useState(24);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // 右サイドバータブ
   const [sideTab, setSideTab] = useState<'retakes' | 'users' | 'share'>('retakes');
@@ -440,34 +440,8 @@ export const RushWindow: React.FC = () => {
     leaveRushRoom();
   };
 
-  // フルスクリーン状態の変更検知
-  useEffect(() => {
-    const handleFSChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFSChange);
-    return () => document.removeEventListener('fullscreenchange', handleFSChange);
-  }, []);
-
-  // フルスクリーン切り替え (YouTube風)
-  const toggleFullscreen = async () => {
-    const elem = playerContainerRef.current || document.documentElement;
-    if (!document.fullscreenElement) {
-      try {
-        await elem.requestFullscreen();
-        setIsFullscreen(true);
-      } catch (err) {
-        console.error('Fullscreen request failed:', err);
-      }
-    } else {
-      try {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
-      } catch (err) {
-        console.error('Exit fullscreen failed:', err);
-      }
-    }
-  };
+  // 全画面の出し入れは共通の hook (面ごとに書き写さない)
+  const { isFullscreen, toggleFullscreen } = useFullscreen(playerContainerRef);
 
   // 招待情報のコピー
   const handleCopyInvite = async () => {

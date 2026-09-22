@@ -608,7 +608,12 @@ export const CellWindow: React.FC = () => {
   // (splitImage = Win B の編集対象はストア管理なので、保存・Undo が Win A と同じ経路を通る)
   const loadFrameForView = useFrameLoader();
   useCellPrefetch(loadFrameForView);
-  const onionFramesMap = useOnionSkinFrames(loadFrameForView);
+  const onionFramesMap = useOnionSkinFrames(loadFrameForView, 0);
+  /**
+   * ⚠️ Win B にも前後のコマを重ねること。以前は Win A だけで、
+   * 「Win B でライトテーブルが効かない」ように見えていた。
+   */
+  const onionFramesMapB = useOnionSkinFrames(loadFrameForView, 1);
 
   /**
    * 「描き直せ」の合図。
@@ -880,23 +885,25 @@ export const CellWindow: React.FC = () => {
       // 1. Draw Onion Skin Layers (オニオンスキン: 前後フレーム透過 & カラーコーディング)
       // ⚠️ 過去と未来で処理を分けて書かないこと。以前は色と符号だけが違う
       // 46 行が 2 つ並んでおり、片方だけ直る形になっていた。
-      if (isLeft && lightTable.enabled && !isPlaying) {
+      const framesForView = isLeft ? onionFramesMap : onionFramesMapB;
+      if (lightTable.enabled && !isPlaying) {
         const mode = (lightTable.displayMode ?? 'monochrome') as OnionDisplayMode;
         const startOpacity = lightTable.startOpacity ?? 30;
         const opacityStep = lightTable.opacityStep ?? 10;
 
         // 「カット全体」指定のときは読み込めた枚数ぶんすべて重ねる
-        const pastCount = lightTable.showAllFrames ? onionFramesMap.size : lightTable.pastFrames ?? 1;
-        const futureCount = lightTable.showAllFrames ? onionFramesMap.size : lightTable.futureFrames ?? 1;
+        const pastCount = lightTable.showAllFrames ? framesForView.size : lightTable.pastFrames ?? 1;
+        const futureCount = lightTable.showAllFrames ? framesForView.size : lightTable.futureFrames ?? 1;
 
         // 奥のコマから順に重ねる (過去は遠い方から、未来は近い方から)
         const layers: { step: number; color: OnionColor; frame: any }[] = [];
         for (let step = pastCount; step >= 1; step--) {
-          const frame = onionFramesMap.get(-step) || (step === 1 ? prevImage : null);
+          // 1 コマ前後はストアの先読み (Win A のみ) も当てにする
+          const frame = framesForView.get(-step) || (isLeft && step === 1 ? prevImage : null);
           if (frame) layers.push({ step, color: lightTable.pastColor || { r: 239, g: 68, b: 68 }, frame });
         }
         for (let step = 1; step <= futureCount; step++) {
-          const frame = onionFramesMap.get(step) || (step === 1 ? nextImage : null);
+          const frame = framesForView.get(step) || (isLeft && step === 1 ? nextImage : null);
           if (frame) layers.push({ step, color: lightTable.futureColor || { r: 59, g: 130, b: 246 }, frame });
         }
 
@@ -909,7 +916,7 @@ export const CellWindow: React.FC = () => {
         }
       }
       // 1.5 Draw Individual Light Table SubLayers (登録された個別の参照TGA: 移動・回転アフィン変換)
-      if (isLeft && lightTable.items && lightTable.items.length > 0) {
+      if (lightTable.items && lightTable.items.length > 0) {
         for (const subItem of lightTable.items) {
           if (!subItem.visible || !subItem.image) continue;
 
@@ -1021,6 +1028,7 @@ export const CellWindow: React.FC = () => {
       prevImage,
       nextImage,
       onionFramesMap,
+      onionFramesMapB,
       lightTable,
       isPlaying,
       showGrid,

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useFullscreen } from '../../hooks/useFullscreen';
 import { Video, Lock, User, Play, Volume2, VolumeX, Maximize, Minimize, AlertTriangle } from 'lucide-react';
 import { normalizeViewerName, shareStatus, MAX_VIEWER_NAME_LENGTH } from '../../engine/rushAccess';
 import {
@@ -313,7 +314,6 @@ const WatchScreen: React.FC<{
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [muted, setMuted] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   /** 操作類を出しているか (動かしたら出して、しばらくすると消す) */
   const [chromeVisible, setChromeVisible] = useState(true);
   const chromeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -387,21 +387,8 @@ const WatchScreen: React.FC<{
     return () => clearTimeout(timer);
   }, [shareId, password, viewerId, urlExpiresAt, onClosed]);
 
-  useEffect(() => {
-    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onChange);
-    return () => document.removeEventListener('fullscreenchange', onChange);
-  }, []);
-
-  const toggleFullscreen = async () => {
-    try {
-      // 操作類ごと全画面にするため、<video> ではなく枠を全画面にする
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await containerRef.current?.requestFullscreen();
-    } catch (err) {
-      console.error('Fullscreen failed:', err);
-    }
-  };
+  // 操作類ごと全画面にするため、<video> ではなく枠を全画面にする
+  const { isFullscreen, toggleFullscreen } = useFullscreen(containerRef);
 
   const state = follower.state;
   const statusText = follower.error

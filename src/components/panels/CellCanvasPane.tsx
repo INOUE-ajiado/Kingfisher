@@ -213,12 +213,8 @@ export const CellCanvasPane: React.FC<CellCanvasPaneProps> = ({
             )}
           </span>
 
+          {/* ⚠️ ここに NO DATA を出さないこと。素材が無いときは真ん中に大きな案内が出る */}
           <div className="flex items-center gap-1">
-            {!image && (
-              <span className="text-[9px] text-red-500 font-bold flex items-center gap-1 mr-1">
-                <AlertTriangle className="w-3 h-3" /> NO DATA
-              </span>
-            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -233,19 +229,12 @@ export const CellCanvasPane: React.FC<CellCanvasPaneProps> = ({
         </div>
         )}
 
-        {/* ドッキング中は、閲覧専用と素材なしだけを絵の上に小さく出す */}
-        {!isFloating && (showReadOnlyBadge || !image) && (
-          <div className="absolute top-1 right-1 z-40 flex items-center gap-1 pointer-events-none">
-            {!image && (
-              <span className="text-[9px] text-white bg-red-600/90 font-bold flex items-center gap-1 px-1.5 py-0.5 rounded shadow">
-                <AlertTriangle className="w-3 h-3" /> NO DATA
-              </span>
-            )}
-            {showReadOnlyBadge && (
-              <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
-                {text.readOnly}
-              </span>
-            )}
+        {/* ドッキング中は見出しを出さないので、閲覧専用の印だけ絵の上に小さく出す */}
+        {!isFloating && showReadOnlyBadge && (
+          <div className="absolute top-1 right-1 z-40 pointer-events-none">
+            <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
+              {text.readOnly}
+            </span>
           </div>
         )}
 
