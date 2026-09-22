@@ -1,7 +1,5 @@
 import { ref, onValue, onDisconnect, set, update, remove } from 'firebase/database';
 import { rushDb as db, serverNow } from './rushRealtime';
-export { serverNow };
-
 import {
   clampPointerBlur,
   clampPointerSize,

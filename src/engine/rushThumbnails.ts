@@ -28,7 +28,7 @@ function waitForEvent(target: HTMLVideoElement, okEvent: string, timeoutMs: numb
 }
 
 /** 動画の src から等間隔に count 枚のサムネイル (JPEG の data URL) を作る。作れなければ空配列 */
-export async function generateVideoThumbnails(
+async function generateVideoThumbnails(
   src: string,
   count = 14,
   isCancelled: () => boolean = () => false

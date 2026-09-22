@@ -58,16 +58,6 @@ export interface RushShareViewer {
   lastSeenAt: number;
 }
 
-export class RushShareError extends Error {
-  constructor(
-    public readonly reason: 'not-found' | 'revoked' | 'expired' | 'wrong-password',
-    message: string
-  ) {
-    super(message);
-    this.name = 'RushShareError';
-  }
-}
-
 /**
  * 外部共有を発行する。発行したものはルームの access 文書にも控える (一覧・招待文の作り直し用)。
  */
@@ -109,7 +99,6 @@ export async function createRushShareInDB(params: {
 
   const entry: RushShareEntry = {
     shareId,
-    accessKey: '',
     password: params.password,
     expiresAt,
     createdAt: now,

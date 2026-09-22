@@ -88,11 +88,15 @@ export interface ShareDoc {
 /** 共有が今も開いているか。閉じていれば理由つきで断る */
 export async function loadOpenShare(shareId: string): Promise<ShareDoc> {
   const snap = await db.collection(SHARES).doc(shareId).get();
-  if (!snap.exists) throw new HttpsError('not-found', 'この URL の共有は見つかりませんでした。');
+  if (!snap.exists) {
+    throw new HttpsError('not-found', 'この URL の共有は見つかりませんでした。', { reason: 'not-found' });
+  }
   const share = snap.data() as ShareDoc;
-  if (share.revoked) throw new HttpsError('permission-denied', 'この共有は終了しました。');
+  if (share.revoked) {
+    throw new HttpsError('permission-denied', 'この共有は終了しました。', { reason: 'revoked' });
+  }
   if (!(Date.now() < share.expiresAt)) {
-    throw new HttpsError('permission-denied', 'この共有は有効期限が切れています。');
+    throw new HttpsError('permission-denied', 'この共有は有効期限が切れています。', { reason: 'expired' });
   }
   return share;
 }
@@ -113,12 +117,15 @@ export async function verifySharePassword(shareId: string, password: string): Pr
   await assertNotTooManyAttempts(shareId);
 
   const snap = await db.collection(SHARE_SECRETS).doc(shareId).get();
-  if (!snap.exists) throw new HttpsError('not-found', 'この共有は開けません。担当者にご連絡ください。');
+  if (!snap.exists) {
+    throw new HttpsError('not-found', 'この共有は開けません。担当者にご連絡ください。', { reason: 'not-found' });
+  }
   const secret = snap.data() as ShareSecret;
 
   if (!hashEquals(secret.passwordHash, sharePasswordHash(shareId, password))) {
     await recordFailedAttempt(shareId);
-    throw new HttpsError('permission-denied', 'パスワードが違います。');
+    // ⚠️ 停止・期限切れと同じ扱いにしないこと。画面ごと閉じてしまい、入れ直せなくなる
+    throw new HttpsError('permission-denied', 'パスワードが違います。', { reason: 'wrong-password' });
   }
   await clearAttempts(shareId);
   return secret;
@@ -131,7 +138,9 @@ async function assertNotTooManyAttempts(shareId: string): Promise<void> {
   const recent = failures.filter((t) => Date.now() - t < ATTEMPT_WINDOW_MS);
   if (recent.length >= ATTEMPT_LIMIT) {
     const waitMin = Math.ceil((ATTEMPT_WINDOW_MS - (Date.now() - recent[0])) / 60000);
-    throw new HttpsError('resource-exhausted', `試行が多すぎます。${waitMin} 分ほど待ってからお試しください。`);
+    throw new HttpsError('resource-exhausted', `試行が多すぎます。${waitMin} 分ほど待ってからお試しください。`, {
+      reason: 'too-many-attempts',
+    });
   }
 }
 

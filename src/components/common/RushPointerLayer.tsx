@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  createRushPointerSender,
-  RushPointerState,
-  serverNow,
-  subscribeRushPointers,
-} from '../../engine/rushPointer';
+import { createRushPointerSender, RushPointerState, subscribeRushPointers } from '../../engine/rushPointer';
+import { serverNow } from '../../engine/rushRealtime';
 import { createRushStrokeSender, RushStroke, subscribeRushStrokes } from '../../engine/rushDrawing';
 import {
   fromVideoPosition,
