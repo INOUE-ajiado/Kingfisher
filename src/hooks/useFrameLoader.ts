@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePaintStore } from '../store/usePaintStore';
+import { useShallow } from 'zustand/react/shallow';
 import { TGAImage } from '../engine/tga';
 import { decodeAnyImageFile } from '../engine/imageDecode';
 import { resolveFileHandle } from '../engine/fileSystemPath';
@@ -18,6 +19,7 @@ export type LoadFrameFn = (index: number, view: 0 | 1) => Promise<TGAImage | nul
  * 返す画像は「読み込んだままの原本」。編集対象に渡す側で複製すること。
  */
 export function useFrameLoader(): LoadFrameFn {
+  // ⚠️ ストア全体を購読しないこと。塗るたびに読み込みの関数が作り直される
   const {
     resolveFileNameForView,
     getImageCacheKey,
@@ -31,7 +33,22 @@ export function useFrameLoader(): LoadFrameFn {
     fileMapB,
     unifiedFileList,
     rootFolderName,
-  } = usePaintStore();
+  } = usePaintStore(
+    useShallow((s) => ({
+      resolveFileNameForView: s.resolveFileNameForView,
+      getImageCacheKey: s.getImageCacheKey,
+      getCachedImage: s.getCachedImage,
+      putCachedImage: s.putCachedImage,
+      folderHandleA: s.folderHandleA,
+      folderHandleB: s.folderHandleB,
+      fileListA: s.fileListA,
+      fileListB: s.fileListB,
+      fileMapA: s.fileMapA,
+      fileMapB: s.fileMapB,
+      unifiedFileList: s.unifiedFileList,
+      rootFolderName: s.rootFolderName,
+    }))
+  );
 
   const { decodeTgaAsync } = usePrefetchWorker();
 
@@ -95,8 +112,15 @@ export function useFrameLoader(): LoadFrameFn {
  * これにより PageUp / PageDown のコマ送りが待ち時間なしで切り替わる。
  */
 export function useCellPrefetch(loadFrame: LoadFrameFn) {
-  const { currentFileIndex, splitFileIndex, isSplitView, unifiedFileList, isPlaying } =
-    usePaintStore();
+  const { currentFileIndex, splitFileIndex, isSplitView, unifiedFileList, isPlaying } = usePaintStore(
+    useShallow((s) => ({
+      currentFileIndex: s.currentFileIndex,
+      splitFileIndex: s.splitFileIndex,
+      isSplitView: s.isSplitView,
+      unifiedFileList: s.unifiedFileList,
+      isPlaying: s.isPlaying,
+    }))
+  );
 
   useEffect(() => {
     if (unifiedFileList.length === 0) return;
@@ -133,14 +157,21 @@ export function useCellPrefetch(loadFrame: LoadFrameFn) {
  * オニオンスキン (ライトテーブル) 用に前後フレームをまとめて読み込む。
  * offset (-N〜+N, 0 を除く) をキーにしたマップを返す。
  */
-export function useOnionSkinFrames(loadFrame: LoadFrameFn): Map<number, TGAImage> {
-  const { currentFileIndex, unifiedFileList, lightTable, isPlaying } = usePaintStore();
+export function useOnionSkinFrames(loadFrame: LoadFrameFn, viewIdx: 0 | 1 = 0): Map<number, TGAImage> {
+  // ⚠️ ストア全体を購読しないこと。塗るたびに読み込みの effect が動き直す
+  const currentFileIndex = usePaintStore((s) => (viewIdx === 0 ? s.currentFileIndex : s.splitFileIndex));
+  const unifiedFileList = usePaintStore((s) => s.unifiedFileList);
+  const lightTable = usePaintStore((s) => s.lightTable);
+  const isPlaying = usePaintStore((s) => s.isPlaying);
+  const isSplitView = usePaintStore((s) => s.isSplitView);
   const [onionFramesMap, setOnionFramesMap] = useState<Map<number, TGAImage>>(new Map());
 
   const { enabled, pastFrames, futureFrames, showAllFrames } = lightTable;
+  // Win B は開いているときだけ読む (閉じている面のために先読みしない)
+  const active = enabled && !isPlaying && (viewIdx === 0 || isSplitView);
 
   useEffect(() => {
-    if (!enabled || isPlaying) return;
+    if (!active) return;
     let isSubscribed = true;
 
     (async () => {
@@ -161,7 +192,7 @@ export function useOnionSkinFrames(loadFrame: LoadFrameFn): Map<number, TGAImage
           if (targetIndex < 0 || targetIndex >= unifiedFileList.length) {
             return Promise.resolve(null);
           }
-          return loadFrame(targetIndex, 0);
+          return loadFrame(targetIndex, viewIdx);
         })
       );
 
@@ -178,7 +209,12 @@ export function useOnionSkinFrames(loadFrame: LoadFrameFn): Map<number, TGAImage
     return () => {
       isSubscribed = false;
     };
-  }, [currentFileIndex, enabled, pastFrames, futureFrames, showAllFrames, unifiedFileList, loadFrame, isPlaying]);
+  }, [currentFileIndex, active, pastFrames, futureFrames, showAllFrames, unifiedFileList, loadFrame, viewIdx]);
+
+  // 面を閉じた・切ったときは抱えたままにしない
+  useEffect(() => {
+    if (!active) setOnionFramesMap(new Map());
+  }, [active]);
 
   return onionFramesMap;
 }
