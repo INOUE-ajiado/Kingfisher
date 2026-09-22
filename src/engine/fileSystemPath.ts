@@ -258,6 +258,35 @@ export async function readAllDirectoryEntries(dirReader: any): Promise<any[]> {
   return all;
 }
 
+/**
+ * FileSystemEntry (webkitGetAsEntry) から画像を再帰的に集める。
+ *
+ * ⚠️ ハンドル版 (collectImageFilesRecursively) と使い分けること。
+ * ハンドルが取れない環境 (Firefox / Safari) の受け皿で、読み取り専用になる。
+ * ⚠️ 面ごとに書き写さないこと。以前は CellWindow がこれと同じものを
+ * 自前で持っており、対応拡張子を増やしたときに片方だけ直る形になっていた。
+ */
+export async function collectImageFilesFromEntry(
+  dirEntry: any,
+  filesMap: Map<string, File>,
+  basePath = ''
+): Promise<void> {
+  const entries = await readAllDirectoryEntries(dirEntry.createReader());
+
+  for (const entry of entries) {
+    const entryPath = basePath ? `${basePath}/${entry.name}` : entry.name;
+
+    if (entry.isFile) {
+      const file: File | null = await new Promise((resolve) =>
+        entry.file((f: File) => resolve(f), () => resolve(null))
+      );
+      if (file && isSupportedImageFile(file.name)) filesMap.set(entryPath, file);
+    } else if (entry.isDirectory) {
+      await collectImageFilesFromEntry(entry, filesMap, entryPath);
+    }
+  }
+}
+
 /** getAsFileSystemHandle() を待つ上限 (ms) */
 const DROP_HANDLE_TIMEOUT_MS = 3000;
 

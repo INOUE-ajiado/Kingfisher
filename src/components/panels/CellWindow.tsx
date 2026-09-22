@@ -1,7 +1,12 @@
 import React, { useRef, useEffect, useState, useCallback, useSyncExternalStore } from 'react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { angleFromCenter, normalizeAngle, screenToImagePoint, snapAngle } from '../../engine/viewTransform';
-import { collectImageFilesRecursively, isSupportedImageFile, readAllDirectoryEntries, resolveDropHandles } from '../../engine/fileSystemPath';
+import {
+  collectImageFilesFromEntry,
+  collectImageFilesRecursively,
+  isSupportedImageFile,
+  resolveDropHandles,
+} from '../../engine/fileSystemPath';
 import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFolder';
 import { collectDroppedVideoFiles, commonRootName } from '../../engine/videoSource';
 import { sortNatural } from '../../engine/naturalOrder';
@@ -28,6 +33,7 @@ import { RollId, CanvasTransform } from '../../store/types';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import { getRenderSignal, subscribeRenderSignal } from '../../engine/renderSignal';
 import { fitTransformFor, isUserAdjusted, sizeKeyOf } from '../../engine/canvasFit';
+import { wheelInputFrom, wheelTransform } from '../../engine/canvasZoom';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -434,23 +440,6 @@ export const CellWindow: React.FC = () => {
     };
   }, []);
 
-  // 📁 エクスプローラーからのフォルダ/ファイル直接ドロップ処理 (階層パス保持)
-  const readDirectoryEntries = async (dirEntry: any, fileMap: Map<string, File>, currentPath = '') => {
-    const entries = await readAllDirectoryEntries(dirEntry.createReader());
-
-    for (const entry of entries) {
-      const relPath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
-      if (entry.isFile) {
-        const file: File | null = await new Promise((resolve) => (entry as any).file((f: File) => resolve(f), () => resolve(null)));
-        if (file && isSupportedImageFile(file.name)) {
-          fileMap.set(relPath, file);
-        }
-      } else if (entry.isDirectory) {
-        await readDirectoryEntries(entry, fileMap, relPath);
-      }
-    }
-  };
-
   /**
    * エクスプローラーから Win A / Win B へフォルダを落としたときの読み込み。
    *
@@ -503,7 +492,7 @@ export const CellWindow: React.FC = () => {
     for (const entry of entries) {
       if (entry.isDirectory) {
         if (!detectedFolderName) detectedFolderName = entry.name;
-        await readDirectoryEntries(entry, fileMap, entry.name);
+        await collectImageFilesFromEntry(entry, fileMap, entry.name);
       } else if (entry.isFile) {
         const file: File | null = await new Promise((resolve) =>
           entry.file((f: File) => resolve(f), () => resolve(null))
@@ -1188,14 +1177,9 @@ export const CellWindow: React.FC = () => {
       const live = usePaintStore.getState();
       const liveTransform = rotateDrag.isLeftView ? live.canvasTransform : live.splitCanvasTransform;
       const rotated = { ...liveTransform, rotation };
-      if (syncMode && isSplitView) {
-        setCanvasTransform(rotated);
-        setSplitCanvasTransform(rotated);
-      } else if (rotateDrag.isLeftView) {
-        setCanvasTransform(rotated);
-      } else {
-        setSplitCanvasTransform(rotated);
-      }
+      // ⚠️ 連動中の写しはストア側が行う。ここで両方へ書かないこと
+      if (rotateDrag.isLeftView) setCanvasTransform(rotated);
+      else setSplitCanvasTransform(rotated);
       return;
     }
 
@@ -1210,13 +1194,8 @@ export const CellWindow: React.FC = () => {
         offsetY: e.clientY - panStart.y,
       };
 
-      if (syncMode && isSplitView) {
-        setCanvasTransform(newTransform);
-        setSplitCanvasTransform(newTransform);
-      } else {
-        if (isLeftView) setCanvasTransform(newTransform);
-        else setSplitCanvasTransform(newTransform);
-      }
+      if (isLeftView) setCanvasTransform(newTransform);
+      else setSplitCanvasTransform(newTransform);
       return;
     }
 
@@ -1309,76 +1288,34 @@ export const CellWindow: React.FC = () => {
     e.preventDefault();
     const live = usePaintStore.getState();
     const currentTransform = isLeftView ? live.canvasTransform : live.splitCanvasTransform;
+    const newTransform = wheelTransform(currentTransform, wheelInputFrom(e), live.inputMode);
 
-    if (live.inputMode === 'trackpad' && !e.ctrlKey) {
-      // マジックパッド (トラックパッド) モードの 2 本指パン移動
-      const newTransform = {
-        ...currentTransform,
-        offsetX: currentTransform.offsetX - e.deltaX,
-        offsetY: currentTransform.offsetY - e.deltaY,
-      };
+    // 平行移動だけのときは倍率の記録を取らない (トラックパッドの 2 本指)
+    if (newTransform.scale !== currentTransform.scale) {
+      const burst = wheelBurstRef.current ?? { from: currentTransform.scale, notches: 0 };
+      burst.notches += 1;
+      wheelBurstRef.current = burst;
 
-      if (syncMode && isSplitView) {
-        setCanvasTransform(newTransform);
-        setSplitCanvasTransform(newTransform);
-      } else {
-        if (isLeftView) setCanvasTransform(newTransform);
-        else setSplitCanvasTransform(newTransform);
-      }
-      return;
+      if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
+      const where = `${isLeftView ? 'Win A' : 'Win B'}${syncMode && isSplitView ? ' (連動中なので両方)' : ''}`;
+      wheelTimerRef.current = window.setTimeout(() => {
+        const settled = wheelBurstRef.current;
+        wheelBurstRef.current = null;
+        wheelTimerRef.current = null;
+        if (!settled) return;
+        const after = usePaintStore.getState();
+        const scaleNow = (isLeftView ? after.canvasTransform : after.splitCanvasTransform).scale;
+        logDebug(
+          'view',
+          `表示倍率 ${Math.round(settled.from * 100)}% → ${Math.round(scaleNow * 100)}% (ホイール)`,
+          `${where} / ${settled.notches} 回転ぶん`
+        );
+      }, 250);
     }
 
-    // マウスモードまたはトラックパッドモードでのピンチズーム (ctrlKey === true)
-    let zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    if (live.inputMode === 'trackpad' && e.ctrlKey) {
-      zoomFactor = Math.pow(0.993, e.deltaY);
-    }
-    const newScale = Math.min(Math.max(0.2, currentTransform.scale * zoomFactor), 5.0);
-
-    // 🎯 マウスカーソル座標を中心とするアンカーズームオフセット計算
-    const rect = e.currentTarget.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    const cx = rect.width / 2;
-    const cy = rect.height / 2;
-
-    const scaleRatio = newScale / currentTransform.scale;
-    const newOffsetX = (mx - cx) * (1 - scaleRatio) + currentTransform.offsetX * scaleRatio;
-    const newOffsetY = (my - cy) * (1 - scaleRatio) + currentTransform.offsetY * scaleRatio;
-
-    const newTransform = {
-      scale: newScale,
-      offsetX: newOffsetX,
-      offsetY: newOffsetY,
-    };
-
-    const burst = wheelBurstRef.current ?? { from: currentTransform.scale, notches: 0 };
-    burst.notches += 1;
-    wheelBurstRef.current = burst;
-
-    if (wheelTimerRef.current !== null) window.clearTimeout(wheelTimerRef.current);
-    const where = `${isLeftView ? 'Win A' : 'Win B'}${syncMode && isSplitView ? ' (連動中なので両方)' : ''}`;
-    wheelTimerRef.current = window.setTimeout(() => {
-      const settled = wheelBurstRef.current;
-      wheelBurstRef.current = null;
-      wheelTimerRef.current = null;
-      if (!settled) return;
-      const after = usePaintStore.getState();
-      const scaleNow = (isLeftView ? after.canvasTransform : after.splitCanvasTransform).scale;
-      logDebug(
-        'view',
-        `表示倍率 ${Math.round(settled.from * 100)}% → ${Math.round(scaleNow * 100)}% (ホイール)`,
-        `${where} / ${settled.notches} 回転ぶん`
-      );
-    }, 250);
-
-    if (syncMode && isSplitView) {
-      setCanvasTransform(newTransform);
-      setSplitCanvasTransform(newTransform);
-    } else {
-      if (isLeftView) setCanvasTransform(newTransform);
-      else setSplitCanvasTransform(newTransform);
-    }
+    // ⚠️ 連動中の写しはストア側 (setCanvasTransform) が行う。ここで両方へ書かないこと
+    if (isLeftView) setCanvasTransform(newTransform);
+    else setSplitCanvasTransform(newTransform);
   };
 
   const isDockedReference = referenceCanvas.isOpen && !referenceCanvas.isFloating;

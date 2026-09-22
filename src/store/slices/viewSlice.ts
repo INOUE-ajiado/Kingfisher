@@ -1033,7 +1033,17 @@ ${padded} 枚は穴を合わせられなかったので、画寸だけ揃えま�
     set({ activeViewIndex: idx, activeSurface: 'cell' });
   },
 
-  setSplitCanvasTransform: (transform) => set({ splitCanvasTransform: transform }),
+  /**
+   * ⚠️ 連動中は Win A へも写すこと (setCanvasTransform と対称)。
+   * 写しを画面側でやらせると、同じ判定が 2 か所に散って片方だけ直る形になる。
+   */
+  setSplitCanvasTransform: (transform) =>
+    set((state) => {
+      if (state.syncMode && state.isSplitView) {
+        return { splitCanvasTransform: transform, canvasTransform: transform };
+      }
+      return { splitCanvasTransform: transform };
+    }),
 
   setSplitFileIndex: (index, source) => {
     const state = get();
