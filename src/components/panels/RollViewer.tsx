@@ -1,9 +1,10 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink, StickyNote, Rows3 } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { useShallow } from 'zustand/react/shallow';
 import { FileBrowser } from './FileBrowser';
 import { RetakeNotePanel } from './RetakeNotePanel';
+import { RushThumbnailBar } from './RushThumbnailBar';
 import { RollId, ROLL_IDS } from '../../store/types';
 import { logDebug } from '../../engine/debugLog';
 import type { ProResRealtimeDecoder } from '../../engine/proresRealtimeDecoder';
@@ -15,14 +16,19 @@ import { readDropItems, readMultipleDroppedFolders } from '../../engine/dropFold
 import {
   registerRollVideo,
   getRollVideo,
+  RollPlayer,
   otherRollId,
   beginPairedPlayback,
   endPairedPlayback,
   getPairedPlaybackOffset,
 } from './rollVideoRegistry';
 
-/** 再生速度の選択肢 */
-const SPEEDS = [0.25, 0.5, 1, 2];
+/**
+ * 再生速度の選択肢。
+ * ⚠️ 1/8 まで落とせるようにしておくこと。タイミングのチェックでは
+ * 1 コマずつに近い速さで流して見たい (0.25 では速すぎる場面がある)。
+ */
+const SPEEDS = [0.125, 0.25, 0.5, 0.75, 1, 1.5, 2];
 
 /** fps 推定に使うコマ数。少なすぎると外れ値に弱く、多いと確定が遅い */
 const FPS_SAMPLES = 24;
@@ -110,7 +116,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     }))
   );
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  /** ⚠️ <video> とは限らない (ProRes はその場で復号する代役が入る) */
+  const videoRef = useRef<RollPlayer | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const seekRef = useRef<HTMLInputElement | null>(null);
   const timeLabelRef = useRef<HTMLSpanElement | null>(null);
@@ -153,6 +160,23 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     minWidth: 320,
     minHeight: 260,
   });
+
+  /**
+   * ドッキング中でもリテイクメモを開けるようにする。
+   * ⚠️ 以前は全画面表示の右サイドバーの中だけにあり、通常表示では開く手段が無かった。
+   */
+  const [showNotes, setShowNotes] = useState(false);
+
+  /**
+   * サムネイルの並んだシークバー (ラッシュ窓と同じもの)。
+   *
+   * ⚠️ 出している間だけ時刻を state に入れること。再生中の時刻は本来 DOM へ
+   * 直接書いており (毎コマ再描画を避けるため)、常時 state にすると塗り作業に響く。
+   * ⚠️ ProRes をその場で復号している間は出さないこと。切り出し用の <video> が
+   * 元の .mov を読めず、絵が出ない。
+   */
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [timelineTime, setTimelineTime] = useState(0);
 
   const [showControls, setShowControls] = useState(true);
   const [isBottomBarHovered, setIsBottomBarHovered] = useState(false);
@@ -242,6 +266,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     }
   }, [isFullscreen, isPlaying, handleMouseMove]);
 
+  const canShowTimeline = !view.isRealtimeProRes && !!view.objectUrl && duration > 0;
+
+  useEffect(() => {
+    if (!showTimeline || !canShowTimeline) return;
+    // 1 秒に 10 回まで。毎コマ state を書くと塗り作業に響く
+    const id = window.setInterval(() => {
+      const v = videoRef.current;
+      if (v) setTimelineTime(v.currentTime);
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [showTimeline, canShowTimeline]);
+
   const toggleFullscreen = useCallback(() => {
     if (!targetRef.current) return;
     if (!document.fullscreenElement) {
@@ -272,13 +308,14 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    * ストアへ入れていない (毎コマ更新すると塗り作業に影響する)。
    */
   const describeRollTimes = useCallback((): string => {
-    const roll = usePaintStore.getState().roll;
+    // ⚠️ 外側の roll / view を隠さないよう別の名前にする
+    const liveRoll = usePaintStore.getState().roll;
     return ROLL_IDS.map((rid) => {
-      const view = roll.views[rid];
-      if (!view.isOpen) return `${TONE[rid].label} 閉`;
-      const video = getRollVideo(rid);
-      const at = video ? `${video.currentTime.toFixed(3)}s` : '-';
-      return `${TONE[rid].label} ${view.fileName || '未読み込み'} ${at}`;
+      const rollView = liveRoll.views[rid];
+      if (!rollView.isOpen) return `${TONE[rid].label} 閉`;
+      const player = getRollVideo(rid);
+      const at = player ? `${player.currentTime.toFixed(3)}s` : '-';
+      return `${TONE[rid].label} ${rollView.fileName || '未読み込み'} ${at}`;
     }).join(' / ');
   }, []);
 
@@ -295,7 +332,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    * 連動 OFF のまま 2 本を流すと、デコードの立ち上がりや尺の違いでずれていき、
    * 見比べにならない (実測で 1.6 秒ずれた / 2026-08-31 の報告)。
    */
-  const partnerVideo = useCallback((): HTMLVideoElement | null => {
+  const partnerVideo = useCallback((): RollPlayer | null => {
     if (!usePaintStore.getState().syncMode && getPairedPlaybackOffset() === null) return null;
     return getRollVideo(otherRollId(rollId));
   }, [rollId]);
@@ -385,7 +422,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   }, [view.realtimeDecoder, view.fps]);
 
   /** リアルタイム ProRes 再生用のプロキシオブジェクト生成 */
-  const realtimeVideoProxy = useCallback(() => {
+  const realtimeVideoProxy = useCallback((): RollPlayer => {
     return {
       get currentTime() { return currentTimeRef.current; },
       set currentTime(t: number) {
@@ -400,15 +437,13 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       set playbackRate(r: number) { setSpeed(r); },
       play: () => { setIsPlaying(true); return Promise.resolve(); },
       pause: () => { setIsPlaying(false); },
-      addEventListener: () => {},
-      removeEventListener: () => {},
     };
   }, [paintTime, renderFrameAt]);
 
   /** リアルタイム ProRes モードの初期化とレジストリ登録 */
   useEffect(() => {
     if (view.isRealtimeProRes && view.realtimeDecoder) {
-      const proxy = realtimeVideoProxy() as unknown as HTMLVideoElement;
+      const proxy = realtimeVideoProxy();
       videoRef.current = proxy;
       registerRollVideo(rollId, proxy);
       setDuration(view.realtimeDecoder.duration);
@@ -478,16 +513,20 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     const video = videoRef.current;
     if (!video || !isPlaying || view.isRealtimeProRes) return;
 
+    // ⚠️ コマごとの通知 (rVFC) と timeupdate は <video> にしかない。
+    // ProRes の代役は自前の rAF で回すので、ここへは来ない
     const anyVideo = video as unknown as {
       requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number;
       cancelVideoFrameCallback?: (handle: number) => void;
+      addEventListener?: (type: string, cb: () => void) => void;
+      removeEventListener?: (type: string, cb: () => void) => void;
     };
 
     if (typeof anyVideo.requestVideoFrameCallback !== 'function') {
       // 非対応環境では粗いが timeupdate で代替する
       const onTimeUpdate = () => paintTime(video.currentTime);
-      video.addEventListener('timeupdate', onTimeUpdate);
-      return () => video.removeEventListener('timeupdate', onTimeUpdate);
+      anyVideo.addEventListener?.('timeupdate', onTimeUpdate);
+      return () => anyVideo.removeEventListener?.('timeupdate', onTimeUpdate);
     }
 
     const onFrame = (_now: number, meta: { mediaTime: number }) => {
@@ -642,14 +681,16 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         `${getPairedPlaybackOffset() !== null ? ` / 同時再生の時刻差 ${getPairedPlaybackOffset()!.toFixed(3)}s を保つ` : ''}`
     );
 
-    video.play().catch((err) => console.error('Failed to play roll:', err));
+    void Promise.resolve(video.play()).catch((err: unknown) => console.error('Failed to play roll:', err));
     if (partner) {
       // 相手が終端に達していても、長い方が動く場合は再生させて終端位置を維持する
       if (partner.ended) {
         const partnerDuration = Number.isFinite(partner.duration) ? partner.duration : 0;
         partner.currentTime = Math.max(0, partnerDuration - 0.05);
       }
-      partner.play().catch((err) => console.error('Failed to play linked roll:', err));
+      void Promise.resolve(partner.play()).catch((err: unknown) =>
+        console.error('Failed to play linked roll:', err)
+      );
     }
   };
 
@@ -966,7 +1007,8 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       </div>
       )}
 
-      {/* 映像 */}
+      {/* 映像 (ドッキング中はメモ欄を右に並べられる) */}
+      <div className={isFullscreen ? 'contents' : 'flex-1 min-h-0 flex'}>
       <div
         className={
           isFullscreen
@@ -1117,11 +1159,44 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         )}
       </div>
 
+      {/* リテイクメモ (全画面のときは右サイドバーの中に出るので、ここでは出さない) */}
+      {!isFullscreen && showNotes && (
+        <div className="w-80 max-w-[50%] flex-shrink-0 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-0 overflow-hidden">
+          <RetakeNotePanel rollId={rollId} />
+        </div>
+      )}
+      </div>
+
+      {/* サムネイルの並んだシークバー */}
+      {!isFullscreen && showTimeline && canShowTimeline && (
+        <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800">
+          <RushThumbnailBar
+            videoRef={videoRef as React.RefObject<HTMLVideoElement | null>}
+            videoUrl={view.objectUrl}
+            currentTime={timelineTime}
+            duration={duration}
+            fps={view.fps}
+            onSeek={(t) => {
+              const v = videoRef.current;
+              if (!v) return;
+              setActiveRollId(rollId);
+              v.currentTime = t;
+              setTimelineTime(t);
+              syncPartnerTime(t);
+            }}
+            onStepFrame={(frames) => step(frames)}
+            togglePlay={() => togglePlay()}
+            isPlaying={isPlaying}
+            formatTC={(sec) => formatTimecode(sec, view.fps)}
+          />
+        </div>
+      )}
+
       {/* フルスクリーン時、画面下部にマウスを近づけた時の検知センサーエリア */}
       {isFullscreen && (
         <div
           onMouseEnter={() => setIsBottomBarHovered(true)}
-          className="absolute bottom-0 left-0 right-0 h-12 z-20 pointer-events-auto"
+          className="absolute bottom-0 left-0 right-0 h-20 z-20 pointer-events-auto"
         />
       )}
 
@@ -1188,7 +1263,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
                 onPointerDown={(e) => e.currentTarget.blur()}
                 onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepRoll(rollId, -1, `${tone.label} の ◀◀ ボタン`); }}
                 disabled={disabled}
-                title="前のロールへ (↑)"
+                title={`前のロール素材へ (↑) — ${view.files.length} 本のうち ${view.files.findIndex((v) => v.path === view.currentPath) + 1} 本目`}
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
               >
                 <SkipBack className="w-3.5 h-3.5" />
@@ -1200,9 +1275,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepSelf(-1); }}
               disabled={disabled}
               title="前のコマ (この面だけ)。← は 2 面いっしょ / Shift + ← で 1 秒"
-              className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
+              className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors relative"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
+              {/* キーの ← は 2 面いっしょなので、ボタンは「この面だけ」と分かるようにする */}
+              {partnerOpen && (
+                <span className="absolute -top-0.5 -right-0.5 text-[7px] font-bold leading-none px-0.5 rounded bg-amber-400 text-slate-900">
+                  単
+                </span>
+              )}
             </button>
             <button
               tabIndex={-1}
@@ -1220,9 +1301,14 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepSelf(1); }}
               disabled={disabled}
               title="次のコマ (この面だけ)。→ は 2 面いっしょ / Shift + → で 1 秒"
-              className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
+              className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors relative"
             >
               <ChevronRight className="w-3.5 h-3.5" />
+              {partnerOpen && (
+                <span className="absolute -top-0.5 -right-0.5 text-[7px] font-bold leading-none px-0.5 rounded bg-amber-400 text-slate-900">
+                  単
+                </span>
+              )}
             </button>
             {view.files.length > 1 && (
               <button
@@ -1230,7 +1316,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
                 onPointerDown={(e) => e.currentTarget.blur()}
                 onClick={(e) => { (e.currentTarget as HTMLElement).blur(); stepRoll(rollId, 1, `${tone.label} の ▶▶ ボタン`); }}
                 disabled={disabled}
-                title="次のロールへ (↓)"
+                title={`次のロール素材へ (↓) — ${view.files.length} 本のうち ${view.files.findIndex((v) => v.path === view.currentPath) + 1} 本目`}
                 className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 disabled:opacity-40 transition-colors"
               >
                 <SkipForward className="w-3.5 h-3.5" />
@@ -1252,6 +1338,40 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             >
               {SPEEDS.map((s) => <option key={s} value={s}>{s}x</option>)}
             </select>
+            {/* リテイクメモ。⚠️ 以前は全画面の右サイドバーからしか開けなかった */}
+            {!isFullscreen && (
+              <button
+                tabIndex={-1}
+                onPointerDown={(e) => e.currentTarget.blur()}
+                onClick={(e) => { (e.currentTarget as HTMLElement).blur(); setShowNotes((v) => !v); }}
+                title={showNotes ? 'リテイクメモを閉じる' : 'リテイクメモを開く'}
+                className={`p-1 rounded transition-colors ${
+                  showNotes
+                    ? 'bg-amber-400 text-slate-900'
+                    : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                <StickyNote className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* サムネイルの並んだシークバー (ラッシュ窓と同じもの) */}
+            {!isFullscreen && canShowTimeline && (
+              <button
+                tabIndex={-1}
+                onPointerDown={(e) => e.currentTarget.blur()}
+                onClick={(e) => { (e.currentTarget as HTMLElement).blur(); setShowTimeline((v) => !v); }}
+                title={showTimeline ? 'コマのサムネイルを閉じる' : 'コマのサムネイルを出す (細かさを変えられる)'}
+                className={`p-1 rounded transition-colors ${
+                  showTimeline
+                    ? 'bg-amber-400 text-slate-900'
+                    : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Rows3 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             {/* ドッキング中は見出しを出さないので、ここに置く */}
             {!isFullscreen && !view.isFloating && (
               <>
@@ -1329,7 +1449,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       {isFullscreen && (
         <div
           onMouseEnter={() => setIsRightSidebarHovered(true)}
-          className="fixed top-0 bottom-0 right-0 w-10 z-40 pointer-events-auto"
+          className="fixed top-0 bottom-0 right-0 w-16 z-40 pointer-events-auto"
         />
       )}
 

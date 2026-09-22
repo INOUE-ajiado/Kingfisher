@@ -7,14 +7,32 @@ import { RollId } from '../../store/types';
  * ストアへ時刻を持たせて同期すると、毎コマ state が更新されて再描画が走り、
  * 2 本の映像を同時に流したときに付いてこられない。DOM を直に触る。
  */
-const videos = new Map<RollId, HTMLVideoElement>();
+/**
+ * 連動のために触る相手。
+ *
+ * ⚠️ HTMLVideoElement とは限らない。ProRes をその場で復号しているときは
+ * <video> が無く、同じ形をした代役 (canvas へ描く) が入る。
+ * 以前は代役を `as unknown as HTMLVideoElement` で偽装していたため、
+ * 実際には無い機能 (requestVideoFrameCallback など) も型の上では有るように見えていた。
+ */
+export interface RollPlayer {
+  currentTime: number;
+  readonly duration: number;
+  readonly paused: boolean;
+  readonly ended: boolean;
+  playbackRate: number;
+  play: () => Promise<void> | void;
+  pause: () => void;
+}
 
-export function registerRollVideo(id: RollId, el: HTMLVideoElement | null): void {
+const videos = new Map<RollId, RollPlayer>();
+
+export function registerRollVideo(id: RollId, el: RollPlayer | null): void {
   if (el) videos.set(id, el);
   else videos.delete(id);
 }
 
-export function getRollVideo(id: RollId): HTMLVideoElement | null {
+export function getRollVideo(id: RollId): RollPlayer | null {
   return videos.get(id) ?? null;
 }
 

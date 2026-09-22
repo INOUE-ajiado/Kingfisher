@@ -582,7 +582,7 @@ export interface UiSlice {
    * ⚠️ ↑ ↓ と Space はセルとロールで意味が違う (セル: コマ送り / パン、
    * ロール: 前後のロール / 再生) ので、これで振り分ける。
    */
-  activeSurface: 'cell' | 'roll'
+  activeSurface: 'cell' | 'roll' | 'rush'
   setActiveSurface: (surface: 'cell' | 'roll') => void
 }
 

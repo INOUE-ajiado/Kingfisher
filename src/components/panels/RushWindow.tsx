@@ -514,7 +514,13 @@ export const RushWindow: React.FC = () => {
   useEffect(() => {
     const onPointerDown = (e: PointerEvent) => {
       const container = playerContainerRef.current;
-      isPointerInsideRef.current = !!container && e.target instanceof Node && container.contains(e.target);
+      const inside = !!container && e.target instanceof Node && container.contains(e.target);
+      isPointerInsideRef.current = inside;
+      // ⚠️ キーの効き先も移すこと。Space はセル (パン)・ロール (2 面同時再生) とも
+      // 取り合いになる。ここを移さないと、ラッシュを触っていてもロール側が拾う
+      if (inside && usePaintStore.getState().activeSurface !== 'rush') {
+        usePaintStore.setState({ activeSurface: 'rush' });
+      }
     };
     window.addEventListener('pointerdown', onPointerDown, { capture: true });
     return () => window.removeEventListener('pointerdown', onPointerDown, { capture: true });
