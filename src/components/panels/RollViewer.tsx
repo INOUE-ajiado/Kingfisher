@@ -866,6 +866,13 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         </div>
       )}
 
+      {/*
+        見出しはフルスクリーンか切り離しのときだけ。
+        ⚠️ ドッキング中は上のタブ列が見出しを兼ねる。両方出すと × が 2 つ並び、
+        面を並べるほど絵の高さが削られる。ドッキング中に要る操作 (連動・2 画面・
+        全画面) は下の操作バーへ移してある。
+      */}
+      {(isFullscreen || view.isFloating) && (
       <div
         onPointerDown={handleHeaderPointerDown}
         className={
@@ -957,6 +964,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           </button>
         </div>
       </div>
+      )}
 
       {/* 映像 */}
       <div
@@ -1244,6 +1252,50 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             >
               {SPEEDS.map((s) => <option key={s} value={s}>{s}x</option>)}
             </select>
+            {/* ドッキング中は見出しを出さないので、ここに置く */}
+            {!isFullscreen && !view.isFloating && (
+              <>
+                {!partnerOpen && (
+                  <button
+                    tabIndex={-1}
+                    onPointerDown={(e) => e.currentTarget.blur()}
+                    onClick={(e) => { (e.currentTarget as HTMLElement).blur(); openRollWindow(otherRollId(rollId)); }}
+                    title={`${TONE[otherRollId(rollId)].label} を開いて 2 画面で見比べる`}
+                    className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <Columns className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                {partnerOpen && (
+                  <button
+                    tabIndex={-1}
+                    onPointerDown={(e) => e.currentTarget.blur()}
+                    onClick={(e) => { (e.currentTarget as HTMLElement).blur(); toggleSyncMode(); }}
+                    title={
+                      syncMode
+                        ? '連動を解除する (セル左右 ＆ ロール 2 面の共通の連動)'
+                        : '連動を入れる (セル左右 ＆ ロール 2 面の共通の連動)'
+                    }
+                    className={`p-1 rounded transition-colors ${
+                      syncMode
+                        ? 'bg-amber-400 text-slate-900'
+                        : 'bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    {syncMode ? <Link className="w-3.5 h-3.5" /> : <Link2Off className="w-3.5 h-3.5" />}
+                  </button>
+                )}
+                <button
+                  tabIndex={-1}
+                  onPointerDown={(e) => e.currentTarget.blur()}
+                  onClick={(e) => { (e.currentTarget as HTMLElement).blur(); toggleFullscreen(); }}
+                  title="全画面フルスクリーン表示 (映像のダブルクリックでも可)"
+                  className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <Expand className="w-3.5 h-3.5" />
+                </button>
+              </>
+            )}
             <select
               tabIndex={-1}
               value={view.fps}

@@ -263,7 +263,11 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
         </div>
       )}
 
-      {/* ⚠️ タブ（タイトルバー）: Drag to tear off (独立化) & Drag to dock (復帰) */}
+      {/*
+        見出しは切り離しているときだけ (ドラッグでドッキングへ戻す取っ手)。
+        ⚠️ ドッキング中は上のタブ列が見出しを兼ねる。両方出すと × が 2 つ並ぶ。
+      */}
+      {isFloating && (
       <div
         onPointerDown={handleHeaderPointerDown}
         className="h-6 bg-gradient-to-r from-emerald-600 to-emerald-500 dark:from-emerald-800 dark:to-emerald-700 text-white flex items-center justify-between px-2 text-[11px] font-bold select-none touch-none cursor-grab active:cursor-grabbing shadow-xs"
@@ -299,6 +303,7 @@ export const ReferenceCanvasView: React.FC<ReferenceCanvasViewProps> = React.mem
           </button>
         </div>
       </div>
+      )}
 
       {/* キャンバス領域 (Read-Only) */}
       <div

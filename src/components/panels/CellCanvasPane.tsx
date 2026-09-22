@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, FolderOpen, Maximize2, Minimize2 } from 'lucide-react';
+import { AlertTriangle, FolderOpen, Minimize2 } from 'lucide-react';
 import { CornerResizeHandles } from '../common/CornerResizeHandles';
 import { DockPlaceholder } from '../common/DockPlaceholder';
 import { CanvasTransform } from '../../store/types';
@@ -191,7 +191,12 @@ export const CellCanvasPane: React.FC<CellCanvasPaneProps> = ({
           </div>
         )}
 
-        {/* 見出し (引きはがし・ドッキング対応) */}
+        {/*
+          見出しは切り離しているときだけ。
+          ⚠️ ドッキング中は上のタブ列が見出しを兼ねる。両方出すと × も ⤢ も
+          2 つ並び、面を 3 つ出すだけで 60px を見出しだけで失う。
+        */}
+        {isFloating && (
         <div
           onPointerDown={floating.handleHeaderPointerDown}
           className="h-6 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[11px] justify-between select-none touch-none cursor-grab active:cursor-grabbing"
@@ -219,13 +224,30 @@ export const CellCanvasPane: React.FC<CellCanvasPaneProps> = ({
                 e.stopPropagation();
                 toggleFloating();
               }}
-              title={isFloating ? 'ドッキングに戻す' : '切り離して独立表示 (Tear-off)'}
+              title="ドッキングに戻す"
               className="p-0.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-600 dark:text-slate-300"
             >
-              {isFloating ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+              <Minimize2 className="w-3 h-3" />
             </button>
           </div>
         </div>
+        )}
+
+        {/* ドッキング中は、閲覧専用と素材なしだけを絵の上に小さく出す */}
+        {!isFloating && (showReadOnlyBadge || !image) && (
+          <div className="absolute top-1 right-1 z-40 flex items-center gap-1 pointer-events-none">
+            {!image && (
+              <span className="text-[9px] text-white bg-red-600/90 font-bold flex items-center gap-1 px-1.5 py-0.5 rounded shadow">
+                <AlertTriangle className="w-3 h-3" /> NO DATA
+              </span>
+            )}
+            {showReadOnlyBadge && (
+              <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow whitespace-nowrap">
+                {text.readOnly}
+              </span>
+            )}
+          </div>
+        )}
 
         {showRuler && image && (
           <div className="h-3.5 bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center px-2 text-[8px] font-mono text-slate-500 dark:text-slate-400 justify-between select-none">
