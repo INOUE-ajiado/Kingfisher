@@ -84,14 +84,13 @@ service cloud.firestore {
       allow get: if true;
       allow list: if false;
       allow create: if isStaff()
-        && request.resource.data.keys().hasOnly(['roomId', 'playing', 'position', 'live', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['roomId', 'playing', 'position', 'updatedAt'])
         && isOperatorOf(roomOf(request.resource.data.roomId));
       allow update: if isStaff()
         && isOperatorOf(roomOf(resource.data.roomId))
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playing', 'position', 'live', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['playing', 'position', 'updatedAt'])
         && request.resource.data.playing is bool
-        && request.resource.data.position is number
-        && request.resource.data.live is bool;
+        && request.resource.data.position is number;
       allow delete: if isStaff() && isOperatorOf(roomOf(resource.data.roomId));
     }
 

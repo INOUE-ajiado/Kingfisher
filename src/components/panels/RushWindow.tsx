@@ -69,7 +69,6 @@ import {
   hasOperatorPrivilege,
   isViewerOnline,
   normalizeEmail,
-  shareStatusFromDoc,
 } from '../../engine/rushAccess';
 import { describeFunctionError, getRushRoomVideoUrl } from '../../engine/rushFunctions';
 import { describeBuild, readBuildEnv } from '../../engine/buildInfo';
@@ -331,14 +330,17 @@ export const RushWindow: React.FC = () => {
     };
   }, [roomId, accessKey, user?.email, user?.displayName]);
 
-  // 社外の視聴者 (共有ごと)。公開中のものだけ見る
+  /**
+   * 社外の視聴者 (共有ごと)。
+   * 期限や停止は共有の文書が持つので、ここでは絞らずに全部を見る。
+   * 表示は在席 (最後の合図) で絞るため、終わった共有の人は自然に消える。
+   */
   useEffect(() => {
     if (!isHost || shares.length === 0) {
       setGuestViewers({});
       return;
     }
-    const open = shares.filter((entry) => shareStatusFromDoc(undefined, entry.expiresAt, Date.now()) === 'open');
-    const stops = open.map((entry) =>
+    const stops = shares.map((entry) =>
       subscribeRushShareViewers(entry.shareId, (list) =>
         setGuestViewers((prev) => ({ ...prev, [entry.shareId]: list }))
       )
@@ -407,8 +409,8 @@ export const RushWindow: React.FC = () => {
     const nextLive = !isLive;
     setRushLive(nextLive);
     try {
+      // 配信中かはルームの文書だけが持つ (視聴者にはその購読から伝わる)
       await updateRushRoomStatusInDB(roomId, { isLive: nextLive });
-      playback.controls.setLive(nextLive);
     } catch (err) {
       console.error('Failed to update rush live status:', err);
       setRushLive(!nextLive);
