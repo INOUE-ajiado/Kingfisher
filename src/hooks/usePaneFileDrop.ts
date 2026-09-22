@@ -4,9 +4,8 @@ import {
   collectImageFilesFromEntry,
   collectImageFilesRecursively,
   isSupportedImageFile,
-  resolveDropHandles,
 } from '../engine/fileSystemPath';
-import { readDropItems, readMultipleDroppedFolders } from '../engine/dropFolder';
+import { prepareDroppedItems } from '../engine/dropFolder';
 import { collectDroppedVideoFiles, commonRootName } from '../engine/videoSource';
 import { sortNatural } from '../engine/naturalOrder';
 import { isPaneDrag } from '../components/panels/PaneTabBar';
@@ -146,19 +145,16 @@ export function usePaneFileDrop() {
     resetDragState('winA');
     resetDragState('winB');
 
-    const items = readDropItems(e.dataTransfer);
-    const store = usePaintStore.getState();
-
-    const multi = await readMultipleDroppedFolders(items, store);
-    if (multi.handled) return;
-
-    const { plainFiles, handlePromises, entries } = items;
+    const { handled, plainFiles, entries, handles } = await prepareDroppedItems(
+      e.dataTransfer,
+      usePaintStore.getState()
+    );
+    if (handled) return;
 
     const isWinA = targetWin === 'winA';
     const fileMap = new Map<string, File>();
 
     // --- 1. 書き込み可能なディレクトリハンドルが取れる場合 ---
-    const handles = await resolveDropHandles(handlePromises);
     const dirHandle = handles.find((h: any) => h?.kind === 'directory') ?? null;
 
     if (dirHandle) {

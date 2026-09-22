@@ -53,6 +53,37 @@ export function readDropItems(dataTransfer: DataTransfer | null): DropItems {
   return { plainFiles, handlePromises, entries };
 }
 
+/**
+ * 落とされたものを受け取る最初の一手。
+ *
+ * ⚠️ 面ごとに書き写さないこと。セルの面とロールの面で
+ *   readDropItems → readMultipleDroppedFolders → resolveDropHandles
+ * の 4 行がそっくり並んでいた。
+ * handled が true なら、複数フォルダの取り込みで片が付いている (呼び出し側は何もしない)。
+ */
+export interface PreparedDrop {
+  handled: boolean;
+  plainFiles: File[];
+  entries: any[];
+  handles: any[];
+}
+
+export async function prepareDroppedItems(
+  dataTransfer: DataTransfer | null,
+  store: any
+): Promise<PreparedDrop> {
+  const items = readDropItems(dataTransfer);
+  const multi = await readMultipleDroppedFolders(items, store);
+  if (multi.handled) return { handled: true, plainFiles: [], entries: [], handles: [] };
+
+  return {
+    handled: false,
+    plainFiles: items.plainFiles,
+    entries: items.entries,
+    handles: await resolveDropHandles(items.handlePromises),
+  };
+}
+
 export interface DroppedFolder {
   /** 書き込み可能なディレクトリハンドル。取れなければ null (読み込み専用) */
   dirHandle: any | null;
