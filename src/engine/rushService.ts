@@ -153,11 +153,26 @@ export async function uploadRushVideoToStorage(
           await sealRushVideo(path);
           resolve({ path, name: file.name });
         } catch (err) {
+          // 封印できなかった動画は置いておけない (トークン付きのまま残る)
+          await deleteRushVideoInStorage(path);
           reject(err);
         }
       }
     );
   });
+}
+
+/**
+ * 上げた動画を消す。
+ * ⚠️ ルームを作れなかったときは必ず呼ぶこと。放っておくと、誰からも参照されない動画が
+ * 保管料を食い続ける (取りこぼしは関数側の毎日の片づけが拾う)。
+ */
+export async function deleteRushVideoInStorage(videoPath: string): Promise<void> {
+  try {
+    await deleteObject(ref(storage, videoPath));
+  } catch (err) {
+    console.warn('Failed to delete orphan rush video:', err);
+  }
 }
 
 /**

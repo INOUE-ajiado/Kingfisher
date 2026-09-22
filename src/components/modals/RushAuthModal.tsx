@@ -24,6 +24,7 @@ import {
   subscribeRushRooms,
   checkRoomNameExistsInDB,
   deleteRushRoomInDB,
+  deleteRushVideoInStorage,
   uploadRushVideoToStorage,
   verifyRushRoomAccess,
   clearLegacyRushCache,
@@ -135,6 +136,8 @@ export const RushAuthModal: React.FC = () => {
     }
 
     setIsUploading(true);
+    // ここから下で失敗したら、上げた動画を消すために覚えておく
+    let uploaded: UploadedRushVideo | null = null;
     try {
       // 1. 同名ルームが存在しないか確認 (ローカル一覧 ＆ DB検索)
       const duplicateInState = rooms.some((r) => r.roomName.toLowerCase() === trimmedName.toLowerCase());
@@ -144,17 +147,16 @@ export const RushAuthModal: React.FC = () => {
       }
 
       const newRoomId = `RUSH-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      let video: UploadedRushVideo | null = null;
       let thumbnails: string[] = [];
 
       if (selectedFile) {
         setUploadProgress(0);
         // サムネイルは手元のファイルから作る (クラウド上の動画からは CORS で作れない)
-        const [uploaded, thumbs] = await Promise.all([
+        const [video, thumbs] = await Promise.all([
           uploadRushVideoToStorage(selectedFile, newRoomId, (pct) => setUploadProgress(pct)),
           generateThumbnailsFromFile(selectedFile),
         ]);
-        video = uploaded;
+        uploaded = video;
         thumbnails = thumbs;
       }
 
@@ -164,7 +166,7 @@ export const RushAuthModal: React.FC = () => {
         roomName: trimmedName,
         hostEmail: user?.email || '',
         password: password.trim(),
-        video,
+        video: uploaded,
         thumbnails,
       });
 
@@ -175,7 +177,7 @@ export const RushAuthModal: React.FC = () => {
         password: password.trim(),
         accessKey,
         videoUrl: null,
-        videoName: video?.name ?? null,
+        videoName: uploaded?.name ?? null,
         thumbnails,
         isLive: false,
       });
@@ -187,6 +189,8 @@ export const RushAuthModal: React.FC = () => {
       setSelectedFile(null);
     } catch (err) {
       console.error('Failed to upload video / create room:', err);
+      // 上げた動画だけが残らないように片づける (残すと誰からも参照されない動画になる)
+      if (uploaded) await deleteRushVideoInStorage(uploaded.path);
       setErrorMsg(`動画のアップロードまたはルーム作成に失敗しました: ${describeRushError(err)}`);
     } finally {
       setIsUploading(false);

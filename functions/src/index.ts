@@ -1,6 +1,8 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { getStorage } from 'firebase-admin/storage';
+import { DEFAULT_MIN_AGE_MS, sweepRushVideos } from './sweep';
 import {
   ACCESS,
   db,
@@ -110,4 +112,28 @@ export const sealRushVideo = onCall(async (request) => {
   const sealed = !metadata.metadata?.firebaseStorageDownloadTokens;
   if (!sealed) throw new HttpsError('internal', 'ダウンロードトークンを消せませんでした');
   return { sealed: true };
+});
+
+/**
+ * どこからも参照されていない動画を、毎日片づける。
+ *
+ * アップロードは済んだのにルームを作れなかった場合の取りこぼしを拾う
+ * (画面側でもその場で消しているが、ブラウザが落ちると消せないため)。
+ */
+export const sweepRushVideosDaily = onSchedule(
+  { schedule: '0 4 * * *', timeZone: 'Asia/Tokyo', region: 'asia-northeast1' },
+  async () => {
+    const result = await sweepRushVideos(DEFAULT_MIN_AGE_MS);
+    console.log('ラッシュ動画の片づけ:', JSON.stringify(result));
+  }
+);
+
+/** 同じ片づけを手で走らせる (社内のみ)。minAgeMinutes を指定すると、新しいものも対象にできる */
+export const sweepRushVideosNow = onCall(async (request) => {
+  requireStaff(request);
+  const minutes = Number(request.data?.minAgeMinutes);
+  const minAgeMs = Number.isFinite(minutes) && minutes >= 0 ? minutes * 60 * 1000 : DEFAULT_MIN_AGE_MS;
+  const result = await sweepRushVideos(minAgeMs);
+  console.log('ラッシュ動画の片づけ (手動):', JSON.stringify(result));
+  return result;
 });
