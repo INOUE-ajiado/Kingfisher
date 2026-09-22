@@ -135,8 +135,7 @@ export const DebugLogPanel: React.FC = () => {
     return `${at}/${view.files.length} (${view.fileName || '未読み込み'})`;
   };
   const rollStatus =
-    `ロール: 選択連動=${roll.fileSync ? `ON (ずれ ${roll.fileSyncOffset})` : 'OFF'}` +
-    ` / 再生連動=${roll.sync ? `ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : 'OFF'}` +
+    `ロール: 連動=${syncMode ? `ON (一覧のずれ ${roll.fileSyncOffset} / 時刻差 ${roll.syncOffset.toFixed(3)}s)` : 'OFF'}` +
     ` / A=${rollPosition('rollA')} / B=${rollPosition('rollB')}`;
 
   /**

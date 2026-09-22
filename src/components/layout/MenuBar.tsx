@@ -258,7 +258,7 @@ export const MenuBar: React.FC = () => {
       items: [
         { label: 'Win A を表示', shortcut: '', checked: isWinAVisible, action: toggleWinAVisible },
         { label: '2画面分割表示 (Split View)', shortcut: '', checked: isSplitView, action: toggleIsSplitView },
-        { label: '左右連動 (Sync Mode)', shortcut: '', checked: syncMode, action: toggleSyncMode },
+        { label: '連動 (Win A/B ＆ ロール A/B)', shortcut: '', checked: syncMode, action: toggleSyncMode },
         { type: 'divider' },
         { label: 'ズームイン', shortcut: 'Ctrl++', action: zoomIn },
         { label: 'ズームアウト', shortcut: 'Ctrl+-', action: zoomOut },

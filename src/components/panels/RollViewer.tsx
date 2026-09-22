@@ -265,21 +265,21 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     }).join(' / ');
   }, []);
 
-  /** 連動の状態を添える (再生連動の有無と時刻差) */
+  /** 連動の状態を添える (入り切りと時刻差) */
   const describeRollSync = useCallback((): string => {
-    const roll = usePaintStore.getState().roll;
-    return roll.sync ? `再生連動 ON (時刻差 ${roll.syncOffset.toFixed(3)}s)` : '再生連動 OFF';
+    const { syncMode: on, roll: r } = usePaintStore.getState();
+    return on ? `連動 ON (時刻差 ${r.syncOffset.toFixed(3)}s)` : '連動 OFF';
   }, []);
 
   /**
    * 足並みを揃える相手の映像。
    *
-   * ⚠️ 再生連動 (🔗) が入っているときだけでなく、Space の同時再生中も返すこと。
+   * ⚠️ 連動 (🔗) が入っているときだけでなく、Space の同時再生中も返すこと。
    * 連動 OFF のまま 2 本を流すと、デコードの立ち上がりや尺の違いでずれていき、
    * 見比べにならない (実測で 1.6 秒ずれた / 2026-08-31 の報告)。
    */
   const partnerVideo = useCallback((): HTMLVideoElement | null => {
-    if (!usePaintStore.getState().roll.sync && getPairedPlaybackOffset() === null) return null;
+    if (!usePaintStore.getState().syncMode && getPairedPlaybackOffset() === null) return null;
     return getRollVideo(otherRollId(rollId));
   }, [rollId]);
 
@@ -289,9 +289,9 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
    */
   const partnerTimeFor = useCallback(
     (time: number): number => {
-      const { sync, syncOffset } = usePaintStore.getState().roll;
+      const { syncMode: on, roll: r } = usePaintStore.getState();
       // 連動中は 🔗 を押した時点の差、そうでなければ同時再生を始めた時点の差
-      const offset = sync ? syncOffset : getPairedPlaybackOffset() ?? 0;
+      const offset = on ? r.syncOffset : getPairedPlaybackOffset() ?? 0;
       return rollId === 'rollA' ? time + offset : time - offset;
     },
     [rollId]
@@ -570,7 +570,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   /**
    * 再生 / 一時停止。
    *
-   * both または roll.sync を立てると 2 面いっしょに動かす。
+   * both または連動 (syncMode) が入っていると 2 面いっしょに動かす。
    * ⚠️ ロール映像の尺が異なる場合、同じ尺分連動し、尺が足りないロールは最後で留まり、
    * 尺が長い方のロールの再生・操作を優先する。
    */
@@ -584,7 +584,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
       return;
     }
 
-    const isSyncOn = usePaintStore.getState().roll.sync;
+    const isSyncOn = usePaintStore.getState().syncMode;
     if (both || isSyncOn) {
       const partnerView = usePaintStore.getState().roll.views[otherRollId(rollId)];
       if (partnerView && partnerView.isOpen && partnerView.status !== 'ready') {
@@ -639,7 +639,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   /**
    * もう一方の面も同じコマ数だけ送る。
    *
-   * ⚠️ 再生の連動 (roll.sync) 中はここでは触らないこと。あちらは開始時の時刻差を
+   * ⚠️ 連動 (syncMode) 中はここでは触らないこと。あちらは開始時の時刻差を
    * 保って絶対時刻で合わせる担当 (syncPartnerTime) で、両方から書くと差が崩れる。
    * ⚠️ コマ数は面ごとの fps で秒へ直すこと。24fps と 30fps を並べたときに
    * 相手の fps で計算しないと、送るたびに少しずつずれていく。
@@ -647,7 +647,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
   const stepPartner = (frames: number) => {
     const otherId = otherRollId(rollId);
     const state = usePaintStore.getState();
-    if (state.roll.sync) return;
+    if (state.syncMode) return;
     if (!state.roll.views[otherId].isOpen) return;
 
     const partner = getRollVideo(otherId);
@@ -693,10 +693,10 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     const before = describeRollTimes();
     video.currentTime = steppedTime(video.currentTime, delta, view.fps, video.duration);
 
-    // ⚠️ 再生連動 (roll.sync) 中なら、相手を無理に同期させるのではなく
+    // ⚠️ 連動 (syncMode) 中なら、相手を無理に同期させるのではなく
     // この面だけを動かしたあとの新しい時刻差を覚えて連動を維持する
     const state = usePaintStore.getState();
-    if (state.roll.sync) {
+    if (state.syncMode) {
       const a = getRollVideo('rollA');
       const b = getRollVideo('rollB');
       if (a && b) {
@@ -869,20 +869,18 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           )}
         </div>
         <div className="flex items-center gap-1">
-          {partnerOpen && (roll.sync || roll.fileSync || isActive) && (
+          {partnerOpen && (syncMode || isActive) && (
             <span
               title={
-                roll.sync || roll.fileSync
+                syncMode
                   ? '連動中: ファイル選択や操作が 2 画面で連携します'
                   : 'ツリーから映像を選ぶと、この面に開きます'
               }
               className={`text-[9px] font-bold px-1 rounded flex-shrink-0 ${
-                roll.sync || roll.fileSync
-                  ? 'bg-emerald-400 text-slate-900'
-                  : 'bg-amber-400 text-slate-900'
+                syncMode ? 'bg-emerald-400 text-slate-900' : 'bg-amber-400 text-slate-900'
               }`}
             >
-              {roll.sync || roll.fileSync ? '選択先 (連動)' : '選択先'}
+              {syncMode ? '選択先 (連動)' : '選択先'}
             </span>
           )}
           {!partnerOpen && (
@@ -902,15 +900,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               onPointerDown={(e) => e.currentTarget.blur()}
               onClick={(e) => { e.stopPropagation(); (e.currentTarget as HTMLElement).blur(); toggleSyncMode(); }}
               title={
-                roll.sync || syncMode
-                  ? '連携を解除する (セル・ロール全体の共通連携)'
-                  : '連携を入れる (セル・ロール全体の共通連携)'
+                syncMode
+                  ? '連動を解除する (セル左右 ＆ ロール 2 面の共通の連動)'
+                  : '連動を入れる (セル左右 ＆ ロール 2 面の共通の連動)'
               }
               className={`p-0.5 rounded transition-colors ${
-                roll.sync || syncMode ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/25'
+                syncMode ? 'bg-amber-400 text-slate-900' : 'hover:bg-white/25'
               }`}
             >
-              {roll.sync || syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
+              {syncMode ? <Link className="w-3 h-3" /> : <Link2Off className="w-3 h-3" />}
             </button>
           )}
           <button
@@ -987,7 +985,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
             }}
             onPause={() => setIsPlaying(false)}
             onEnded={() => {
-              const partner = partnerVideo() ?? (usePaintStore.getState().roll.sync ? getRollVideo(otherRollId(rollId)) : null);
+              const partner = partnerVideo() ?? (usePaintStore.getState().syncMode ? getRollVideo(otherRollId(rollId)) : null);
               if (partner) {
                 const partnerDuration = Number.isFinite(partner.duration) ? partner.duration : 0;
                 // ⚠️ 相手の動画がまだ終わっていない（尺が長い）場合は、短かった側は最後で留まり、相手の再生を継続する
@@ -1142,7 +1140,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
               seekBurstRef.current = null;
               seekTimerRef.current = null;
               const state = usePaintStore.getState();
-              if (state.roll.sync) {
+              if (state.syncMode) {
                 const a = getRollVideo('rollA');
                 const b = getRollVideo('rollB');
                 if (a && b) updateRollSyncOffset(b.currentTime - a.currentTime);

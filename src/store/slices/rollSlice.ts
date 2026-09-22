@@ -9,8 +9,9 @@
  * ただし 2 面目を開くときだけは、一覧が空なら相手のものを引き継ぐ
  * (1 つのフォルダを 2 面で見比べる使い方が多く、そこで毎回落とし直させない)。
  *
- * ⚠️ 連動は 2 種類ある。sync は再生 (同じロールの中の時刻)、fileSync は
- * ツリーの選択 (一覧の何本目を開くか)。混ぜないこと。
+ * ⚠️ 「連動しているか」はここでは持たない。入り切りは syncMode の 1 つだけで、
+ * ここが持つのは連動を入れた時点のずれ (syncOffset = 時刻差、fileSyncOffset = 本数差) だけ。
+ * 連動が入ると、再生の時刻とツリーの選択の両方が相手へ追従する。
  */
 
 import { StateCreator } from 'zustand';
@@ -47,9 +48,7 @@ function emptyView(): RollViewState {
 const initialRoll: RollState = {
   views: { rollA: emptyView(), rollB: emptyView() },
   activeId: 'rollA',
-  sync: false,
   syncOffset: 0,
-  fileSync: false,
   fileSyncOffset: 0,
 };
 
@@ -164,8 +163,8 @@ function describeRollPair(roll: RollState): string {
  * ⚠️ 端で切り詰められた並びは食い違いではない。どちらが主導でも辻褄が合えば正しい
  * (セルの isSyncPairConsistent と同じ考え方)。
  */
-function logRollSyncMismatch(roll: RollState): void {
-  if (!roll.fileSync) return;
+function logRollSyncMismatch(roll: RollState, synced: boolean): void {
+  if (!synced) return;
   const a = roll.views.rollA;
   const b = roll.views.rollB;
   if (a.files.length === 0 || b.files.length === 0) return;
@@ -233,13 +232,16 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
         } catch {}
       }
       // ウィンドウの切り離し状態は次に開いたときのために残し、素材だけ手放す
-      const roll = withView({ ...state.roll, fileSync: false, fileSyncOffset: 0 }, id, {
+      // ⚠️ ここで連動そのものを切らないこと。連動はセルと共通の 1 つの旗で、
+      // ロールを 1 面閉じただけでセルの左右連動まで切れてしまう。
+      // 相手が居なくなるので、控えてあったずれだけ捨てる。
+      const roll = withView({ ...state.roll, fileSyncOffset: 0 }, id, {
         ...emptyView(),
         isFloating: view.isFloating,
       });
       // ロールが 1 面も残らなければ、キーの効き先をセルへ戻す
       const stillOpen = ROLL_IDS.some((rid) => roll.views[rid].isOpen);
-      logDebug('window', `${rollLabel(id)} を閉じた`, `選択連動は解除。残っているロールの面: ${stillOpen ? 'あり' : 'なし'}`);
+      logDebug('window', `${rollLabel(id)} を閉じた`, `一覧のずれは 0 に戻す。残っているロールの面: ${stillOpen ? 'あり' : 'なし'}`);
       return { roll, ...(stillOpen ? {} : { activeSurface: 'cell' as const }) };
     }),
 
@@ -313,15 +315,15 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
 
       const before = describeRollPair(state.roll);
       const opened = withView({ ...state.roll, activeId: id }, id, openedView(view, view.files[at]));
-      const roll = opened.fileSync ? withSyncedPartner(opened, id, at) : opened;
+      const roll = state.syncMode ? withSyncedPartner(opened, id, at) : opened;
 
       logDebug(
         'roll',
         `${rollLabel(id)} で選択: ${at + 1}/${view.files.length} (${path})${source ? ` — ${source}` : ''}` +
-          `${roll.fileSync ? ` / 選択連動 ずれ ${roll.fileSyncOffset}` : ' / 選択連動なし'}`,
+          `${state.syncMode ? ` / 連動 ずれ ${roll.fileSyncOffset}` : ' / 連動なし'}`,
         `${before}  →  ${describeRollPair(roll)}`
       );
-      logRollSyncMismatch(roll);
+      logRollSyncMismatch(roll, state.syncMode);
 
       return {
         // ツリーでロールを選んだ時点で、↑ ↓ と Space はロールのものになる
@@ -479,57 +481,37 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
       return { roll: withView(state.roll, id, { ...view, fps, fpsSource: source }) };
     }),
 
-  /**
-   * 2 面の再生を連動させる / やめる。
-   *
-   * ⚠️ 連動を始めた時点の時刻差を保つこと。片方を頭出ししてから連動させる使い方が
-   * あるので、強制的に同じ時刻へ合わせると狙って選んだ位置がずれる
-   * (セルの左右連動と同じ考え方)。時刻は再生中の実体から読むため、
-   * 差の計算は呼び出し側 (RollViewer) が渡す。
-   */
-  toggleRollSync: (offset = 0) =>
-    set((state) => {
-      if (state.roll.sync) {
-        logDebug('sync', 'ロールの再生連動を切った');
-        return { roll: { ...state.roll, sync: false } };
-      }
-      const open = ROLL_IDS.filter((id) => state.roll.views[id].isOpen);
-      // 片方しか開いていなければ連動しても意味がない
-      if (open.length < 2) {
-        logDebug('sync', 'ロールの再生連動は入れられない (2 面開いていない)');
-        return state;
-      }
-      logDebug(
-        'sync',
-        `ロールの再生連動を入れた (時刻差 ${offset.toFixed(3)} 秒)`,
-        describeRollPair(state.roll)
-      );
-      return { roll: { ...state.roll, sync: true, syncOffset: offset } };
-    }),
-
   updateRollSyncOffset: (offset: number) =>
     set((state) => {
-      if (!state.roll.sync) return state;
-      logDebug('sync', `ロールの再生連動の時刻差を更新 (時刻差 ${offset.toFixed(3)} 秒)`);
+      if (!state.syncMode) return state;
+      logDebug('sync', `連動の時刻差を更新 (時刻差 ${offset.toFixed(3)} 秒)`);
       return { roll: { ...state.roll, syncOffset: offset } };
     }),
 
+  /**
+   * 連動を入れ切りしたときの、ロール側の支度。
+   *
+   * ⚠️ ここで旗を持たないこと。入り切りは syncMode が唯一の source で、
+   * ここは「入れた時点のずれを控える」「片方しか開いていなければ相手も開く」だけを行う。
+   * ⚠️ 入れた時点のずれを保つこと。片方を頭出ししてから連動させる使い方があるので、
+   * 強制的に同じ位置へ揃えると狙って選んだ位置がずれる (セルの左右連動と同じ考え方)。
+   */
   setRollSyncAll: (enabled: boolean) =>
     set((state) => {
       if (!enabled) {
-        logDebug('sync', 'ロールの連携を一括で解除した');
-        return { roll: { ...state.roll, sync: false, fileSync: false } };
+        logDebug('sync', 'ロール側の連動の控えを手放した');
+        return state;
       }
 
       const a = getRollVideo('rollA');
       const b = getRollVideo('rollB');
       const timeOffset = a && b ? b.currentTime - a.currentTime : state.roll.syncOffset;
 
-      let { rollA, rollB } = state.roll.views;
+      const { rollA, rollB } = state.roll.views;
       let atA = indexOfCurrent(rollA);
       let atB = indexOfCurrent(rollB);
 
-      let nextRoll: RollState = { ...state.roll, sync: true, syncOffset: timeOffset };
+      let nextRoll: RollState = { ...state.roll, syncOffset: timeOffset };
 
       if (rollA.files.length > 0 && rollB.files.length > 0) {
         if (atA >= 0 && atB < 0) {
@@ -541,61 +523,13 @@ export const createRollSlice: StateCreator<PaintStore, [], [], RollSlice> = (set
           nextRoll = withView(nextRoll, 'rollA', openedView(rollA, rollA.files[targetIdx]));
           atA = targetIdx;
         }
-        const fileOffset = atA >= 0 && atB >= 0 ? atB - atA : 0;
-        nextRoll = { ...nextRoll, fileSync: true, fileSyncOffset: fileOffset };
+        nextRoll = { ...nextRoll, fileSyncOffset: atA >= 0 && atB >= 0 ? atB - atA : 0 };
       }
-
-      logDebug('sync', 'ロールの連携を一括で有効化した', describeRollPair(nextRoll));
-      return { roll: nextRoll };
-    }),
-
-  /**
-   * 2 面のツリーの選択を連動させる / やめる。
-   *
-   * ⚠️ 開始時のずれを保つこと。「A の 3 本目と B の 5 本目が同じカット」という
-   * 並びは珍しくないので、押した瞬間に揃えると合わせた位置が失われる
-   * (再生の連動・セルの左右連動と同じ考え方)。
-   * ⚠️ 判定に isOpen を使わないこと。フォルダを落としただけでまだ開いていない面も
-   * ツリーには並んでおり、そこから選べば開く。窓の有無で押せなくすると
-   * 「ボタンはあるのに反応しない」ことになる。
-   */
-  toggleRollFileSync: () =>
-    set((state) => {
-      if (state.roll.fileSync) {
-        logDebug('sync', 'ロールの選択連動を切った', describeRollPair(state.roll));
-        return { roll: { ...state.roll, fileSync: false } };
-      }
-
-      let { rollA, rollB } = state.roll.views;
-      // 片方に一覧が無ければ合わせようがない
-      if (rollA.files.length === 0 || rollB.files.length === 0) {
-        logDebug('sync', 'ロールの選択連動は入れられない (片方の一覧が空)');
-        return state;
-      }
-
-      let atA = indexOfCurrent(rollA);
-      let atB = indexOfCurrent(rollB);
-
-      let nextRoll: RollState = { ...state.roll };
-
-      // 片方がまだ開いていなければ、開いている側と同じインデックスのファイルを開く
-      if (atA >= 0 && atB < 0) {
-        const targetIdx = Math.min(rollB.files.length - 1, atA);
-        nextRoll = withView(nextRoll, 'rollB', openedView(rollB, rollB.files[targetIdx]));
-        atB = targetIdx;
-      } else if (atB >= 0 && atA < 0) {
-        const targetIdx = Math.min(rollA.files.length - 1, atB);
-        nextRoll = withView(nextRoll, 'rollA', openedView(rollA, rollA.files[targetIdx]));
-        atA = targetIdx;
-      }
-
-      const offset = atA >= 0 && atB >= 0 ? atB - atA : 0;
-      nextRoll = { ...nextRoll, fileSync: true, fileSyncOffset: offset };
 
       logDebug(
         'sync',
-        `ロールの選択連動を入れた (ずれ ${offset})`,
-        `この 2 本を対にして固定: ${describeRollPair(nextRoll)}`
+        `ロールの連動の控えを取った (時刻差 ${timeOffset.toFixed(3)} 秒 / 一覧のずれ ${nextRoll.fileSyncOffset})`,
+        describeRollPair(nextRoll)
       );
       return { roll: nextRoll };
     }),
