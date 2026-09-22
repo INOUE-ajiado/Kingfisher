@@ -24,9 +24,10 @@ import { RollViewer } from './RollViewer';
 import { RushWindow } from './RushWindow';
 import { PaneTabBar, PaneDropGap, isPaneDrag } from './PaneTabBar';
 import { PaneId, PANE_LABELS } from '../../engine/paneLayout';
-import { RollId } from '../../store/types';
+import { RollId, CanvasTransform } from '../../store/types';
 import { logDebug, PLAYBACK_SOURCE } from '../../engine/debugLog';
 import { getRenderSignal, subscribeRenderSignal } from '../../engine/renderSignal';
+import { fitTransformFor, isUserAdjusted, sizeKeyOf } from '../../engine/canvasFit';
 
 export const CellWindow: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -565,98 +566,123 @@ export const CellWindow: React.FC = () => {
    */
   const renderTrigger = useSyncExternalStore(subscribeRenderSignal, getRenderSignal, getRenderSignal);
 
-  // 自動フィットが最後に設定した値 (ユーザー操作との区別に使う)
-  const lastFitTransformRef = useRef<{ scale: number; offsetX: number; offsetY: number } | null>(null);
+  /**
+   * 自動フィットが最後に決めた値。面ごとに控える。
+   *
+   * ⚠️ Win A の値だけで判断しないこと。以前は片方しか見ていなかったので、
+   * Win B だけを拡大して塗っていると、その倍率が自動フィットで流された。
+   */
+  const lastFitTransformRef = useRef<Record<0 | 1, CanvasTransform | null>>({ 0: null, 1: null });
 
-  // 画面サイズ（PCディスプレイのキャンバスエリア高さ）に合わせて、仮想フレーム/セル画像が上下にぴったり収まるサイズに自動計算＆初期位置設定
-  const fitToScreenHeight = useCallback(
-    (reason: string) => {
+  /**
+   * 1 つの面の表示を、その面の画像に合わせる。
+   *
+   * ⚠️ その面の画像の高さで計算すること。Win A の高さで Win B まで合わせると、
+   * サイズの違うリテイク素材を並べたときに収まらない。
+   * ⚠️ 連動中は Win A を合わせれば Win B も付いてくる (ストア側が写す)。
+   */
+  const fitView = useCallback(
+    (viewIdx: 0 | 1, reason: string) => {
       const container = containerRef.current;
       if (!container) return;
 
-      const availableHeight = container.clientHeight - 48; // 上下24pxずつのマージン余白
-      const targetHeight = currentImage ? currentImage.height : 480;
-      if (availableHeight <= 0 || targetHeight <= 0) return;
+      const live = usePaintStore.getState();
+      const image = viewIdx === 0 ? live.currentImage : live.splitImage;
+      const current = viewIdx === 0 ? live.canvasTransform : live.splitCanvasTransform;
+      const fit = fitTransformFor(container.clientHeight, image?.height ?? 0, current);
+      if (!fit) return;
 
-      const fitScale = Math.min(Math.max(0.2, availableHeight / targetHeight), 3.0);
-      const fitTransform = { scale: fitScale, offsetX: 0, offsetY: 0 };
-
-      const before = usePaintStore.getState().canvasTransform.scale;
       logDebug(
         'view',
-        `表示倍率 ${Math.round(before * 100)}% → ${Math.round(fitScale * 100)}% (自動フィット)`,
-        `${reason} / 画像 ${currentImage ? `${currentImage.width}x${currentImage.height}` : '(なし)'} / 表示領域の高さ ${availableHeight}px / Win A と Win B の両方に適用`
+        `表示倍率 ${Math.round(current.scale * 100)}% → ${Math.round(fit.scale * 100)}% (自動フィット)`,
+        `${reason} / ${viewIdx === 0 ? 'Win A' : 'Win B'} / 画像 ${image ? `${image.width}x${image.height}` : '(なし)'}` +
+          `${live.syncMode && live.isSplitView ? ' / 連動中なので両方' : ''}`
       );
 
-      // 「自動で合わせた値」を控えておく。これと現在値がずれていれば
-      // ユーザーが自分でズーム・パンしたと判断できる。
-      lastFitTransformRef.current = fitTransform;
-      setCanvasTransform(fitTransform);
-      setSplitCanvasTransform(fitTransform);
+      lastFitTransformRef.current[viewIdx] = fit;
+      if (viewIdx === 0) {
+        setCanvasTransform(fit);
+        // 連動中はストア側が Win B へ写すので、控えもそろえておく
+        if (live.syncMode && live.isSplitView) lastFitTransformRef.current[1] = fit;
+      } else {
+        setSplitCanvasTransform(fit);
+      }
     },
-    [currentImage, setCanvasTransform, setSplitCanvasTransform]
+    [setCanvasTransform, setSplitCanvasTransform]
   );
 
+  /** その面を自動で合わせてよいか (自分で動かしていなければ合わせる) */
+  const mayAutoFit = useCallback((viewIdx: 0 | 1): boolean => {
+    const live = usePaintStore.getState();
+    const current = viewIdx === 0 ? live.canvasTransform : live.splitCanvasTransform;
+    return !isUserAdjusted(lastFitTransformRef.current[viewIdx], current);
+  }, []);
+
   /**
-   * 自動フィットは「画像のサイズが変わった時」だけ行う。
+   * 自動フィットは「画像の大きさが変わった時」だけ行う。
    *
-   * 以前は currentImage が変わるたびに実行していたため、拡大して細部を塗っている最中に
+   * 以前は画像が変わるたびに実行していたため、拡大して細部を塗っている最中に
    * コマ送りすると毎回ズームが初期化されてしまっていた。
-   * 同じサイズのセルを送っている間は、ユーザーが決めた表示倍率と位置をそのまま保つ。
+   * 同じ大きさのセルを送っている間は、決めた表示倍率と位置をそのまま保つ。
    */
-  const lastFittedSizeRef = useRef<string | null>(null);
+  const lastFittedSizeRef = useRef<Record<0 | 1, string | null>>({ 0: null, 1: null });
 
   useEffect(() => {
-    if (!currentImage) return;
-    const sizeKey = `${currentImage.width}x${currentImage.height}`;
-    if (lastFittedSizeRef.current === sizeKey) return;
+    const sizeKey = sizeKeyOf(currentImage);
+    if (!sizeKey || lastFittedSizeRef.current[0] === sizeKey) return;
 
-    const previous = lastFittedSizeRef.current;
-    lastFittedSizeRef.current = sizeKey;
+    const previous = lastFittedSizeRef.current[0];
+    lastFittedSizeRef.current[0] = sizeKey;
 
-    // ⚠️ ユーザーが自分で決めた倍率は壊さないこと。設定シートのようにサイズの違う
+    // ⚠️ 自分で決めた倍率は壊さないこと。設定シートのように大きさの違う
     // ファイルを 1 枚挟むだけで、拡大して塗っていた倍率が飛んでしまう
     // (2026-08-31 の報告)。合わせ直すのは、自動で合わせた値のままのときだけ。
-    const fitted = lastFitTransformRef.current;
-    const current = usePaintStore.getState().canvasTransform;
-    const isUserAdjusted =
-      !!fitted &&
-      (fitted.scale !== current.scale ||
-        fitted.offsetX !== current.offsetX ||
-        fitted.offsetY !== current.offsetY);
-
-    if (isUserAdjusted) {
+    if (!mayAutoFit(0)) {
       logDebug(
         'view',
-        `画像サイズが変わったが、表示倍率は ${Math.round(current.scale * 100)}% のまま保つ`,
+        `Win A の画像の大きさが変わったが、表示倍率はそのまま保つ`,
         `${previous ?? '(初回)'} → ${sizeKey} / 自分でズーム・パンした値を優先`
       );
       return;
     }
+    fitView(0, `Win A の画像の大きさが変わった (${previous ?? '(初回)'} → ${sizeKey})`);
+  }, [currentImage, fitView, mayAutoFit]);
 
-    fitToScreenHeight(`画像サイズが変わった (${previous ?? '(初回)'} → ${sizeKey})`);
-  }, [currentImage, fitToScreenHeight]);
+  useEffect(() => {
+    const sizeKey = sizeKeyOf(splitImage);
+    if (!sizeKey) {
+      lastFittedSizeRef.current[1] = null;
+      return;
+    }
+    if (lastFittedSizeRef.current[1] === sizeKey) return;
+
+    const previous = lastFittedSizeRef.current[1];
+    lastFittedSizeRef.current[1] = sizeKey;
+
+    // 連動中は Win A に付いていくので、ここでは触らない
+    const live = usePaintStore.getState();
+    if (live.syncMode && live.isSplitView) return;
+    if (!mayAutoFit(1)) return;
+
+    fitView(1, `Win B の画像の大きさが変わった (${previous ?? '(初回)'} → ${sizeKey})`);
+  }, [splitImage, fitView, mayAutoFit]);
 
   /**
    * ウィンドウをリサイズした時は表示を合わせ直すが、
-   * ユーザーが自分でズーム・パンしている場合はその操作を尊重して触らない。
+   * 自分でズーム・パンしている面は、その操作を尊重して触らない。
    */
   useEffect(() => {
     const handleResize = () => {
-      const fitted = lastFitTransformRef.current;
-      const current = usePaintStore.getState().canvasTransform;
-      const isUserAdjusted =
-        !!fitted &&
-        (fitted.scale !== current.scale ||
-          fitted.offsetX !== current.offsetX ||
-          fitted.offsetY !== current.offsetY);
-      if (isUserAdjusted) return;
-      fitToScreenHeight('ウィンドウのリサイズ');
+      if (mayAutoFit(0)) fitView(0, 'ウィンドウのリサイズ');
+      const live = usePaintStore.getState();
+      if (live.isSplitView && !(live.syncMode) && mayAutoFit(1)) {
+        fitView(1, 'ウィンドウのリサイズ');
+      }
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [fitToScreenHeight]);
+  }, [fitView, mayAutoFit]);
 
   // メイン画像の読み込み (Win A)
   useEffect(() => {
