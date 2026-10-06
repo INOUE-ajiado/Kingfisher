@@ -230,6 +230,7 @@ export const MenuBar: React.FC = () => {
         { label: '新規作成', shortcut: 'Ctrl+N', action: () => alert('新規セルを作成します。') },
         { label: 'フォルダを開く (Open Directory)...', shortcut: 'Ctrl+Shift+O', action: handleOpenFolderDir },
         { label: '参照画像として開く (Open as Reference)...', shortcut: 'Ctrl+O', action: handleOpenReference },
+        { label: 'Blu-ray (BD) 映像から取り込み...', shortcut: '', action: () => setActiveModal('bdImport') },
         { type: 'divider' },
         { label: '上書き保存', shortcut: 'Ctrl+S', action: handleSave },
         { label: '名前を付けて保存...', shortcut: 'Ctrl+Shift+S', action: handleSaveAs },

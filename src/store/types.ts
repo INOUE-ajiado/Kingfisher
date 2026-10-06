@@ -553,8 +553,8 @@ export interface UiSlice {
   showUnpaintedFlash: boolean
   toggleShowUnpaintedFlash: () => void
   // --- モーダル ---
-  activeModal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | null
-  setActiveModal: (modal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | null) => void
+  activeModal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | 'bdImport' | null
+  setActiveModal: (modal: 'about' | 'preferences' | 'shortcuts' | 'replaceColor' | 'exportVector' | 'exportTrace' | 'bdImport' | null) => void
   // --- ズーム, グリッド, ルーラー ---
   showGrid: boolean
   showRuler: boolean

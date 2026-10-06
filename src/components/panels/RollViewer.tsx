@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink, StickyNote, Rows3 } from 'lucide-react';
+import { X, Maximize2, Minimize2, Film, FolderOpen, Folder, Play, Pause, ChevronLeft, ChevronRight, SkipBack, SkipForward, AlertTriangle, Link, Link2Off, Columns, Expand, Shrink, StickyNote, Rows3, Disc } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { useShallow } from 'zustand/react/shallow';
 import { FileBrowser } from './FileBrowser';
@@ -98,6 +98,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
     syncMode,
     openRollWindow,
     setRollReady,
+    setActiveModal,
   } = usePaintStore(
     useShallow((s) => ({
         closeRollWindow: s.closeRollWindow,
@@ -113,6 +114,7 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
         syncMode: s.syncMode,
         openRollWindow: s.openRollWindow,
         setRollReady: s.setRollReady,
+        setActiveModal: s.setActiveModal,
     }))
   );
 
@@ -1073,12 +1075,21 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
           <div className="text-center text-slate-400 text-[11px] p-4 select-none">
             <Film className="w-8 h-8 mx-auto mb-2 opacity-50" />
             <p className="mb-2">撮影上がりのロールを開いてください</p>
-            <button
-              onClick={openViaPicker}
-              className={`px-3 py-1 ${tone.button} text-white rounded text-[11px] font-semibold transition-colors`}
-            >
-              ロールを開く (.mov / .mp4)
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              <button
+                onClick={openViaPicker}
+                className={`px-3 py-1 ${tone.button} text-white rounded text-[11px] font-semibold transition-colors`}
+              >
+                ロールを開く (.mov / .mp4)
+              </button>
+              <button
+                onClick={() => setActiveModal('bdImport')}
+                className="px-3 py-1 bg-indigo-700 hover:bg-indigo-600 text-white rounded text-[11px] font-semibold transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                <Disc className="w-3.5 h-3.5" />
+                <span>BDから取り込み</span>
+              </button>
+            </div>
             <p className="mt-2 text-[9px] opacity-70">ドラッグ＆ドロップでも開けます</p>
             <p className="mt-1 text-[9px] opacity-70">
               ファイルツリーで映像を選んでも、この面が「選択先」なら開きます
@@ -1382,6 +1393,15 @@ export const RollViewer: React.FC<RollViewerProps> = React.memo(({ rollId }) => 
                     {syncMode ? <Link className="w-3.5 h-3.5" /> : <Link2Off className="w-3.5 h-3.5" />}
                   </button>
                 )}
+                <button
+                  tabIndex={-1}
+                  onPointerDown={(e) => e.currentTarget.blur()}
+                  onClick={(e) => { (e.currentTarget as HTMLElement).blur(); setActiveModal('bdImport'); }}
+                  title="Blu-ray (BD) 映像から切り出して取り込む"
+                  className="p-1 rounded bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-indigo-500 hover:text-indigo-400 transition-colors"
+                >
+                  <Disc className="w-3.5 h-3.5" />
+                </button>
                 <button
                   tabIndex={-1}
                   onPointerDown={(e) => e.currentTarget.blur()}

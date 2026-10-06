@@ -21,6 +21,7 @@ import { ShortcutsModal } from './components/modals/ShortcutsModal';
 import { ReplaceColorModal } from './components/modals/ReplaceColorModal';
 import { ExportVectorModal } from './components/modals/ExportVectorModal';
 import { ExportTraceModal } from './components/modals/ExportTraceModal';
+import { BdImportModal } from './components/modals/BdImportModal';
 import { AuthGuardModal } from './components/modals/AuthGuardModal';
 import { RushAuthModal } from './components/modals/RushAuthModal';
 import { readRoomIdFromSearch } from './engine/rushAccess';
@@ -465,6 +466,7 @@ export const App: React.FC = () => {
       <ReplaceColorModal />
       <ExportVectorModal />
       <ExportTraceModal />
+      <BdImportModal />
       <AuthGuardModal />
       <RushAuthModal />
       <MobileGuard />
