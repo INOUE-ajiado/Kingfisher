@@ -26,6 +26,7 @@ import { AuthGuardModal } from './components/modals/AuthGuardModal';
 import { RushAuthModal } from './components/modals/RushAuthModal';
 import { readRoomIdFromSearch } from './engine/rushAccess';
 import { MobileGuard } from './components/common/MobileGuard';
+import { BdNotificationToast } from './components/common/BdNotificationToast';
 import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
 import { onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 import { auth } from './engine/firebase';
@@ -470,6 +471,7 @@ export const App: React.FC = () => {
       <AuthGuardModal />
       <RushAuthModal />
       <MobileGuard />
+      <BdNotificationToast />
 
       {/* 🌟 右サイドパネル非表示時のみ表示される縦全高コンパクト再展開バー (Light/Darkテーマ対応) */}
       {!isRushActive && !isRightSidebarOpen && (

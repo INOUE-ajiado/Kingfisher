@@ -97,6 +97,8 @@ function scanDiscs() {
 
     const bdmvPath = path.join(volPath, 'BDMV');
     const isBdmv = fs.existsSync(bdmvPath);
+    const aacsPath = path.join(volPath, 'AACS');
+    const hasAacs = fs.existsSync(aacsPath);
     const streams = [];
 
     if (isBdmv) {
@@ -153,6 +155,7 @@ function scanDiscs() {
       name: entry,
       path: volPath,
       isBdmv,
+      hasAacs,
       streamCount: streams.length,
       streams,
     });
@@ -381,8 +384,12 @@ const server = http.createServer((req, res) => {
             });
           } else {
             console.error(`[BD Helper] ffmpeg failed with code ${code}:\n${errorOutput}`);
+            let errorMsg = `ffmpeg execution failed (code ${code})`;
+            if (errorOutput.includes('Invalid data found when processing input')) {
+              errorMsg = 'このBlu-rayは市販パッケージのためAACS暗号化されています。生ファイルからの直接切り出しはできません。制作スタジオで作成されたBD-R（非暗号化盤）をご使用ください。';
+            }
             sendJson(res, 500, {
-              error: `ffmpeg execution failed (code ${code})`,
+              error: errorMsg,
               details: errorOutput.slice(-500),
             });
           }

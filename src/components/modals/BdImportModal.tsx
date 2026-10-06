@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Disc, Film, Clock, Play, RefreshCw, AlertCircle, CheckCircle2, HardDrive } from 'lucide-react';
+import { X, Disc, Film, Clock, Play, RefreshCw, AlertCircle, CheckCircle2, HardDrive, AlertTriangle } from 'lucide-react';
 import { usePaintStore } from '../../store/usePaintStore';
 import { RollId } from '../../store/types';
 
@@ -16,6 +16,7 @@ interface DetectedDisc {
   name: string;
   path: string;
   isBdmv: boolean;
+  hasAacs?: boolean;
   streamCount: number;
   streams: DiscStream[];
 }
@@ -24,7 +25,7 @@ interface HelperStatus {
   ok: boolean;
   ffmpeg: { installed: boolean; path: string | null };
   discCount: number;
-  discs: Array<{ name: string; path: string; isBdmv: boolean; streamCount: number }>;
+  discs: Array<{ name: string; path: string; isBdmv: boolean; hasAacs?: boolean; streamCount: number }>;
 }
 
 interface SavedClip {
@@ -324,13 +325,27 @@ export const BdImportModal: React.FC = () => {
                   >
                     {discs.map((d, i) => (
                       <option key={d.path} value={i}>
-                        {d.isBdmv ? '💿 [BDMV] ' : '📁 '}
+                        {d.isBdmv ? (d.hasAacs ? '🔒 [市販BD/AACS] ' : '💿 [BDMV] ') : '📁 '}
                         {d.name} ({d.streamCount} ストリーム) — {d.path}
                       </option>
                     ))}
                   </select>
                 )}
               </div>
+
+              {/* 市販BD (AACS) 検出時の警告表示 */}
+              {currentDisc?.hasAacs && (
+                <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-500/50 text-amber-200 text-xs space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span>市販Blu-ray (AACS暗号化保護ディスク) が選択されています</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-200/90">
+                    このディスクは市販パッケージ仕様のため、AACSにより動画データが暗号化されています。
+                    生のM2TSファイルからの直接切り出しはできません。スタジオ内で作成されたチェック盤・BD-R（非暗号化盤）をご使用ください。
+                  </p>
+                </div>
+              )}
 
               {/* ストリームファイル選択 */}
               {currentDisc && currentDisc.streams.length > 0 && (
